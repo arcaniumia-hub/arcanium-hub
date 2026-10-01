@@ -1,0 +1,152 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import BundleCard from '../components/BundleCard.astro';
+import PlanCard from '../components/PlanCard.astro';
+import ComparisonTable from '../components/ComparisonTable.astro';
+import FAQ from '../components/FAQ.astro';
+import CTASection from '../components/CTASection.astro';
+import Icon from '../components/Icon.astro';
+import { getContent } from '../data';
+import { bundles, lowest, monthlyPrices, setupFees, usd, websitePrices } from '../data/prices';
+import { faqSchema } from '../lib/schema';
+import { getLang } from '../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const { carePlans, annualNote, termsNote, seoPlans, socialPlans, websiteTiers } = c.pricing;
+
+const alaCarte = [
+  {
+    title: 'Websites',
+    href: '/web-design/',
+    rows: websiteTiers.map((t) => ({ name: t.name, price: `from ${usd(websitePrices[t.id])}` })),
+  },
+  {
+    title: 'Local SEO',
+    href: '/local-seo/',
+    rows: [
+      { name: 'One-time setup', price: usd(setupFees.localSeo) },
+      ...seoPlans.map((p) => ({ name: p.name, price: `${usd(monthlyPrices[p.id])}/mo` })),
+    ],
+  },
+  {
+    title: 'Social Media',
+    href: '/social-media/',
+    rows: [
+      { name: 'One-time setup', price: usd(setupFees.social) },
+      ...socialPlans.map((p) => ({ name: p.name, price: `${usd(monthlyPrices[p.id])}/mo` })),
+    ],
+  },
+];
+---
+
+<BaseLayout
+  title="Plans & Pricing — Web Design, SEO & Social"
+  description={`Published prices for small-business marketing. Monthly bundles from ${usd(lowest.bundle)}/mo with website care, local SEO and social media. No hidden fees.`}
+  breadcrumbs={[{ name: 'Pricing', href: '/pricing/' }]}
+  schema={[faqSchema(c.faqs.pricing)]}
+>
+  <PageHero
+    eyebrow="Plans & pricing"
+    title="Clear prices. <span class='underline-swash'>No surprises.</span>"
+    lead="Most agencies make you book a call just to hear a price. Ours are right here. Bundles combine website care, local SEO and social media for less than buying them separately."
+    secondary={{ label: 'Compare plans', href: '#compare-title' }}
+  />
+
+  <!-- Bundles -->
+  <section class="pb-16 sm:pb-24" aria-labelledby="bundles-title">
+    <div class="container-x">
+      <h2 id="bundles-title" class="sr-only">Monthly bundles</h2>
+      <div class="grid gap-6 pt-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
+        {bundles.map((b) => <BundleCard bundle={b} />)}
+      </div>
+      <div class="mt-10 grid gap-4 md:grid-cols-2">
+        <p class="flex gap-3 rounded-2xl bg-honey/25 p-5 font-semibold ring-1 ring-honey" data-reveal>
+          <Icon name="spark" class="mt-0.5 size-6 shrink-0 text-ember" />
+          {annualNote}
+        </p>
+        <p class="flex gap-3 rounded-2xl bg-sand p-5 text-ink-soft" data-reveal>
+          <Icon name="calendar" class="mt-0.5 size-6 shrink-0 text-pine" />
+          {termsNote}
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Comparison -->
+  <section class="section bg-sand/60" aria-labelledby="compare-title">
+    <div class="container-x">
+      <SectionHeader
+        id="compare-title"
+        eyebrow="Side by side"
+        title="Compare the bundles"
+        lead="Everything included in each plan, in one table."
+      />
+      <ComparisonTable />
+      <p class="mt-4 text-sm text-ink-soft">Setup fees for local SEO ({usd(setupFees.localSeo)}) and social media ({usd(setupFees.social)}) apply unless you choose a 12-month plan. Ad spend is billed separately.</p>
+    </div>
+  </section>
+
+  <!-- Website care -->
+  <section class="section" aria-labelledby="care-title">
+    <div class="container-x">
+      <SectionHeader
+        id="care-title"
+        eyebrow="Website Care"
+        title="Keep your website fast, safe and up to date"
+        lead="Already have a website, or just need it looked after? Website Care plans are available on their own."
+      />
+      <div class="grid gap-6 pt-3 md:grid-cols-3">
+        {
+          carePlans.map((p) => (
+            <PlanCard
+              name={p.name}
+              price={monthlyPrices[p.id]}
+              unit="mo"
+              summary={p.summary}
+              features={p.features}
+              highlight={p.highlight}
+              cta={{ label: 'Get started', href: '/contact/' }}
+            />
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <!-- A la carte -->
+  <section class="section bg-sand/60" aria-labelledby="alacarte-title">
+    <div class="container-x">
+      <SectionHeader
+        id="alacarte-title"
+        eyebrow="Individual services"
+        title="Prefer to buy one service?"
+        lead="No problem. Every service is available on its own."
+      />
+      <div class="grid gap-6 md:grid-cols-3">
+        {
+          alaCarte.map((g) => (
+            <div class="card p-6" data-reveal>
+              <h3 class="text-xl font-bold">{g.title}</h3>
+              <dl class="mt-4 divide-y divide-line">
+                {g.rows.map((r) => (
+                  <div class="flex justify-between gap-4 py-2.5 text-[0.97rem]">
+                    <dt>{r.name}</dt>
+                    <dd class="shrink-0 font-semibold">{r.price}</dd>
+                  </div>
+                ))}
+              </dl>
+              <a href={g.href} class="link mt-4 inline-block text-[0.95rem]">
+                {g.title} details →
+              </a>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </section>
+
+  <FAQ items={c.faqs.pricing} title="Pricing questions" />
+  <CTASection title="Not sure which plan fits?" text="Book a free call. We will recommend the smallest plan that gets you real results — even if that is not a bundle." />
+</BaseLayout>

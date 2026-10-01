@@ -1,0 +1,53 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PageHero from '../../components/PageHero.astro';
+import CaseStudyCard from '../../components/CaseStudyCard.astro';
+import Testimonials from '../../components/Testimonials.astro';
+import SectionHeader from '../../components/SectionHeader.astro';
+import CTASection from '../../components/CTASection.astro';
+import { getContent } from '../../data';
+import { getLang } from '../../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const anyPlaceholder = c.caseStudies.some((s) => s.placeholder);
+---
+
+<BaseLayout
+  title="Our Work — Website, SEO & Social Projects"
+  description="Case studies from Braven Digital: websites, local SEO and social media projects for small businesses. See the challenge, what we did and the results."
+  breadcrumbs={[{ name: 'Work', href: '/work/' }]}
+>
+  <PageHero
+    eyebrow="Portfolio"
+    title="Work that brings in business"
+    lead="Every project starts with a real problem — not enough calls, invisible on Google, an empty Instagram. Here is what we did about it."
+    primary={false}
+    secondary={{ label: 'Start your project', href: '/contact/' }}
+  />
+
+  <section class="pb-16 sm:pb-24" aria-labelledby="projects-title">
+    <div class="container-x">
+      <h2 id="projects-title" class="sr-only">Case studies</h2>
+      {
+        anyPlaceholder && (
+          <p class="mb-8 rounded-2xl bg-honey/20 p-4 text-sm ring-1 ring-honey">
+            <strong>Note for the site owner:</strong> the projects below are clearly marked placeholders. Replace them in
+            <code>src/data/en/portfolio.ts</code> before launch.
+          </p>
+        )
+      }
+      <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {c.caseStudies.map((s) => <CaseStudyCard study={s} headingLevel="h3" />)}
+      </div>
+    </div>
+  </section>
+
+  <section class="section bg-sand/60" aria-labelledby="testimonials-title">
+    <div class="container-x">
+      <SectionHeader id="testimonials-title" eyebrow="Client words" title="What our clients say" />
+      <Testimonials items={c.testimonials} />
+    </div>
+  </section>
+
+  <CTASection title="Your business could be the next case study" />
+</BaseLayout>

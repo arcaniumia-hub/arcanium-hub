@@ -1,0 +1,117 @@
+---
+import { Picture } from 'astro:assets';
+import BaseLayout from '../layouts/BaseLayout.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import CTASection from '../components/CTASection.astro';
+import Icon from '../components/Icon.astro';
+import { bookingHref, site } from '../config/site';
+import founderPhoto from '../assets/about/founder-placeholder.jpg';
+
+const values = [
+  { icon: 'shield', title: 'Transparency', text: 'Published prices, written proposals and honest timelines. If something is not worth your money, we will say so.' },
+  { icon: 'pin', title: 'Local at heart', text: 'We are a small business too. We understand tight budgets, busy seasons and the value of every single lead.' },
+  { icon: 'handshake', title: 'Personal service', text: 'You work directly with the founder — the same person from the first call to launch day and every month after.' },
+  { icon: 'chart', title: 'Results first', text: 'Pretty is not enough. Every decision is measured by one thing: does it bring you more customers?' },
+] as const;
+const ext = bookingHref.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {};
+---
+
+<BaseLayout
+  title="About Us — A Founder-Led Marketing Studio"
+  description={`Meet Braven Digital: a founder-led marketing studio in ${site.address.locality}, ${site.address.region}, helping small businesses across the US with websites, local SEO and social media.`}
+  breadcrumbs={[{ name: 'About', href: '/about/' }]}
+>
+  <section class="container-x grid items-center gap-12 pt-10 pb-16 sm:pt-14 lg:grid-cols-12">
+    <div class="lg:col-span-7">
+      <p class="eyebrow">About Braven Digital</p>
+      <h1 class="text-4xl font-extrabold sm:text-5xl lg:text-6xl">Big-agency quality, <span class="underline-swash">small-business heart</span></h1>
+      <p class="lead mt-6">
+        Braven Digital is a small marketing studio based in {site.address.locality}, {site.address.regionName}. We build
+        websites, improve local SEO and manage social media for small businesses all over the United States.
+      </p>
+      <p class="mt-4 text-ink-soft">
+        We started Braven for one reason: too many good local businesses were paying big agencies for slow service,
+        vague reports and prices they could not understand. We think you deserve better.
+      </p>
+      <div class="mt-8 flex flex-col gap-3 sm:flex-row">
+        <a href={bookingHref} class="btn btn-primary" {...ext}><Icon name="calendar" />Book a Free Call</a>
+        <a href="/work/" class="btn btn-secondary">See our work <Icon name="arrow" class="size-4" /></a>
+      </div>
+    </div>
+    <div class="relative lg:col-span-5">
+      <div aria-hidden="true" class="absolute -top-6 -right-6 size-40 rounded-full bg-honey/60"></div>
+      <Picture
+        src={founderPhoto}
+        alt={`${site.founder}, founder of Braven Digital`}
+        widths={[400, 640, 800]}
+        sizes="(min-width: 1024px) 420px, 90vw"
+        formats={['avif', 'webp']}
+        loading="eager"
+        class="relative aspect-[4/5] w-full rounded-[1.75rem] object-cover shadow-(--shadow-lift)"
+      />
+    </div>
+  </section>
+
+  <!-- Founder story -->
+  <section class="section bg-sand/60" aria-labelledby="story-title">
+    <div class="container-x grid gap-10 lg:grid-cols-12">
+      <div class="lg:col-span-4">
+        <p class="eyebrow">The founder</p>
+        <h2 id="story-title" class="h-section">Hi, I'm {site.founder}</h2>
+        <span class="placeholder-tag mt-4">Placeholder</span>
+      </div>
+      <div class="prose prose-lg max-w-none lg:col-span-8 prose-p:text-ink-soft">
+        <p>
+          [FOUNDER STORY — replace with your own story. Suggested outline: where you are from and the languages you
+          speak; how you got into web design, SEO and marketing; a moment that showed you how much small businesses
+          struggle with agencies; why you started Braven Digital; and what you love about working with local business
+          owners. Keep it short, personal and honest — 150 to 250 words.]
+        </p>
+        <p>[Second paragraph — what a client can expect when working with you.]</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Values -->
+  <section class="section" aria-labelledby="values-title">
+    <div class="container-x">
+      <SectionHeader id="values-title" eyebrow="What we believe" title="Four values behind every project" />
+      <ul class="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        {
+          values.map((v) => (
+            <li class="card p-6" data-reveal>
+              <span class="grid size-12 place-items-center rounded-xl bg-pine text-honey"><Icon name={v.icon} class="size-6" /></span>
+              <h3 class="mt-5 text-xl font-bold">{v.title}</h3>
+              <p class="mt-2 text-ink-soft">{v.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <!-- Multilingual -->
+  <section class="on-dark section bg-pine" aria-labelledby="lang-title">
+    <div class="container-x grid items-center gap-10 lg:grid-cols-2">
+      <div data-reveal>
+        <p class="eyebrow">Three languages</p>
+        <h2 id="lang-title" class="h-section text-cream">English, Português, Español</h2>
+        <p class="mt-5 text-lg text-pine-100">
+          Many small-business owners in the US are more comfortable discussing their business in Portuguese or Spanish.
+          With us, you can. Calls, proposals, reports and support are available in all three languages.
+        </p>
+        <p class="mt-4 text-pine-100">
+          We also create bilingual websites and social content, so you can reach customers in the language they search
+          in.
+        </p>
+      </div>
+      <ul class="grid gap-4 sm:grid-cols-3 lg:grid-cols-1" data-reveal>
+        <li class="rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10"><p class="font-display text-2xl font-bold text-cream">"Let's grow your business."</p><p class="mt-1 text-sm text-pine-100">English</p></li>
+        <li class="rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10" lang="pt"><p class="font-display text-2xl font-bold text-cream">"Vamos crescer o seu negócio."</p><p class="mt-1 text-sm text-pine-100">Português</p></li>
+        <li class="rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10" lang="es"><p class="font-display text-2xl font-bold text-cream">"Hagamos crecer tu negocio."</p><p class="mt-1 text-sm text-pine-100">Español</p></li>
+      </ul>
+    </div>
+  </section>
+
+  <CTASection title="Let's talk about your business" />
+</BaseLayout>

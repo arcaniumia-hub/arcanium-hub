@@ -1,0 +1,63 @@
+---
+import LegalLayout from '../layouts/LegalLayout.astro';
+import { site } from '../config/site';
+import { minimumTerms } from '../data/prices';
+---
+
+<LegalLayout
+  title="Terms of Service"
+  description="The terms that apply when you use the Braven Digital website."
+  href="/terms/"
+  updated="[DATE]"
+>
+  <p>
+    These Terms of Service ("Terms") govern your use of {site.url.replace('https://', '')} (the "Site"), operated by
+    {' '}{site.legalName} ("we", "us"). By using the Site you agree to these Terms.
+  </p>
+
+  <h2>Use of the Site</h2>
+  <p>You agree to use the Site only for lawful purposes and not to interfere with its operation, attempt to gain unauthorized access, or send spam through our forms.</p>
+
+  <h2>Information on the Site</h2>
+  <p>
+    We work to keep information on the Site accurate, including prices. Prices shown are starting prices and may change
+    without notice. The final price, scope and timeline for any project are confirmed in a written proposal or
+    agreement, which takes precedence over the Site.
+  </p>
+
+  <h2>Services</h2>
+  <p>
+    Our services are provided under a separate written agreement. Minimum terms (for example, {minimumTerms.localSeo} months for local SEO
+    plans and {minimumTerms.social} months for social media plans), payment terms and cancellation terms are described in that agreement.
+  </p>
+
+  <h2>Results</h2>
+  <p>
+    Search rankings, traffic and social media performance depend on factors outside our control, including search
+    engine and platform algorithms. We do not guarantee specific rankings or results.
+  </p>
+
+  <h2>Intellectual property</h2>
+  <p>
+    The content, design, logo and code of the Site belong to {site.legalName} unless stated otherwise. You may not copy
+    or reuse them without permission. Ownership of work we create for clients is defined in each client agreement.
+  </p>
+
+  <h2>Third-party links and tools</h2>
+  <p>The Site may link to or embed third-party services (such as a booking calendar). We are not responsible for their content or practices.</p>
+
+  <h2>Disclaimer and limitation of liability</h2>
+  <p>
+    The Site is provided "as is" without warranties of any kind. To the fullest extent permitted by law, we are not
+    liable for any indirect, incidental or consequential damages arising from your use of the Site.
+  </p>
+
+  <h2>Governing law</h2>
+  <p>These Terms are governed by the laws of the State of {site.address.regionName}, without regard to conflict-of-law rules.</p>
+
+  <h2>Changes</h2>
+  <p>We may update these Terms at any time. Continued use of the Site means you accept the updated Terms.</p>
+
+  <h2>Contact</h2>
+  <p>Questions about these Terms? Email {site.email}.</p>
+</LegalLayout>

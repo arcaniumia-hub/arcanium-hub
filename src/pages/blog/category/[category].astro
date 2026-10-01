@@ -1,0 +1,70 @@
+---
+import BaseLayout from '../../../layouts/BaseLayout.astro';
+import PostCard from '../../../components/PostCard.astro';
+import CTASection from '../../../components/CTASection.astro';
+import { categories, type CategorySlug } from '../../../data/blog-categories';
+import { getPosts } from '../../../lib/blog';
+
+export async function getStaticPaths() {
+  const posts = await getPosts('en');
+  return (Object.keys(categories) as CategorySlug[]).map((slug) => ({
+    params: { category: slug },
+    props: { slug, posts: posts.filter((p) => p.data.category === slug) },
+  }));
+}
+
+const { slug, posts } = Astro.props;
+const cat = categories[slug as CategorySlug];
+---
+
+<BaseLayout
+  title={`${cat.name} Articles for Small Businesses`}
+  description={cat.description}
+  breadcrumbs={[
+    { name: 'Blog', href: '/blog/' },
+    { name: cat.name, href: `/blog/category/${slug}/` },
+  ]}
+  noindex={posts.length === 0}
+>
+  <section class="container-x pt-10 pb-16 sm:pt-14 sm:pb-24">
+    <div class="max-w-3xl">
+      <p class="eyebrow">Blog category</p>
+      <h1 class="text-4xl font-extrabold sm:text-5xl">{cat.name}</h1>
+      <p class="lead mt-5">{cat.description}</p>
+    </div>
+    <nav aria-label="Blog categories" class="mt-8">
+      <ul class="flex flex-wrap gap-2">
+        <li><a href="/blog/" class="inline-block rounded-full bg-white px-4 py-2 text-sm font-bold text-pine ring-1 ring-line hover:bg-sand">All posts</a></li>
+        {
+          Object.entries(categories).map(([s, c]) => (
+            <li>
+              <a
+                href={`/blog/category/${s}/`}
+                aria-current={s === slug ? 'page' : undefined}
+                class:list={[
+                  'inline-block rounded-full px-4 py-2 text-sm font-bold',
+                  s === slug ? 'bg-pine text-cream' : 'bg-white text-pine ring-1 ring-line hover:bg-sand',
+                ]}
+              >
+                {c.name}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    {
+      posts.length > 0 ? (
+        <div class="mt-10 grid gap-6 md:grid-cols-2">
+          {posts.map((p) => <PostCard post={p} headingLevel="h2" />)}
+        </div>
+      ) : (
+        <p class="mt-10 rounded-2xl bg-sand p-6">
+          New {cat.name.toLowerCase()} articles are coming soon. In the meantime, read about our{' '}
+          <a href={cat.service} class="link">{cat.name.toLowerCase()} services</a>.
+        </p>
+      )
+    }
+  </section>
+  <CTASection />
+</BaseLayout>

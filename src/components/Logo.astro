@@ -1,0 +1,20 @@
+---
+/** Braven Digital wordmark (outlined SVG — no font dependency). */
+import paths from '../assets/logo-paths.json';
+
+interface Props {
+  variant?: 'dark' | 'light';
+  class?: string;
+}
+const { variant = 'dark', class: className = 'h-10 w-auto' } = Astro.props;
+const colors =
+  variant === 'light'
+    ? { word: '#FBF6EE', chev: '#F2B33D', sub: '#FBF6EE' }
+    : { word: '#1F4D45', chev: '#C8461F', sub: '#16181D' };
+---
+
+<svg viewBox={paths.viewBox} class={className} aria-hidden="true" focusable="false">
+  <path fill={colors.word} d={paths.word}></path>
+  <path fill={colors.chev} d={paths.chev}></path>
+  <path fill={colors.sub} d={paths.sub}></path>
+</svg>

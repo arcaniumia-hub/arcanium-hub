@@ -1,0 +1,23 @@
+---
+import Icon from './Icon.astro';
+import { site } from '../config/site';
+const items = [
+  { icon: 'pin', text: `Based in ${site.address.locality}, ${site.address.region} · Serving the whole US` },
+  { icon: 'shield', text: 'Transparent, published pricing' },
+  { icon: 'handshake', text: 'Work directly with the founder' },
+  { icon: 'globe', text: 'English, Português, Español' },
+] as const;
+---
+
+<section aria-label="Why Braven Digital" class="border-y border-line bg-sand/70">
+  <ul class="container-x grid gap-x-8 gap-y-3 py-5 text-[0.95rem] font-semibold sm:grid-cols-2 lg:flex lg:items-center lg:justify-between">
+    {
+      items.map((i) => (
+        <li class="flex items-center gap-2.5">
+          <Icon name={i.icon} class="size-5 shrink-0 text-pine" />
+          {i.text}
+        </li>
+      ))
+    }
+  </ul>
+</section>

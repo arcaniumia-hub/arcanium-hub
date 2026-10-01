@@ -1,0 +1,167 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import PlanCard from '../components/PlanCard.astro';
+import Steps from '../components/Steps.astro';
+import ServiceCards from '../components/ServiceCards.astro';
+import FAQ from '../components/FAQ.astro';
+import CTASection from '../components/CTASection.astro';
+import Icon from '../components/Icon.astro';
+import { getContent } from '../data';
+import { minimumTerms, monthlyPrices, setupFees, usd } from '../data/prices';
+import { faqSchema, serviceSchema } from '../lib/schema';
+import { getLang } from '../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const { seoSetup, seoPlans } = c.pricing;
+const service = c.services.services.find((s) => s.id === 'local-seo')!;
+
+const timeline = [
+  { when: 'Month 1', what: 'Audit and setup: Google Business Profile, on-page SEO, schema, directory listings.' },
+  { when: 'Months 2–3', what: 'Google starts re-crawling and trusting the fixes. Profile views and impressions usually move first.' },
+  { when: 'Months 3–6', what: 'Rankings climb for your main services. This is when calls and form leads tend to follow.' },
+  { when: 'Month 6+', what: 'Compounding results: more keywords, more areas, more reviews. Good SEO keeps paying off.' },
+];
+---
+
+<BaseLayout
+  title="Local SEO Services for Small Businesses"
+  description={`Local SEO for small businesses: Google Business Profile optimization, on-page SEO and citations. Monthly plans from ${usd(monthlyPrices.seoGbp)}/mo. Serving the whole US.`}
+  breadcrumbs={[{ name: 'Local SEO', href: '/local-seo/' }]}
+  schema={[
+    serviceSchema({
+      name: 'Local SEO Services',
+      serviceType: service.serviceType,
+      description: service.summary,
+      path: '/local-seo/',
+      offers: [
+        { name: seoSetup.name, price: seoSetup.price, description: seoSetup.summary },
+        ...seoPlans.map((p) => ({ name: p.name, price: monthlyPrices[p.id], monthly: true, description: p.summary })),
+      ],
+    }),
+    faqSchema(c.faqs.localSeo),
+  ]}
+>
+  <PageHero
+    eyebrow="Local SEO"
+    title="Local SEO services that put you on the map"
+    lead="When someone nearby searches for what you do, you should be one of the first businesses they see — in Google Maps and in the search results below it. That is what local SEO does."
+  >
+    <ul class="mt-6 flex flex-wrap gap-2 text-sm font-semibold">
+      <li class="rounded-full bg-sand px-3 py-1">Plans from {usd(monthlyPrices.seoGbp)}/mo</li>
+      <li class="rounded-full bg-sand px-3 py-1">Plain-English monthly reports</li>
+      <li class="rounded-full bg-sand px-3 py-1">No long-term lock-in after {minimumTerms.localSeo} months</li>
+    </ul>
+  </PageHero>
+
+  <!-- Setup -->
+  <section class="section bg-sand/60" aria-labelledby="setup-title">
+    <div class="container-x grid items-start gap-10 lg:grid-cols-12">
+      <div class="lg:col-span-5">
+        <SectionHeader
+          id="setup-title"
+          eyebrow="Step one"
+          title="The one-time setup"
+          lead={seoSetup.summary}
+        />
+        <p class="-mt-6 text-ink-soft" data-reveal>
+          Most businesses we talk to have the same issues: an incomplete Google profile, pages that do not mention the
+          services or areas they want to rank for, and inconsistent listings around the web. The setup fixes all of it.
+        </p>
+      </div>
+      <div class="lg:col-span-7">
+        <PlanCard name={seoSetup.name} price={setupFees.localSeo} unit="once" features={seoSetup.features} highlight note="Waived on 12-month plans." />
+      </div>
+    </div>
+  </section>
+
+  <!-- Monthly plans -->
+  <section class="section" aria-labelledby="plans-title">
+    <div class="container-x">
+      <SectionHeader
+        id="plans-title"
+        eyebrow="Monthly plans"
+        title="Ongoing work that keeps you climbing"
+        lead={`Rankings are not a one-time fix. Every month we add, improve and report. All plans have a ${minimumTerms.localSeo}-month minimum.`}
+      />
+      <div class="grid gap-6 pt-3 md:grid-cols-3">
+        {
+          seoPlans.map((p) => (
+            <PlanCard
+              name={p.name}
+              price={monthlyPrices[p.id]}
+              unit="mo"
+              summary={p.summary}
+              features={p.features}
+              highlight={p.highlight}
+              badge={p.highlight ? 'Best results' : undefined}
+              cta={{ label: 'Get a Free Quote', href: '/contact/' }}
+            />
+          ))
+        }
+      </div>
+      <p class="mt-8 text-ink-soft">
+        Want SEO plus social media and website care? Our <a href="/pricing/" class="link">bundles</a> combine them for less.
+      </p>
+    </div>
+  </section>
+
+  <!-- Timeline -->
+  <section class="on-dark section bg-pine" aria-labelledby="timeline-title">
+    <div class="container-x grid gap-12 lg:grid-cols-12">
+      <div class="lg:col-span-5" data-reveal>
+        <p class="eyebrow">Honest expectations</p>
+        <h2 id="timeline-title" class="h-section text-cream">SEO takes 3–6 months. Here is why.</h2>
+        <p class="mt-5 text-lg text-pine-100">
+          Google needs time to crawl your changes, see that your business is consistent across the web, and trust it
+          over competitors who have been around longer.
+        </p>
+        <p class="mt-4 text-pine-100">
+          That is why our plans have a {minimumTerms.localSeo}-month minimum. It gives the work a fair chance, and it is
+          the same advice we would give you about any SEO company.
+        </p>
+      </div>
+      <ol class="grid gap-4 lg:col-span-7">
+        {
+          timeline.map((t) => (
+            <li class="flex gap-5 rounded-2xl bg-white/[0.06] p-5 ring-1 ring-white/10" data-reveal>
+              <span class="w-24 shrink-0 font-display text-lg font-bold text-honey">{t.when}</span>
+              <span class="text-pine-100">{t.what}</span>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  <!-- Process -->
+  <section class="section" aria-labelledby="process-title">
+    <div class="container-x">
+      <SectionHeader id="process-title" eyebrow="How it works" title="Our local SEO process" />
+      <Steps steps={c.services.seoProcess} />
+      <div class="mt-10 flex items-start gap-4 rounded-2xl border border-line bg-white p-6" data-reveal>
+        <Icon name="spark" class="mt-0.5 size-6 shrink-0 text-ember" />
+        <p>
+          New to local SEO? Start with our free guide:
+          <a href="/blog/how-to-show-up-on-google-maps/" class="link">How to Show Up on Google Maps: A Local SEO Guide for Small Businesses</a>.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section bg-sand/60" aria-labelledby="related-title">
+    <div class="container-x">
+      <SectionHeader
+        id="related-title"
+        eyebrow="Works even better with"
+        title="SEO needs a strong website behind it"
+        lead="Rankings bring visitors. Your website and social profiles turn them into customers."
+      />
+      <ServiceCards services={c.services.services} exclude="local-seo" />
+    </div>
+  </section>
+
+  <FAQ items={c.faqs.localSeo} title="Local SEO questions" />
+  <CTASection title="Find out where you rank today" text="Book a free call and we will look at your Google profile and website together — and tell you honestly what would make the biggest difference." />
+</BaseLayout>

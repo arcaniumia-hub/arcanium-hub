@@ -1,0 +1,66 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import ContactForm from '../components/ContactForm.astro';
+import BookingEmbed from '../components/BookingEmbed.astro';
+import Icon from '../components/Icon.astro';
+import { emailHref, phoneHref, site } from '../config/site';
+---
+
+<BaseLayout
+  title="Contact Us — Get a Free Quote"
+  description="Get a free quote for a website, local SEO or social media management. Book a free 20-minute call or send us a message. Serving small businesses across the US."
+  breadcrumbs={[{ name: 'Contact', href: '/contact/' }]}
+>
+  <section class="container-x pt-10 pb-16 sm:pt-14 sm:pb-24">
+    <div class="max-w-3xl">
+      <p class="eyebrow">Contact</p>
+      <h1 class="text-4xl font-extrabold sm:text-5xl lg:text-6xl">Get a free quote</h1>
+      <p class="lead mt-5">
+        Tell us a little about your business and we will reply within one business day with honest advice and a clear
+        price. Prefer to talk? <a href="#book" class="link">Book a free call</a>.
+      </p>
+    </div>
+
+    <div class="mt-12 grid gap-10 lg:grid-cols-12">
+      <div class="card p-6 sm:p-8 lg:col-span-8">
+        <h2 class="mb-6 text-2xl font-bold">Send us a message</h2>
+        <ContactForm />
+      </div>
+
+      <aside class="grid content-start gap-5 lg:col-span-4" aria-labelledby="direct-title">
+        <div class="rounded-(--radius-card) bg-pine p-6 text-pine-100 sm:p-7">
+          <h2 id="direct-title" class="text-xl font-bold text-cream">Reach us directly</h2>
+          <ul class="mt-5 grid gap-4">
+            <li class="flex gap-3">
+              <Icon name="phone" class="mt-0.5 size-5 shrink-0 text-honey" />
+              <span><span class="block text-sm">Phone</span>{phoneHref ? <a href={phoneHref} class="font-semibold text-cream hover:underline">{site.phone}</a> : <span class="font-semibold text-cream">{site.phone}</span>}</span>
+            </li>
+            <li class="flex gap-3">
+              <Icon name="mail" class="mt-0.5 size-5 shrink-0 text-honey" />
+              <span><span class="block text-sm">Email</span>{emailHref ? <a href={emailHref} class="font-semibold text-cream hover:underline">{site.email}</a> : <span class="font-semibold text-cream">{site.email}</span>}</span>
+            </li>
+            <li class="flex gap-3">
+              <Icon name="pin" class="mt-0.5 size-5 shrink-0 text-honey" />
+              <span><span class="block text-sm">Service area</span><span class="font-semibold text-cream">{site.serviceArea}</span><span class="block text-sm">Based in {site.address.locality}, {site.address.region}</span></span>
+            </li>
+            <li class="flex gap-3">
+              <Icon name="clock" class="mt-0.5 size-5 shrink-0 text-honey" />
+              <span><span class="block text-sm">Hours</span><span class="font-semibold text-cream">{site.hours}</span></span>
+            </li>
+          </ul>
+        </div>
+        <div class="rounded-(--radius-card) bg-honey/25 p-6 ring-1 ring-honey">
+          <p class="flex items-center gap-2 font-bold"><Icon name="globe" class="size-5 text-pine" />We speak your language</p>
+          <p class="mt-2 text-[0.97rem]">
+            Write to us in English, <span lang="pt">Português</span> or <span lang="es">Español</span>.
+            <span lang="es">Se habla español</span> · <span lang="pt">Falamos português</span>.
+          </p>
+        </div>
+      </aside>
+    </div>
+
+    <div class="mt-12">
+      <BookingEmbed />
+    </div>
+  </section>
+</BaseLayout>

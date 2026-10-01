@@ -1,0 +1,166 @@
+---
+import Logo from './Logo.astro';
+import Icon from './Icon.astro';
+import { bookingHref } from '../config/site';
+import { getLang, useTranslations } from '../i18n/utils';
+
+const t = useTranslations(getLang(Astro.currentLocale));
+const path = Astro.url.pathname;
+const isActive = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+
+const serviceLinks = [
+  { href: '/web-design/', label: t('nav.webDesign'), desc: 'Fast websites that bring in calls', icon: 'browser' },
+  { href: '/local-seo/', label: t('nav.localSeo'), desc: 'Get found on Google & Maps', icon: 'pin' },
+  { href: '/social-media/', label: t('nav.socialMedia'), desc: 'Consistent posts, Reels & replies', icon: 'chat' },
+] as const;
+const mainLinks = [
+  { href: '/pricing/', label: t('nav.pricing') },
+  { href: '/work/', label: t('nav.work') },
+  { href: '/about/', label: t('nav.about') },
+  { href: '/blog/', label: t('nav.blog') },
+  { href: '/contact/', label: t('nav.contact') },
+];
+const servicesActive = serviceLinks.some((l) => isActive(l.href));
+const external = bookingHref.startsWith('http');
+---
+
+<header class="sticky top-0 z-50 border-b border-line/60 bg-cream/90 backdrop-blur-md supports-[backdrop-filter]:bg-cream/80">
+  <div class="container-x flex h-[4.5rem] items-center justify-between gap-4">
+    <a href="/" class="-m-1 shrink-0 p-1" aria-label="Braven Digital — home">
+      <Logo class="h-9 w-auto sm:h-10" />
+    </a>
+
+    <!-- Desktop navigation -->
+    <nav aria-label="Main" class="hidden lg:block">
+      <ul class="flex items-center gap-1 text-[0.97rem] font-semibold">
+        <li class="relative">
+          <details class="group" data-dropdown>
+            <summary
+              class:list={[
+                'flex cursor-pointer items-center gap-1 rounded-full px-3.5 py-2 hover:bg-sand',
+                servicesActive && 'text-pine',
+              ]}
+            >
+              {t('nav.services')}
+              <Icon name="chevron" class="size-4 rotate-90 transition-transform group-open:-rotate-90" />
+            </summary>
+            <ul class="absolute top-full left-0 mt-2 w-80 rounded-2xl border border-line bg-white p-2 shadow-(--shadow-lift)">
+              {
+                serviceLinks.map((l) => (
+                  <li>
+                    <a
+                      href={l.href}
+                      aria-current={isActive(l.href) ? 'page' : undefined}
+                      class="flex items-start gap-3 rounded-xl p-3 hover:bg-cream"
+                    >
+                      <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-pine-100 text-pine">
+                        <Icon name={l.icon} />
+                      </span>
+                      <span>
+                        <span class="block text-ink">{l.label}</span>
+                        <span class="block text-sm font-normal text-ink-soft">{l.desc}</span>
+                      </span>
+                    </a>
+                  </li>
+                ))
+              }
+            </ul>
+          </details>
+        </li>
+        {
+          mainLinks.map((l) => (
+            <li>
+              <a
+                href={l.href}
+                aria-current={isActive(l.href) ? 'page' : undefined}
+                class="rounded-full px-3.5 py-2 hover:bg-sand aria-[current=page]:text-pine aria-[current=page]:underline aria-[current=page]:decoration-ember aria-[current=page]:decoration-2 aria-[current=page]:underline-offset-8"
+              >
+                {l.label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+
+    <div class="flex items-center gap-2">
+      <a
+        href={bookingHref}
+        class="btn btn-primary hidden min-h-11 px-5 py-2.5 text-[0.95rem] sm:inline-flex"
+        {...external ? { target: '_blank', rel: 'noopener' } : {}}
+      >
+        <Icon name="calendar" class="size-[1.1rem]" />
+        {t('cta.book')}
+      </a>
+
+      <!-- Mobile navigation (works without JavaScript) -->
+      <details class="group lg:hidden" data-mobile-menu>
+        <summary
+          class="grid size-11 cursor-pointer place-items-center rounded-full text-ink ring-1 ring-line hover:bg-sand"
+          aria-label={t('nav.menu')}
+        >
+          <Icon name="menu" class="size-6 group-open:hidden" />
+          <Icon name="close" class="hidden size-6 group-open:block" />
+        </summary>
+        <nav
+          aria-label="Mobile"
+          class="fixed inset-x-0 top-[4.5rem] h-[calc(100dvh-4.5rem)] overflow-y-auto border-t border-line bg-cream px-5 pt-4 pb-10"
+        >
+          <p class="px-1 pt-2 text-xs font-bold tracking-[0.14em] text-ink-soft uppercase">{t('nav.services')}</p>
+          <ul class="mt-2 grid gap-1">
+            {
+              serviceLinks.map((l) => (
+                <li>
+                  <a href={l.href} class="flex items-center gap-3 rounded-xl p-3 text-lg font-semibold hover:bg-sand">
+                    <span class="grid size-10 place-items-center rounded-lg bg-pine-100 text-pine">
+                      <Icon name={l.icon} />
+                    </span>
+                    {l.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+          <ul class="mt-4 grid gap-1 border-t border-line pt-4">
+            {
+              mainLinks.map((l) => (
+                <li>
+                  <a
+                    href={l.href}
+                    aria-current={isActive(l.href) ? 'page' : undefined}
+                    class="block rounded-xl px-3 py-3 text-lg font-semibold hover:bg-sand aria-[current=page]:text-pine"
+                  >
+                    {l.label}
+                  </a>
+                </li>
+              ))
+            }
+          </ul>
+          <div class="mt-6 grid gap-3">
+            <a href={bookingHref} class="btn btn-primary w-full" {...external ? { target: '_blank', rel: 'noopener' } : {}}>
+              <Icon name="calendar" />
+              {t('cta.book')}
+            </a>
+            <a href="/contact/" class="btn btn-secondary w-full">{t('cta.quote')}</a>
+          </div>
+        </nav>
+      </details>
+    </div>
+  </div>
+</header>
+
+<script>
+  // Close the desktop Services dropdown on outside click or Escape.
+  const dd = document.querySelector<HTMLDetailsElement>('[data-dropdown]');
+  if (dd) {
+    document.addEventListener('click', (e) => {
+      if (dd.open && !dd.contains(e.target as Node)) dd.open = false;
+    });
+    dd.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        dd.open = false;
+        dd.querySelector('summary')?.focus();
+      }
+    });
+  }
+</script>

@@ -1,0 +1,195 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import TrustStrip from '../components/TrustStrip.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import ServiceCards from '../components/ServiceCards.astro';
+import Steps from '../components/Steps.astro';
+import BundleCard from '../components/BundleCard.astro';
+import CaseStudyCard from '../components/CaseStudyCard.astro';
+import Testimonials from '../components/Testimonials.astro';
+import FAQ from '../components/FAQ.astro';
+import CTASection from '../components/CTASection.astro';
+import { bookingHref } from '../config/site';
+import { getContent } from '../data';
+import { bundles } from '../data/prices';
+import { faqSchema } from '../lib/schema';
+import { getLang } from '../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const featured = c.caseStudies.filter((s) => s.featured).slice(0, 3);
+const ext = bookingHref.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {};
+---
+
+<BaseLayout
+  rawTitle
+  title="Small Business Web Design & Local SEO | Braven Digital"
+  description="Websites, local SEO and social media management for small businesses across the US. Published prices, direct access to the founder. Book a free call."
+  schema={[faqSchema(c.faqs.home)]}
+>
+  <!-- Hero -->
+  <section class="relative overflow-hidden">
+    <div class="container-x grid items-center gap-12 pt-12 pb-16 sm:pt-16 lg:grid-cols-12 lg:gap-8 lg:pt-20 lg:pb-24">
+      <div class="lg:col-span-7">
+        <p class="eyebrow">Small-business marketing studio</p>
+        <h1 class="h-display">
+          Websites, Local SEO &amp; Social Media for <span class="underline-swash">Small Businesses</span>
+        </h1>
+        <p class="lead mt-6 max-w-xl">
+          We help contractors, restaurants, clinics and local service businesses get found on Google — and turn those
+          visitors into calls, bookings and customers.
+        </p>
+        <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+          <a href={bookingHref} class="btn btn-primary" {...ext}>
+            <Icon name="calendar" />
+            Book a Free Call
+          </a>
+          <a href="/pricing/" class="btn btn-secondary">
+            See Plans &amp; Pricing
+            <Icon name="arrow" class="size-4" />
+          </a>
+        </div>
+        <p class="mt-6 flex items-center gap-2 text-sm text-ink-soft">
+          <Icon name="check" class="size-4 text-pine" />
+          Free 20-minute call · No pressure · Clear written proposal
+        </p>
+      </div>
+
+      <!-- Illustration: a Google local result (decorative) -->
+      <div class="relative lg:col-span-5" aria-hidden="true">
+        <div class="absolute -top-8 -right-16 size-80 rounded-full bg-sand sm:size-96"></div>
+        <div class="absolute bottom-0 -left-6 size-20 rounded-full bg-honey/80"></div>
+        <div class="relative mx-auto max-w-sm rotate-[1.5deg] rounded-3xl border border-line bg-white p-5 shadow-(--shadow-lift)">
+          <div class="flex items-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm text-ink-soft">
+            <Icon name="spark" class="size-4 text-pine" />
+            plumber near me
+          </div>
+          <div class="mt-4 h-28 overflow-hidden rounded-2xl bg-pine-100">
+            <svg viewBox="0 0 320 112" class="h-full w-full">
+              <path d="M0 70 Q80 40 160 64 T320 50" stroke="#fff" stroke-width="10" fill="none"></path>
+              <path d="M60 0 L90 112 M220 0 L200 112" stroke="#fff" stroke-width="6"></path>
+              <circle cx="168" cy="56" r="16" fill="#C8461F"></circle>
+              <circle cx="168" cy="56" r="6" fill="#fff"></circle>
+              <circle cx="96" cy="30" r="7" fill="#9bb5ae"></circle>
+              <circle cx="250" cy="84" r="7" fill="#9bb5ae"></circle>
+            </svg>
+          </div>
+          <div class="mt-4 rounded-2xl bg-cream p-4 ring-2 ring-ember/70">
+            <p class="font-display text-lg font-bold">Your Business</p>
+            <p class="mt-0.5 flex items-center gap-1 text-honey">
+              {Array.from({ length: 5 }).map(() => <span>★</span>)}
+            </p>
+            <p class="mt-1 text-sm text-ink-soft">Open now · Serving your area</p>
+            <div class="mt-3 grid grid-cols-3 gap-2 text-center text-xs font-bold text-pine">
+              <span class="rounded-full bg-white py-1.5 ring-1 ring-line">Call</span>
+              <span class="rounded-full bg-white py-1.5 ring-1 ring-line">Website</span>
+              <span class="rounded-full bg-white py-1.5 ring-1 ring-line">Directions</span>
+            </div>
+          </div>
+          <div class="mt-3 space-y-2 px-1 opacity-60">
+            <div class="h-3 w-3/4 rounded-full bg-sand"></div>
+            <div class="h-3 w-1/2 rounded-full bg-sand"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <TrustStrip />
+
+  <!-- Services -->
+  <section class="section" aria-labelledby="services-title">
+    <div class="container-x">
+      <SectionHeader
+        id="services-title"
+        eyebrow="What we do"
+        title="Three services. One goal: more customers."
+        lead="Pick one, or combine them in a bundle. Every service is built around the same question — will this bring you more business?"
+      />
+      <ServiceCards services={c.services.services} />
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="on-dark section bg-pine" aria-labelledby="how-title">
+    <div class="container-x">
+      <div class="mb-10 max-w-2xl sm:mb-14" data-reveal>
+        <p class="eyebrow">How it works</p>
+        <h2 id="how-title" class="h-section text-cream">Simple from the first call to launch day</h2>
+        <p class="mt-4 text-lg text-pine-100">No contracts full of fine print and no tech talk. Just three clear steps.</p>
+      </div>
+      <Steps steps={c.services.howItWorks} dark />
+    </div>
+  </section>
+
+  <!-- Plans preview -->
+  <section class="section" aria-labelledby="plans-title">
+    <div class="container-x">
+      <SectionHeader
+        id="plans-title"
+        eyebrow="Plans & pricing"
+        title="Monthly plans with the price right on the page"
+        lead="Website care, local SEO and social media in one bundle — for less than buying each service on its own."
+      />
+      <div class="grid gap-6 pt-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
+        {bundles.map((b) => <BundleCard bundle={b} compact />)}
+      </div>
+      <div class="mt-10 flex flex-col items-start justify-between gap-4 rounded-2xl bg-sand p-6 sm:flex-row sm:items-center">
+        <p class="font-semibold">
+          <Icon name="spark" class="mr-1 inline size-5 text-ember" />
+          {c.pricing.annualNote}
+        </p>
+        <a href="/pricing/" class="btn btn-secondary shrink-0">Compare all plans <Icon name="arrow" class="size-4" /></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Portfolio preview -->
+  <section class="section bg-sand/60" aria-labelledby="work-title">
+    <div class="container-x">
+      <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+        <SectionHeader
+          id="work-title"
+          eyebrow="Recent work"
+          title="Projects for businesses like yours"
+          lead="Real problems, what we did about them, and what changed."
+        />
+        <a href="/work/" class="link mb-10 shrink-0 sm:mb-14">See all work →</a>
+      </div>
+      <div class="grid gap-6 md:grid-cols-3">
+        {featured.map((s) => <CaseStudyCard study={s} />)}
+      </div>
+    </div>
+  </section>
+
+  <!-- Testimonials -->
+  <section class="section" aria-labelledby="testimonials-title">
+    <div class="container-x">
+      <SectionHeader id="testimonials-title" eyebrow="Client words" title="What our clients say" align="center" />
+      <Testimonials items={c.testimonials} />
+    </div>
+  </section>
+
+  <!-- Multilingual -->
+  <section class="pb-4" aria-labelledby="lang-title">
+    <div class="container-x">
+      <div class="grid items-center gap-6 rounded-[2rem] border border-line bg-white p-8 sm:p-10 md:grid-cols-[auto_1fr_auto]" data-reveal>
+        <span class="grid size-16 place-items-center rounded-2xl bg-honey/30 text-pine"><Icon name="globe" class="size-8" /></span>
+        <div>
+          <h2 id="lang-title" class="text-2xl font-bold sm:text-3xl">We speak your language</h2>
+          <p class="mt-2 text-ink-soft">
+            Calls, proposals and content in English, <span lang="pt">Português</span> or <span lang="es">Español</span> — and
+            websites and social posts in more than one language when your customers need it.
+          </p>
+        </div>
+        <p class="text-lg font-bold text-pine">
+          <span lang="es">Se habla español</span><br /><span lang="pt">Falamos português</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <FAQ items={c.faqs.home} more={{ href: '/pricing/#faq-title', label: 'Pricing questions' }} />
+
+  <CTASection />
+</BaseLayout>

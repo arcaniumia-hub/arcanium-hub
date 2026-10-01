@@ -1,0 +1,70 @@
+---
+/**
+ * Booking calendar "facade": a light placeholder that loads the real Calendly
+ * (or any booking page) only when the visitor asks for it. Keeps the page fast.
+ */
+import Icon from './Icon.astro';
+import { bookingHref, isPlaceholder, site } from '../config/site';
+
+const ready = !isPlaceholder(site.bookingUrl);
+---
+
+<div id="book" class="card scroll-mt-28 overflow-hidden">
+  <div class="flex flex-col items-start gap-4 bg-pine p-6 text-cream sm:flex-row sm:items-center sm:justify-between sm:p-7">
+    <div>
+      <h2 class="text-2xl font-bold text-cream">Book a free 20-minute call</h2>
+      <p class="mt-1 text-pine-100">Pick a time that works for you. Video or phone — your choice.</p>
+    </div>
+    {
+      ready && (
+        <a href={bookingHref} target="_blank" rel="noopener" class="btn btn-ghost-light min-h-11 py-2 text-sm">
+          Open in a new tab
+        </a>
+      )
+    }
+  </div>
+  <div class="relative min-h-[22rem] bg-white" data-booking data-src={ready ? site.bookingUrl : ''}>
+    {
+      ready ? (
+        <div class="grid min-h-[22rem] place-items-center p-8 text-center" data-booking-facade>
+          <div>
+            <Icon name="calendar" class="mx-auto size-12 text-pine" />
+            <p class="mt-4 text-ink-soft">The calendar loads from our booking provider.</p>
+            <button type="button" class="btn btn-primary mt-5" data-booking-load>
+              Show available times
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div class="grid min-h-[22rem] place-items-center p-8 text-center">
+          <div>
+            <span class="placeholder-tag">Placeholder</span>
+            <p class="mt-4 max-w-sm text-ink-soft">
+              [CALENDLY LINK] — add your booking link in <code>src/config/site.ts</code> and the calendar appears here.
+            </p>
+          </div>
+        </div>
+      )
+    }
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-booking]').forEach((box) => {
+    const src = box.dataset.src;
+    const btn = box.querySelector('[data-booking-load]');
+    if (!src || !btn) return;
+    btn.addEventListener('click', () => {
+      const url = new URL(src);
+      url.searchParams.set('embed_domain', location.hostname);
+      url.searchParams.set('embed_type', 'Inline');
+      url.searchParams.set('hide_gdpr_banner', '1');
+      const iframe = document.createElement('iframe');
+      iframe.src = url.href;
+      iframe.title = 'Book a free call';
+      iframe.className = 'block h-[44rem] w-full border-0';
+      box.querySelector('[data-booking-facade]')?.replaceWith(iframe);
+      iframe.focus();
+    });
+  });
+</script>

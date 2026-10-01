@@ -1,0 +1,147 @@
+---
+/**
+ * Lead form. Works with Formspree (default) or Netlify Forms — set
+ * `formProvider` and `formspreeId` in src/config/site.ts.
+ * Spam protection: hidden honeypot field (bots fill it, humans never see it).
+ */
+import Icon from './Icon.astro';
+import { site } from '../config/site';
+import { bundleText } from '../data/en/pricing';
+import { bundles } from '../data/prices';
+
+const netlify = site.formProvider === 'netlify';
+const action = netlify ? '/thank-you/' : `https://formspree.io/f/${site.formspreeId || 'YOUR_FORM_ID'}`;
+const honeypot = netlify ? 'bot-field' : '_gotcha';
+
+const serviceOptions = [
+  { value: 'Website design', label: 'Website design' },
+  { value: 'Local SEO', label: 'Local SEO' },
+  { value: 'Social media management', label: 'Social media management' },
+  ...bundles.map((b) => ({ value: `Bundle: ${bundleText[b.id].name}`, label: `Bundle — ${bundleText[b.id].name}`, id: b.id })),
+  { value: 'Website Care plan', label: 'Website Care plan' },
+  { value: 'Not sure yet', label: 'Not sure yet — help me decide' },
+];
+const budgetOptions = [
+  'Under $1,000 (one-time)',
+  '$1,000 – $2,500 (one-time)',
+  '$2,500 – $5,000 (one-time)',
+  '$5,000 – $10,000 (one-time)',
+  '$10,000+ (one-time)',
+  'Under $500 / month',
+  '$500 – $1,000 / month',
+  '$1,000 – $2,000 / month',
+  '$2,000+ / month',
+  'Not sure yet',
+];
+const field =
+  'mt-1.5 block w-full rounded-xl border border-line bg-white px-4 py-3 text-base text-ink shadow-sm placeholder:text-ink-soft/70 focus:border-pine focus:ring-2 focus:ring-pine/30 focus:outline-none';
+const label = 'block text-[0.95rem] font-semibold';
+---
+
+<form
+  name="contact"
+  method="POST"
+  action={action}
+  class="grid gap-5 sm:grid-cols-2"
+  data-contact-form
+  data-provider={site.formProvider}
+  {...netlify ? { 'data-netlify': 'true', 'netlify-honeypot': 'bot-field' } : {}}
+>
+  {netlify && <input type="hidden" name="form-name" value="contact" />}
+  {!netlify && <input type="hidden" name="_subject" value="New lead from bravendigital.com" />}
+
+  <!-- Honeypot: hidden from people and screen readers -->
+  <div class="hidden" aria-hidden="true">
+    <label>Leave this field empty <input type="text" name={honeypot} tabindex="-1" autocomplete="off" /></label>
+  </div>
+
+  <div>
+    <label for="cf-name" class={label}>Your name <span class="text-ember" aria-hidden="true">*</span></label>
+    <input id="cf-name" name="name" type="text" required autocomplete="name" class={field} />
+  </div>
+  <div>
+    <label for="cf-business" class={label}>Business name</label>
+    <input id="cf-business" name="business" type="text" autocomplete="organization" class={field} />
+  </div>
+  <div>
+    <label for="cf-email" class={label}>Email <span class="text-ember" aria-hidden="true">*</span></label>
+    <input id="cf-email" name="email" type="email" required autocomplete="email" class={field} />
+  </div>
+  <div>
+    <label for="cf-phone" class={label}>Phone</label>
+    <input id="cf-phone" name="phone" type="tel" autocomplete="tel" class={field} />
+  </div>
+  <div>
+    <label for="cf-service" class={label}>Service of interest <span class="text-ember" aria-hidden="true">*</span></label>
+    <select id="cf-service" name="service" required class={field}>
+      <option value="" disabled selected>Choose one…</option>
+      {serviceOptions.map((o) => <option value={o.value} data-plan={'id' in o ? o.id : undefined}>{o.label}</option>)}
+    </select>
+  </div>
+  <div>
+    <label for="cf-budget" class={label}>Budget range</label>
+    <select id="cf-budget" name="budget" class={field}>
+      <option value="" disabled selected>Choose one…</option>
+      {budgetOptions.map((b) => <option value={b}>{b}</option>)}
+    </select>
+  </div>
+  <div class="sm:col-span-2">
+    <label for="cf-message" class={label}>Tell us about your business and goals</label>
+    <textarea
+      id="cf-message"
+      name="message"
+      rows="5"
+      class={field}
+      placeholder="What do you do, where are your customers, and what would you like to improve?"></textarea>
+  </div>
+  <div class="flex flex-col gap-4 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
+    <p class="text-sm text-ink-soft">
+      <span class="text-ember" aria-hidden="true">*</span> Required. We reply within one business day. See our <a
+        href="/privacy/"
+        class="link">privacy policy</a
+      >.
+    </p>
+    <button type="submit" class="btn btn-primary shrink-0">
+      Get My Free Quote
+      <Icon name="arrow" class="size-4" />
+    </button>
+  </div>
+  <p class="text-[0.95rem] font-semibold text-ember sm:col-span-2" role="alert" data-form-error hidden>
+    Something went wrong sending your message. Please try again, or email us directly.
+  </p>
+</form>
+
+<script>
+  const form = document.querySelector<HTMLFormElement>('[data-contact-form]');
+  if (form) {
+    // Pre-select a bundle when arriving from /contact/?plan=presence
+    const plan = new URLSearchParams(location.search).get('plan');
+    const select = form.querySelector<HTMLSelectElement>('#cf-service');
+    const opt = plan && select?.querySelector<HTMLOptionElement>(`option[data-plan="${CSS.escape(plan)}"]`);
+    if (opt && select) select.value = opt.value;
+
+    // Formspree: submit in the background and go to our own thank-you page.
+    // Without JavaScript the form still works (Formspree shows its own confirmation).
+    if (form.dataset.provider === 'formspree') {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+        const error = form.querySelector<HTMLElement>('[data-form-error]');
+        button?.setAttribute('disabled', '');
+        if (error) error.hidden = true;
+        try {
+          const res = await fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { Accept: 'application/json' },
+          });
+          if (!res.ok) throw new Error(String(res.status));
+          window.location.href = '/thank-you/';
+        } catch {
+          if (error) error.hidden = false;
+          button?.removeAttribute('disabled');
+        }
+      });
+    }
+  }
+</script>

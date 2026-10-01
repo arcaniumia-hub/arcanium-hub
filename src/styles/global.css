@@ -1,0 +1,161 @@
+@import '@fontsource-variable/bricolage-grotesque/wght.css';
+@import '@fontsource-variable/figtree/wght.css';
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+/* ───────────── Brand tokens: "Pine & Ember" ───────────── */
+@theme {
+  --color-pine: #1f4d45;
+  --color-pine-700: #183d37;
+  --color-pine-900: #0f2925;
+  --color-pine-100: #d9e5e1;
+  --color-ink: #16181d;
+  --color-ink-soft: #4a4f57; /* 7.6:1 on cream */
+  --color-ember: #c8461f; /* white text = 4.8:1 */
+  --color-ember-700: #a8391a;
+  --color-honey: #f2b33d;
+  --color-cream: #fbf6ee;
+  --color-sand: #efe4d2;
+  --color-sand-dark: #e2d3ba;
+  --color-line: #ddd0bb;
+
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Figtree Variable', 'Figtree', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(22 24 29 / 0.04), 0 8px 24px -12px rgb(22 24 29 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(22 24 29 / 0.05), 0 20px 40px -18px rgb(22 24 29 / 0.3);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-top: 6rem;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    html {
+      scroll-behavior: smooth;
+    }
+  }
+  body {
+    @apply bg-cream font-sans text-ink antialiased;
+    overflow-x: clip;
+    font-size: 1.0625rem;
+    line-height: 1.65;
+  }
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display text-ink;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  :focus-visible {
+    outline: 3px solid var(--color-ember);
+    outline-offset: 3px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--color-honey);
+    color: var(--color-ink);
+  }
+}
+
+@layer components {
+  .container-x {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+  .section {
+    @apply py-16 sm:py-24;
+  }
+  .eyebrow {
+    @apply mb-3 inline-flex items-center gap-2 text-sm font-semibold tracking-[0.14em] text-pine uppercase;
+  }
+  .eyebrow::before {
+    content: '';
+    @apply inline-block h-[3px] w-6 rounded-full bg-ember;
+  }
+  .on-dark .eyebrow {
+    @apply text-honey;
+  }
+  .on-dark .eyebrow::before {
+    @apply bg-honey;
+  }
+  .h-display {
+    @apply text-[2.6rem] leading-[1.02] font-extrabold sm:text-6xl lg:text-7xl;
+  }
+  .h-section {
+    @apply text-3xl font-bold sm:text-[2.75rem];
+  }
+  .lead {
+    @apply text-lg text-ink-soft sm:text-xl;
+  }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex min-h-12 items-center justify-center gap-2 rounded-full px-6 py-3 text-base font-semibold whitespace-nowrap transition-[transform,background-color,box-shadow] duration-200;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+  }
+  .btn-primary {
+    @apply bg-ember text-white shadow-[0_6px_20px_-8px_rgb(200_70_31/0.7)] hover:bg-ember-700;
+  }
+  .btn-secondary {
+    @apply bg-transparent text-pine ring-2 ring-pine/25 ring-inset hover:bg-pine hover:text-cream hover:ring-pine;
+  }
+  .btn-light {
+    @apply bg-cream text-pine hover:bg-white;
+  }
+  .btn-ghost-light {
+    @apply text-cream ring-2 ring-cream/40 ring-inset hover:bg-cream hover:text-pine;
+  }
+  .link {
+    @apply font-semibold text-pine underline decoration-ember/60 decoration-2 underline-offset-4 hover:decoration-ember;
+  }
+  .card {
+    @apply rounded-(--radius-card) border border-line/70 bg-white shadow-(--shadow-card);
+  }
+  .placeholder-tag {
+    @apply inline-flex items-center rounded-full bg-honey/30 px-2.5 py-0.5 text-xs font-bold tracking-wide text-ink uppercase ring-1 ring-honey;
+  }
+}
+
+/* Subtle reveal-on-scroll (progressive: content is visible without JS) */
+@media (prefers-reduced-motion: no-preference) {
+  .js [data-reveal] {
+    opacity: 0;
+    transform: translateY(14px);
+    transition:
+      opacity 0.6s ease,
+      transform 0.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+  }
+  .js [data-reveal].is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Squiggle underline used on key headline words */
+.underline-swash {
+  background-image: linear-gradient(transparent 62%, rgb(242 179 61 / 0.55) 62%, rgb(242 179 61 / 0.55) 92%, transparent 92%);
+  padding: 0 0.08em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+/* FAQ details marker */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details[open] .faq-icon {
+  transform: rotate(45deg);
+}

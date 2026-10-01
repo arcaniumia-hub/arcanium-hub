@@ -1,0 +1,25 @@
+---
+import BaseLayout from './BaseLayout.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  href: string;
+  updated: string;
+}
+const { title, description, href, updated } = Astro.props;
+---
+
+<BaseLayout title={title} description={description} breadcrumbs={[{ name: title, href }]}>
+  <section class="container-x max-w-3xl pt-10 pb-20 sm:pt-14">
+    <h1 class="text-4xl font-extrabold sm:text-5xl">{title}</h1>
+    <p class="mt-3 text-ink-soft">Last updated: {updated}</p>
+    <div class="mt-6 rounded-2xl bg-honey/20 p-5 text-[0.97rem] ring-1 ring-honey" role="note">
+      <strong>TEMPLATE — REVIEW BEFORE PUBLISHING.</strong> This is a generic template, not legal advice. Have it reviewed
+      by a qualified attorney and adjust it to your business, your tools and the laws of your state.
+    </div>
+    <div class="prose prose-lg mt-10 max-w-none prose-headings:font-display prose-a:text-pine prose-p:text-ink/90 prose-li:text-ink/90">
+      <slot />
+    </div>
+  </section>
+</BaseLayout>

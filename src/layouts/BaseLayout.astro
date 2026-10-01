@@ -1,0 +1,129 @@
+---
+import '../styles/global.css';
+import headingFont from '@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2?url';
+import bodyFont from '@fontsource-variable/figtree/files/figtree-latin-wght-normal.woff2?url';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import Breadcrumbs from '../components/Breadcrumbs.astro';
+import Analytics from '../components/Analytics.astro';
+import { site } from '../config/site';
+import { breadcrumbSchema, businessSchema, graph, websiteSchema } from '../lib/schema';
+import { getLang, useTranslations } from '../i18n/utils';
+
+interface Props {
+  /** Page title without the brand — " | Braven Digital" is appended when it fits. */
+  title: string;
+  /** 140–160 characters, written for humans, including the main keyword. */
+  description: string;
+  image?: string;
+  imageAlt?: string;
+  type?: 'website' | 'article';
+  noindex?: boolean;
+  /** Trail after "Home". Omit on the home page. */
+  breadcrumbs?: { name: string; href: string }[];
+  /** Extra JSON-LD nodes for this page (Service, FAQPage, BlogPosting…). */
+  schema?: object[];
+  article?: { published: Date; modified?: Date; section?: string };
+  /** Use the full title as-is (home page). */
+  rawTitle?: boolean;
+}
+
+const {
+  title,
+  description,
+  image = site.ogImage,
+  imageAlt = `${site.name} — ${site.tagline}`,
+  type = 'website',
+  noindex = false,
+  breadcrumbs,
+  schema = [],
+  article,
+  rawTitle = false,
+} = Astro.props;
+
+const lang = getLang(Astro.currentLocale);
+const t = useTranslations(lang);
+// Append the brand only when the result stays within ~65 characters (Google's display limit).
+const branded = `${title} | ${site.name}`;
+const fullTitle = rawTitle || branded.length > 65 ? title : branded;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const ogImage = new URL(image, Astro.site).href;
+
+const crumbs = breadcrumbs ? [{ name: t('nav.home'), href: '/' }, ...breadcrumbs] : undefined;
+const jsonLd = graph([
+  businessSchema(),
+  websiteSchema(),
+  ...(crumbs ? [breadcrumbSchema(crumbs)] : []),
+  ...schema,
+]);
+---
+
+<!doctype html>
+<html lang="en-US" class="no-js">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{fullTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    {noindex && <meta name="robots" content="noindex, follow" />}
+    <!-- hreflang: add pt / es alternates here when those versions exist -->
+    <link rel="alternate" hreflang="en-US" href={canonical} />
+    <link rel="alternate" hreflang="x-default" href={canonical} />
+
+    <link rel="preload" href={headingFont} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={bodyFont} as="font" type="font/woff2" crossorigin />
+
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content={site.themeColor} />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+    <link rel="alternate" type="application/rss+xml" title={`${site.name} Blog`} href="/rss.xml" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content={type} />
+    <meta property="og:site_name" content={site.name} />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:title" content={fullTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:alt" content={imageAlt} />
+    {image === site.ogImage && <meta property="og:image:width" content="1200" />}
+    {image === site.ogImage && <meta property="og:image:height" content="630" />}
+    {article && <meta property="article:published_time" content={article.published.toISOString()} />}
+    {article?.modified && <meta property="article:modified_time" content={article.modified.toISOString()} />}
+    {article?.section && <meta property="article:section" content={article.section} />}
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={fullTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="twitter:image:alt" content={imageAlt} />
+
+    <script is:inline>
+      document.documentElement.classList.replace('no-js', 'js');
+    </script>
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <Analytics />
+  </head>
+  <body class="flex min-h-dvh flex-col">
+    <a
+      href="#main"
+      class="sr-only z-[60] rounded-full bg-ink px-5 py-3 font-semibold text-cream focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+      >{t('nav.skip')}</a
+    >
+    <Header />
+    <main id="main" class="flex-1">
+      {crumbs && <Breadcrumbs items={crumbs} />}
+      <slot />
+    </main>
+    <Footer />
+    <script>
+      import '../scripts/reveal';
+    </script>
+  </body>
+</html>

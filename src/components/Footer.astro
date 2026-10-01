@@ -1,0 +1,114 @@
+---
+import Logo from './Logo.astro';
+import Icon from './Icon.astro';
+import { emailHref, isPlaceholder, phoneHref, site } from '../config/site';
+import { getLang, useTranslations } from '../i18n/utils';
+import { getContent } from '../data';
+
+const lang = getLang(Astro.currentLocale);
+const t = useTranslations(lang);
+const { services } = getContent(lang).services;
+const year = new Date().getFullYear();
+
+const company = [
+  { href: '/pricing/', label: t('nav.pricing') },
+  { href: '/work/', label: t('nav.work') },
+  { href: '/about/', label: t('nav.about') },
+  { href: '/blog/', label: t('nav.blog') },
+  { href: '/contact/', label: t('nav.contact') },
+];
+
+const socials = (
+  [
+    ['instagram', 'Instagram', site.social.instagram],
+    ['facebook', 'Facebook', site.social.facebook],
+    ['linkedin', 'LinkedIn', site.social.linkedin],
+    ['tiktok', 'TikTok', site.social.tiktok],
+  ] as const
+).filter(([, , url]) => url && !isPlaceholder(url));
+---
+
+<footer class="on-dark bg-pine-900 text-pine-100">
+  <div class="container-x grid gap-12 py-16 md:grid-cols-12">
+    <div class="md:col-span-4">
+      <a href="/" aria-label="Braven Digital — home" class="inline-block">
+        <Logo variant="light" class="h-11 w-auto" />
+      </a>
+      <p class="mt-5 max-w-sm text-[0.97rem] leading-relaxed">{t('footer.blurb')}</p>
+      <p class="mt-5 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-cream">
+        <Icon name="globe" class="size-4 text-honey" />
+        <span lang="es">Se habla español</span> · <span lang="pt">Falamos português</span>
+      </p>
+      {
+        socials.length > 0 && (
+          <ul class="mt-6 flex gap-2" aria-label="Social media">
+            {socials.map(([icon, label, url]) => (
+              <li>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener me"
+                  class="grid size-11 place-items-center rounded-full bg-white/10 text-cream hover:bg-honey hover:text-ink"
+                >
+                  <Icon name={icon} label={`${site.name} on ${label}`} />
+                </a>
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </div>
+
+    <nav aria-label="Services" class="md:col-span-2">
+      <h2 class="font-sans text-sm font-bold tracking-[0.14em] text-honey uppercase">{t('nav.services')}</h2>
+      <ul class="mt-4 grid gap-2.5">
+        {services.map((s) => <li><a href={s.href} class="hover:text-cream hover:underline">{s.name}</a></li>)}
+        <li><a href="/pricing/" class="hover:text-cream hover:underline">Plans & bundles</a></li>
+      </ul>
+    </nav>
+
+    <nav aria-label="Company" class="md:col-span-2">
+      <h2 class="font-sans text-sm font-bold tracking-[0.14em] text-honey uppercase">{t('footer.company')}</h2>
+      <ul class="mt-4 grid gap-2.5">
+        {company.map((l) => <li><a href={l.href} class="hover:text-cream hover:underline">{l.label}</a></li>)}
+      </ul>
+    </nav>
+
+    <!-- NAP: keep identical on every page and on your Google Business Profile -->
+    <div class="md:col-span-4">
+      <h2 class="font-sans text-sm font-bold tracking-[0.14em] text-honey uppercase">{t('footer.contact')}</h2>
+      <address class="mt-4 grid gap-3 not-italic">
+        <p class="font-semibold text-cream">{site.name}</p>
+        <p class="flex gap-3">
+          <Icon name="pin" class="mt-0.5 size-5 shrink-0 text-honey" />
+          <span>
+            {t('footer.based')} {site.address.locality}, {site.address.region}<br />
+            {site.serviceArea}
+          </span>
+        </p>
+        <p class="flex gap-3">
+          <Icon name="phone" class="mt-0.5 size-5 shrink-0 text-honey" />
+          {phoneHref ? <a href={phoneHref} class="hover:text-cream hover:underline">{site.phone}</a> : <span>{site.phone}</span>}
+        </p>
+        <p class="flex gap-3">
+          <Icon name="mail" class="mt-0.5 size-5 shrink-0 text-honey" />
+          {emailHref ? <a href={emailHref} class="hover:text-cream hover:underline">{site.email}</a> : <span>{site.email}</span>}
+        </p>
+        <p class="flex gap-3">
+          <Icon name="clock" class="mt-0.5 size-5 shrink-0 text-honey" />
+          <span>{site.hours}</span>
+        </p>
+      </address>
+    </div>
+  </div>
+
+  <div class="border-t border-white/10">
+    <div class="container-x flex flex-col gap-3 py-6 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <p>© {year} {site.name}. {t('footer.rights')}</p>
+      <ul class="flex gap-5">
+        <li><a href="/privacy/" class="hover:text-cream hover:underline">{t('footer.privacy')}</a></li>
+        <li><a href="/terms/" class="hover:text-cream hover:underline">{t('footer.terms')}</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>

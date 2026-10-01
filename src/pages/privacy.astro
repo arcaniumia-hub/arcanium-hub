@@ -1,0 +1,73 @@
+---
+import LegalLayout from '../layouts/LegalLayout.astro';
+import { site } from '../config/site';
+---
+
+<LegalLayout
+  title="Privacy Policy"
+  description="How Braven Digital collects, uses and protects the personal information you share through our website."
+  href="/privacy/"
+  updated="[DATE]"
+>
+  <p>
+    This Privacy Policy explains how {site.legalName} ("we", "us") collects, uses and protects information when you visit
+    {' '}{site.url.replace('https://', '')} (the "Site") or contact us.
+  </p>
+
+  <h2>Information we collect</h2>
+  <ul>
+    <li><strong>Information you give us:</strong> when you fill out our contact form or book a call, we collect your name, business name, email, phone number, the service you are interested in, your budget range and your message.</li>
+    <li><strong>Usage information:</strong> we use Google Analytics to understand how visitors use the Site, such as pages viewed, approximate location (city level), device and browser type. This data is collected through cookies and similar technologies.</li>
+  </ul>
+
+  <h2>How we use your information</h2>
+  <ul>
+    <li>To reply to your inquiry and prepare proposals.</li>
+    <li>To provide and improve our services.</li>
+    <li>To understand how the Site is used and improve it.</li>
+    <li>To comply with legal obligations.</li>
+  </ul>
+  <p>We do not sell your personal information.</p>
+
+  <h2>Service providers</h2>
+  <p>We use trusted third parties to run the Site and our business, including:</p>
+  <ul>
+    <li>[Formspree / Netlify] to receive contact form submissions.</li>
+    <li>[Calendly] to schedule calls.</li>
+    <li>Google Analytics to measure Site usage.</li>
+    <li>[Hosting provider — e.g. Netlify, Vercel or Cloudflare] to host the Site.</li>
+  </ul>
+  <p>These providers only process your information to perform services for us and under their own privacy policies.</p>
+
+  <h2>Cookies</h2>
+  <p>
+    Google Analytics uses cookies to collect usage data. You can block or delete cookies in your browser settings, or
+    install the <a href="https://tools.google.com/dlpage/gaoptout" rel="noopener" target="_blank">Google Analytics opt-out browser add-on</a>.
+  </p>
+
+  <h2>Data retention</h2>
+  <p>We keep inquiry information for as long as needed to respond and, if you become a client, for the length of our working relationship and any period required by law.</p>
+
+  <h2>Your choices and rights</h2>
+  <p>
+    You may ask us to access, correct or delete the personal information we hold about you by emailing {site.email}.
+    Depending on your state of residence (for example, California, Virginia or Colorado), you may have additional
+    rights under state privacy laws.
+  </p>
+
+  <h2>Security</h2>
+  <p>We use reasonable measures to protect your information, including encrypted connections (HTTPS). No method of transmission over the internet is 100% secure.</p>
+
+  <h2>Children</h2>
+  <p>The Site is not intended for children under 13, and we do not knowingly collect their information.</p>
+
+  <h2>Changes to this policy</h2>
+  <p>We may update this policy from time to time. The "Last updated" date above shows when it was last changed.</p>
+
+  <h2>Contact</h2>
+  <p>
+    {site.legalName}<br />
+    {site.address.locality}, {site.address.region} {site.address.postalCode}<br />
+    {site.email} · {site.phone}
+  </p>
+</LegalLayout>

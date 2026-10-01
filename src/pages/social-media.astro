@@ -1,0 +1,145 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import PlanCard from '../components/PlanCard.astro';
+import Steps from '../components/Steps.astro';
+import ServiceCards from '../components/ServiceCards.astro';
+import FAQ from '../components/FAQ.astro';
+import CTASection from '../components/CTASection.astro';
+import Icon from '../components/Icon.astro';
+import { getContent } from '../data';
+import { minimumTerms, monthlyPrices, setupFees, usd } from '../data/prices';
+import { faqSchema, serviceSchema } from '../lib/schema';
+import { getLang } from '../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const { socialSetup, socialPlans } = c.pricing;
+const service = c.services.services.find((s) => s.id === 'social-media')!;
+
+const why = [
+  { icon: 'user', title: 'Customers check you out', text: 'Before they call, many people look at your Instagram or Facebook. An empty or outdated page makes them hesitate.' },
+  { icon: 'calendar', title: 'Consistency beats bursts', text: 'Posting steadily every week does more than a flurry of posts once a quarter. We keep the rhythm for you.' },
+  { icon: 'chat', title: 'Conversations become jobs', text: 'Comments and messages are leads. On Plus and Pro, we reply quickly so none slip through.' },
+] as const;
+---
+
+<BaseLayout
+  title="Social Media Management for Small Businesses"
+  description={`Done-for-you social media management for small businesses: posts, Reels, stories and replies on Instagram, Facebook, LinkedIn or TikTok. From ${usd(monthlyPrices.socialStart)}/mo.`}
+  breadcrumbs={[{ name: 'Social Media', href: '/social-media/' }]}
+  schema={[
+    serviceSchema({
+      name: 'Social Media Management',
+      serviceType: service.serviceType,
+      description: service.summary,
+      path: '/social-media/',
+      offers: [
+        { name: socialSetup.name, price: socialSetup.price, description: socialSetup.summary },
+        ...socialPlans.map((p) => ({ name: p.name, price: monthlyPrices[p.id], monthly: true, description: p.summary })),
+      ],
+    }),
+    faqSchema(c.faqs.socialMedia),
+  ]}
+>
+  <PageHero
+    eyebrow="Social media management"
+    title="Social media management for busy business owners"
+    lead="You run your business. We keep your Instagram, Facebook, LinkedIn or TikTok active with professional posts, Reels and stories — and you approve everything before it goes live."
+  >
+    <ul class="mt-6 flex flex-wrap gap-2 text-sm font-semibold">
+      <li class="rounded-full bg-sand px-3 py-1">Plans from {usd(monthlyPrices.socialStart)}/mo</li>
+      <li class="rounded-full bg-sand px-3 py-1">You approve every post</li>
+      <li class="rounded-full bg-sand px-3 py-1">Content in English, <span lang="pt">Português</span> or <span lang="es">Español</span></li>
+    </ul>
+  </PageHero>
+
+  <section class="section bg-sand/60" aria-labelledby="why-title">
+    <div class="container-x">
+      <SectionHeader id="why-title" eyebrow="Why it matters" title="Your social profile is your second storefront" />
+      <ul class="grid gap-5 md:grid-cols-3">
+        {
+          why.map((w) => (
+            <li class="rounded-(--radius-card) bg-white p-6 ring-1 ring-line" data-reveal>
+              <span class="grid size-11 place-items-center rounded-xl bg-pine text-honey">
+                <Icon name={w.icon} />
+              </span>
+              <h3 class="mt-4 text-lg font-bold">{w.title}</h3>
+              <p class="mt-1.5 text-ink-soft">{w.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <section class="section" aria-labelledby="plans-title">
+    <div class="container-x">
+      <SectionHeader
+        id="plans-title"
+        eyebrow="Plans"
+        title="Social media plans"
+        lead={`Every plan starts with a one-time ${usd(setupFees.social)} setup. Plans have a ${minimumTerms.social}-month minimum, then continue month to month.`}
+      />
+      <div class="grid gap-6 pt-3 md:grid-cols-3">
+        {
+          socialPlans.map((p) => (
+            <PlanCard
+              name={p.name}
+              price={monthlyPrices[p.id]}
+              unit="mo"
+              summary={p.summary}
+              features={p.features}
+              highlight={p.highlight}
+              badge={p.highlight ? 'Most chosen' : undefined}
+              note={p.note}
+              cta={{ label: 'Get a Free Quote', href: '/contact/' }}
+            />
+          ))
+        }
+      </div>
+
+      <div class="mt-8 grid items-center gap-6 rounded-(--radius-card) border border-line bg-white p-6 sm:p-8 md:grid-cols-[1fr_auto]" data-reveal>
+        <div>
+          <h3 class="text-xl font-bold">{socialSetup.name} — {usd(socialSetup.price)} one-time</h3>
+          <p class="mt-1 text-ink-soft">{socialSetup.summary}</p>
+          <ul class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-[0.97rem]">
+            {
+              socialSetup.features.map((f) => (
+                <li class="flex gap-2">
+                  <Icon name="check" class="mt-1 size-4 shrink-0 text-ember" />
+                  {f}
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+        <p class="text-sm font-semibold text-pine">Waived on 12-month plans</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="on-dark section bg-pine" aria-labelledby="process-title">
+    <div class="container-x">
+      <div class="mb-10 max-w-2xl sm:mb-14" data-reveal>
+        <p class="eyebrow">How it works</p>
+        <h2 id="process-title" class="h-section text-cream">A month of content, without the stress</h2>
+      </div>
+      <Steps steps={c.services.socialProcess} dark />
+    </div>
+  </section>
+
+  <section class="section bg-sand/60" aria-labelledby="related-title">
+    <div class="container-x">
+      <SectionHeader
+        id="related-title"
+        eyebrow="Complete the picture"
+        title="Social brings attention. Your website and Google profile close the deal."
+      />
+      <ServiceCards services={c.services.services} exclude="social-media" />
+    </div>
+  </section>
+
+  <FAQ items={c.faqs.socialMedia} title="Social media questions" />
+  <CTASection title="Let's make your social media work for you" />
+</BaseLayout>

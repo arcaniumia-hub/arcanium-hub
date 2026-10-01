@@ -1,0 +1,41 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+import PostCard from '../../components/PostCard.astro';
+import CTASection from '../../components/CTASection.astro';
+import { categories } from '../../data/blog-categories';
+import { getPosts } from '../../lib/blog';
+
+const posts = await getPosts('en');
+---
+
+<BaseLayout
+  title="Small Business Marketing Blog"
+  description="Practical guides for small-business owners on website costs, local SEO, Google Maps and social media. Clear advice, no jargon."
+  breadcrumbs={[{ name: 'Blog', href: '/blog/' }]}
+>
+  <section class="container-x pt-10 pb-16 sm:pt-14 sm:pb-24">
+    <div class="max-w-3xl">
+      <p class="eyebrow">Blog</p>
+      <h1 class="text-4xl font-extrabold sm:text-5xl lg:text-6xl">Guides for growing your business online</h1>
+      <p class="lead mt-5">Straight answers to the questions small-business owners ask us most.</p>
+    </div>
+    <nav aria-label="Blog categories" class="mt-8">
+      <ul class="flex flex-wrap gap-2">
+        <li><a href="/blog/" aria-current="page" class="inline-block rounded-full bg-pine px-4 py-2 text-sm font-bold text-cream">All posts</a></li>
+        {
+          Object.entries(categories).map(([slug, cat]) => (
+            <li>
+              <a href={`/blog/category/${slug}/`} class="inline-block rounded-full bg-white px-4 py-2 text-sm font-bold text-pine ring-1 ring-line hover:bg-sand">
+                {cat.name}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
+    <div class="mt-10 grid gap-6 md:grid-cols-2">
+      {posts.map((p) => <PostCard post={p} headingLevel="h2" />)}
+    </div>
+  </section>
+  <CTASection />
+</BaseLayout>

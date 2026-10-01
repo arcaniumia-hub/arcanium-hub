@@ -1,0 +1,52 @@
+---
+/** Hero for inner pages. Exactly one H1 per page lives here. */
+import Icon from './Icon.astro';
+import { bookingHref } from '../config/site';
+
+interface Props {
+  eyebrow?: string;
+  title: string;
+  lead?: string;
+  primary?: { label: string; href: string } | false;
+  secondary?: { label: string; href: string } | false;
+}
+const {
+  eyebrow,
+  title,
+  lead,
+  primary = { label: 'Book a Free Call', href: bookingHref },
+  secondary = { label: 'Get a Free Quote', href: '/contact/' },
+} = Astro.props;
+const ext = (href: string) => (href.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {});
+---
+
+<section class="relative overflow-hidden">
+  <div class="container-x relative z-10 pt-10 pb-16 sm:pt-14 sm:pb-20">
+    <div class="max-w-3xl">
+      {eyebrow && <p class="eyebrow">{eyebrow}</p>}
+      <h1 class="text-4xl font-extrabold sm:text-5xl lg:text-6xl" set:html={title} />
+      {lead && <p class="lead mt-6 max-w-2xl">{lead}</p>}
+      <slot />
+      {
+        (primary || secondary) && (
+          <div class="mt-8 flex flex-wrap gap-3">
+            {primary && (
+              <a href={primary.href} class="btn btn-primary" {...ext(primary.href)}>
+                <Icon name="calendar" />
+                {primary.label}
+              </a>
+            )}
+            {secondary && (
+              <a href={secondary.href} class="btn btn-secondary">
+                {secondary.label}
+                <Icon name="arrow" class="size-4" />
+              </a>
+            )}
+          </div>
+        )
+      }
+    </div>
+  </div>
+  <div aria-hidden="true" class="pointer-events-none absolute top-10 -right-24 hidden size-[26rem] rounded-full bg-sand md:block"></div>
+  <div aria-hidden="true" class="pointer-events-none absolute top-40 right-24 hidden size-24 rounded-full bg-honey/70 md:block"></div>
+</section>

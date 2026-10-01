@@ -1,0 +1,41 @@
+---
+import { Picture } from 'astro:assets';
+import { categories } from '../data/blog-categories';
+import { formatDate, postUrl, readingTime, type Post } from '../lib/blog';
+
+interface Props {
+  post: Post;
+  headingLevel?: 'h2' | 'h3';
+}
+const { post, headingLevel = 'h3' } = Astro.props;
+const H = headingLevel;
+const cat = categories[post.data.category];
+---
+
+<article class="group card flex h-full flex-col overflow-hidden" data-reveal>
+  <a href={postUrl(post)} tabindex="-1" aria-hidden="true" class="block overflow-hidden">
+    <Picture
+      src={post.data.cover}
+      alt=""
+      widths={[400, 640, 960]}
+      sizes="(min-width: 1024px) 520px, (min-width: 768px) 45vw, 100vw"
+      formats={['avif', 'webp']}
+      class="aspect-[16/9] w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+    />
+  </a>
+  <div class="flex flex-1 flex-col p-6">
+    <p class="flex flex-wrap items-center gap-2 text-sm text-ink-soft">
+      <a href={`/blog/category/${post.data.category}/`} class="rounded-full bg-pine-100 px-2.5 py-0.5 text-xs font-bold text-pine hover:bg-pine hover:text-cream">
+        {cat.name}
+      </a>
+      <time datetime={post.data.pubDate.toISOString()}>{formatDate(post.data.pubDate)}</time>
+      <span aria-hidden="true">·</span>
+      <span>{readingTime(post.body)} min read</span>
+    </p>
+    <H class="mt-3 text-xl font-bold sm:text-2xl">
+      <a href={postUrl(post)} class="hover:text-pine">{post.data.title}</a>
+    </H>
+    <p class="mt-3 text-ink-soft">{post.data.description}</p>
+    <a href={postUrl(post)} class="link mt-auto pt-5 text-[0.95rem]">Read article<span class="sr-only">: {post.data.title}</span> →</a>
+  </div>
+</article>

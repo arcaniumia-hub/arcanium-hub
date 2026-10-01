@@ -1,0 +1,71 @@
+---
+import Icon from './Icon.astro';
+import { bundles, bundleSavings, separateTotal, usd } from '../data/prices';
+import { bundleText, comparisonRows } from '../data/en/pricing';
+
+const groups = [...new Set(comparisonRows.map((r) => r.group))];
+---
+
+<div class="relative overflow-x-auto rounded-(--radius-card) border border-line bg-white" role="region" aria-labelledby="compare-title" tabindex="0">
+  <table class="w-full min-w-[44rem] border-collapse text-left text-[0.95rem]">
+    <caption class="sr-only">Comparison of the Essential, Presence, Growth and Complete bundles</caption>
+    <thead>
+      <tr class="border-b border-line bg-sand/60">
+        <th scope="col" class="w-[30%] p-4 font-semibold">Plan</th>
+        {
+          bundles.map((b) => (
+            <th scope="col" class:list={['p-4 text-center align-bottom', 'popular' in b && b.popular && 'bg-pine-100']}>
+              {'popular' in b && b.popular && (
+                <span class="mb-1 block text-xs font-extrabold tracking-wider text-pine uppercase">Most Popular</span>
+              )}
+              <span class="block font-display text-lg font-bold">{bundleText[b.id].name}</span>
+              <span class="block font-semibold text-ink-soft">{usd(b.price)}/mo</span>
+            </th>
+          ))
+        }
+      </tr>
+    </thead>
+    <tbody>
+      <tr class="border-b border-line">
+        <th scope="row" class="p-4 font-medium">Price if bought separately</th>
+        {bundles.map((b) => <td class="p-4 text-center text-ink-soft line-through decoration-ember/60">{usd(separateTotal(b.includes))}/mo</td>)}
+      </tr>
+      <tr class="border-b border-line">
+        <th scope="row" class="p-4 font-medium">You save</th>
+        {bundles.map((b) => <td class="p-4 text-center font-bold text-pine">{usd(bundleSavings(b))}/mo</td>)}
+      </tr>
+      {
+        groups.map((g) => (
+          <>
+            <tr class="bg-cream">
+              <th scope="colgroup" colspan={bundles.length + 1} class="px-4 pt-5 pb-2 text-xs font-bold tracking-[0.14em] text-pine uppercase">
+                {g}
+              </th>
+            </tr>
+            {comparisonRows
+              .filter((r) => r.group === g)
+              .map((r) => (
+                <tr class="border-b border-line/70">
+                  <th scope="row" class="p-4 font-medium">{r.label}</th>
+                  {bundles.map((b) => {
+                    const v = r.value(b.id);
+                    return (
+                      <td class="p-4 text-center">
+                        {v === true ? (
+                          <Icon name="check" class="mx-auto size-5 text-pine" label="Included" />
+                        ) : v === false || v === '—' ? (
+                          <><span aria-hidden="true" class="text-ink-soft">—</span><span class="sr-only">Not included</span></>
+                        ) : (
+                          v
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+          </>
+        ))
+      }
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,81 @@
+---
+import Icon from './Icon.astro';
+import { bundles, bundleSavings, separateTotal, usd } from '../data/prices';
+import { bundleText, getPlan } from '../data/en/pricing';
+
+interface Props {
+  bundle: (typeof bundles)[number];
+  compact?: boolean;
+}
+const { bundle, compact = false } = Astro.props;
+const text = bundleText[bundle.id];
+const popular = 'popular' in bundle && bundle.popular;
+const savings = bundleSavings(bundle);
+const plans = bundle.includes.map((id) => getPlan(id));
+---
+
+<article
+  class:list={[
+    'relative flex h-full flex-col rounded-(--radius-card) p-6 sm:p-7',
+    popular ? 'on-dark bg-pine text-pine-100 shadow-(--shadow-lift) ring-2 ring-pine lg:-my-3 lg:py-10' : 'card',
+  ]}
+  aria-labelledby={`bundle-${bundle.id}`}
+  data-reveal
+>
+  {
+    popular && (
+      <p class="absolute -top-3.5 left-6 rounded-full bg-honey px-3.5 py-1 text-xs font-extrabold tracking-wider text-ink uppercase">
+        Most Popular
+      </p>
+    )
+  }
+  <h3 id={`bundle-${bundle.id}`} class:list={['text-2xl font-bold', popular && 'text-cream']}>{text.name}</h3>
+  <p class:list={['mt-1 text-sm font-semibold', popular ? 'text-honey' : 'text-pine']}>{text.tagline}</p>
+
+  <p class="mt-5 flex items-baseline gap-1">
+    <span class:list={['font-display text-5xl font-extrabold tracking-tight', popular ? 'text-cream' : 'text-ink']}>
+      {usd(bundle.price)}
+    </span>
+    <span class:list={['font-semibold', popular ? 'text-pine-100' : 'text-ink-soft']}>/mo</span>
+  </p>
+  {
+    savings > 0 && (
+      <p
+        class:list={[
+          'mt-3 w-fit rounded-xl px-3 py-1.5 text-sm leading-snug',
+          popular ? 'bg-white/10 text-pine-100' : 'bg-pine-100 text-ink-soft',
+        ]}
+      >
+        <strong class:list={['block font-bold', popular ? 'text-cream' : 'text-pine']}>Save {usd(savings)}/mo</strong>
+        vs. {usd(separateTotal(bundle.includes))}/mo separately
+      </p>
+    )
+  }
+
+  {!compact && <p class:list={['mt-5 text-[0.95rem]', popular ? 'text-pine-100' : 'text-ink-soft']}>{text.bestFor}</p>}
+
+  <ul class:list={['mt-6 grid gap-3 border-t pt-6 text-[0.97rem] font-medium', popular ? 'border-white/15' : 'border-line']}>
+    {
+      plans.map((p) => (
+        <li class="flex gap-3">
+          <Icon name="check" class:list={['mt-0.5 size-5 shrink-0', popular ? 'text-honey' : 'text-ember']} />
+          <span>
+            <span class:list={[popular ? 'text-cream' : 'text-ink']}>{p.name}</span>
+            {!compact && <span class:list={['block text-sm font-normal', popular ? 'text-pine-100' : 'text-ink-soft']}>{p.summary}</span>}
+          </span>
+        </li>
+      ))
+    }
+  </ul>
+
+  <div class="mt-auto pt-7">
+    <a
+      href={`/contact/?plan=${bundle.id}`}
+      class:list={['btn w-full', popular ? 'btn-primary' : 'btn-secondary']}
+      aria-label={`Get started with the ${text.name} plan`}
+    >
+      Get started
+      <Icon name="arrow" class="size-4" />
+    </a>
+  </div>
+</article>

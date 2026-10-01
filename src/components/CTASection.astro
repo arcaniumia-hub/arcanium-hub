@@ -1,0 +1,40 @@
+---
+import Icon from './Icon.astro';
+import { bookingHref, site } from '../config/site';
+
+interface Props {
+  title?: string;
+  text?: string;
+}
+const {
+  title = 'Ready to get more customers from Google?',
+  text = 'Book a free 20-minute call. You will talk to the founder, get honest advice, and leave with a clear next step — even if we never work together.',
+} = Astro.props;
+const ext = bookingHref.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {};
+---
+
+<section class="section" aria-labelledby="cta-title">
+  <div class="container-x">
+    <div class="on-dark relative overflow-hidden rounded-[2rem] bg-pine px-6 py-14 text-center sm:px-12 sm:py-20" data-reveal>
+      <div aria-hidden="true" class="absolute -top-24 -left-24 size-72 rounded-full bg-pine-700"></div>
+      <div aria-hidden="true" class="absolute -right-10 -bottom-16 size-56 rounded-full border-[18px] border-honey/25"></div>
+      <div class="relative mx-auto max-w-2xl">
+        <h2 id="cta-title" class="text-3xl font-extrabold text-cream sm:text-5xl">{title}</h2>
+        <p class="mt-5 text-lg text-pine-100">{text}</p>
+        <div class="mt-9 flex flex-col justify-center gap-3 sm:flex-row">
+          <a href={bookingHref} class="btn btn-primary" {...ext}>
+            <Icon name="calendar" />
+            Book a Free Call
+          </a>
+          <a href="/contact/" class="btn btn-ghost-light">
+            Get a Free Quote
+            <Icon name="arrow" class="size-4" />
+          </a>
+        </div>
+        <p class="mt-6 text-sm text-pine-100">
+          English · <span lang="pt">Português</span> · <span lang="es">Español</span> — {site.serviceArea}
+        </p>
+      </div>
+    </div>
+  </div>
+</section>

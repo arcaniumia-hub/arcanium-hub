@@ -1,0 +1,192 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import PageHero from '../components/PageHero.astro';
+import SectionHeader from '../components/SectionHeader.astro';
+import PlanCard from '../components/PlanCard.astro';
+import Steps from '../components/Steps.astro';
+import ServiceCards from '../components/ServiceCards.astro';
+import FAQ from '../components/FAQ.astro';
+import CTASection from '../components/CTASection.astro';
+import Icon from '../components/Icon.astro';
+import { getContent } from '../data';
+import { monthlyPrices, usd, websitePrices } from '../data/prices';
+import { faqSchema, serviceSchema } from '../lib/schema';
+import { getLang } from '../i18n/utils';
+
+const c = getContent(getLang(Astro.currentLocale));
+const { websiteTiers, websiteAddOns, carePlans } = c.pricing;
+const service = c.services.services.find((s) => s.id === 'web-design')!;
+
+const included = [
+  { icon: 'browser', title: 'Mobile-first design', text: 'Most of your visitors are on a phone. We design for that screen first.' },
+  { icon: 'spark', title: 'Fast loading', text: 'Lean code and optimized images, so people do not leave before the page appears.' },
+  { icon: 'pin', title: 'SEO built in', text: 'Clean structure, titles, descriptions and schema so Google understands your business.' },
+  { icon: 'phone', title: 'Built to get calls', text: 'Click-to-call buttons, clear quote forms and a contact option on every page.' },
+  { icon: 'shield', title: 'Secure & accessible', text: 'SSL, spam-protected forms, and design that works for every visitor.' },
+  { icon: 'chart', title: 'Analytics from day one', text: 'Google Analytics and Search Console connected, so you can see what is working.' },
+] as const;
+---
+
+<BaseLayout
+  title={`Small Business Web Design — Websites from ${usd(websitePrices.landing)}`}
+  description={`Custom, mobile-first websites for small businesses, built for speed and SEO. Published prices from ${usd(websitePrices.landing)}. Serving businesses across the US.`}
+  breadcrumbs={[{ name: 'Web Design', href: '/web-design/' }]}
+  schema={[
+    serviceSchema({
+      name: 'Small Business Web Design',
+      serviceType: service.serviceType,
+      description: service.summary,
+      path: '/web-design/',
+      offers: websiteTiers.map((t) => ({ name: t.name, price: websitePrices[t.id], description: t.bestFor })),
+    }),
+    faqSchema(c.faqs.webDesign),
+  ]}
+>
+  <PageHero
+    eyebrow="Website design & development"
+    title="Small business web design that brings in customers"
+    lead="A website should do more than look nice. We build fast, mobile-first sites that show up on Google and make it easy for visitors to call, book or ask for a quote."
+  >
+    <ul class="mt-6 flex flex-wrap gap-2 text-sm font-semibold">
+      <li class="rounded-full bg-sand px-3 py-1">From {usd(websitePrices.landing)}</li>
+      <li class="rounded-full bg-sand px-3 py-1">Live in 1–8 weeks</li>
+      <li class="rounded-full bg-sand px-3 py-1">You own your site</li>
+    </ul>
+  </PageHero>
+
+  <!-- What every website includes -->
+  <section class="section bg-sand/60" aria-labelledby="included-title">
+    <div class="container-x">
+      <SectionHeader
+        id="included-title"
+        eyebrow="Every website includes"
+        title="The essentials, done properly"
+        lead="Whatever tier you choose, these are never optional extras."
+      />
+      <ul class="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {
+          included.map((i) => (
+            <li class="rounded-(--radius-card) bg-white p-6 ring-1 ring-line" data-reveal>
+              <span class="grid size-11 place-items-center rounded-xl bg-pine text-honey">
+                <Icon name={i.icon} />
+              </span>
+              <h3 class="mt-4 text-lg font-bold">{i.title}</h3>
+              <p class="mt-1.5 text-ink-soft">{i.text}</p>
+            </li>
+          ))
+        }
+      </ul>
+    </div>
+  </section>
+
+  <!-- Tiers -->
+  <section class="section" aria-labelledby="tiers-title">
+    <div class="container-x">
+      <SectionHeader
+        id="tiers-title"
+        eyebrow="Website packages"
+        title="Pick the size that fits your business"
+        lead="Every price is a published starting point. Your proposal confirms the exact, fixed price before any work starts."
+      />
+      <div class="grid gap-6 pt-3 md:grid-cols-2 lg:grid-cols-3">
+        {
+          websiteTiers.map((t) => (
+            <PlanCard
+              name={t.name}
+              price={websitePrices[t.id]}
+              unit="from"
+              summary={t.bestFor}
+              features={t.features}
+              meta={[
+                { icon: 'browser', text: t.pages },
+                { icon: 'clock', text: t.timeline },
+              ]}
+              highlight={t.highlight}
+              badge={t.highlight ? 'Most chosen' : undefined}
+              cta={{ label: 'Get a Free Quote', href: '/contact/' }}
+            />
+          ))
+        }
+
+        <!-- Add-ons -->
+        <aside class="flex flex-col rounded-(--radius-card) bg-pine p-6 text-pine-100 sm:p-7" aria-labelledby="addons-title" data-reveal>
+          <h3 id="addons-title" class="text-xl font-bold text-cream sm:text-2xl">Add-ons</h3>
+          <p class="mt-2">Need more? These are quoted in your proposal, so you only pay for what you use.</p>
+          <ul class="mt-5 grid gap-2.5">
+            {
+              websiteAddOns.map((a) => (
+                <li class="flex gap-2.5">
+                  <Icon name="plus" class="mt-1 size-4 shrink-0 text-honey" />
+                  {a}
+                </li>
+              ))
+            }
+          </ul>
+          <p class="mt-auto pt-6 text-sm">
+            On a 12-month plan, your website can be paid in 6 interest-free installments.
+          </p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- Process -->
+  <section class="on-dark section bg-pine-900" aria-labelledby="process-title">
+    <div class="container-x">
+      <div class="mb-10 max-w-2xl sm:mb-14" data-reveal>
+        <p class="eyebrow">Our process</p>
+        <h2 id="process-title" class="h-section text-cream">How we build your website</h2>
+        <p class="mt-4 text-lg text-pine-100">You always know what is happening and what comes next.</p>
+      </div>
+      <Steps steps={c.services.webDesignProcess} dark />
+    </div>
+  </section>
+
+  <!-- Website care -->
+  <section class="section" aria-labelledby="care-title">
+    <div class="container-x">
+      <SectionHeader
+        id="care-title"
+        eyebrow="After launch"
+        title="Website Care plans"
+        lead="Your site needs updates, backups and the occasional change. Let us handle it, so you never have to think about it."
+      />
+      <div class="grid gap-6 pt-3 md:grid-cols-3">
+        {
+          carePlans.map((p) => (
+            <PlanCard
+              name={p.name}
+              price={monthlyPrices[p.id]}
+              unit="mo"
+              summary={p.summary}
+              features={p.features}
+              highlight={p.highlight}
+            />
+          ))
+        }
+      </div>
+      <p class="mt-6 text-ink-soft">
+        Website Care is included in every <a href="/pricing/" class="link">monthly bundle</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- Related services -->
+  <section class="section bg-sand/60 pt-16" aria-labelledby="related-title">
+    <div class="container-x">
+      <SectionHeader
+        id="related-title"
+        eyebrow="Get more from your website"
+        title="A great website works best with traffic"
+        lead="Local SEO brings searchers to your site. Social media keeps you top of mind."
+      />
+      <ServiceCards services={c.services.services} exclude="web-design" />
+      <p class="mt-8 text-ink-soft">
+        Wondering about budget? Read <a href="/blog/how-much-does-a-website-cost/" class="link">How Much Does a Small Business Website Cost in 2026?</a>
+      </p>
+    </div>
+  </section>
+
+  <FAQ items={c.faqs.webDesign} title="Web design questions" />
+  <CTASection title="Let's plan your new website" />
+</BaseLayout>

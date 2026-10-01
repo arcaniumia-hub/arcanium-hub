@@ -1,0 +1,30 @@
+---
+interface Props {
+  steps: { title: string; text: string }[];
+  dark?: boolean;
+}
+const { steps, dark = false } = Astro.props;
+---
+
+<ol class:list={['grid gap-5', steps.length === 3 ? 'md:grid-cols-3' : steps.length === 4 ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-2 lg:grid-cols-5']}>
+  {
+    steps.map((s, i) => (
+      <li
+        class:list={['relative rounded-(--radius-card) p-6', dark ? 'bg-white/[0.06] ring-1 ring-white/10' : 'bg-white ring-1 ring-line']}
+        data-reveal
+      >
+        <span
+          class:list={['font-display text-5xl font-extrabold', dark ? 'text-honey' : 'text-ember']}
+          aria-hidden="true"
+        >
+          {String(i + 1).padStart(2, '0')}
+        </span>
+        <h3 class:list={['mt-3 text-xl font-bold', dark && 'text-cream']}>
+          <span class="sr-only">Step {i + 1}: </span>
+          {s.title}
+        </h3>
+        <p class:list={['mt-2', dark ? 'text-pine-100' : 'text-ink-soft']}>{s.text}</p>
+      </li>
+    ))
+  }
+</ol>

@@ -1,0 +1,22 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import Icon from '../components/Icon.astro';
+import { bookingHref } from '../config/site';
+const ext = bookingHref.startsWith('http') ? { target: '_blank', rel: 'noopener' } : {};
+---
+
+<BaseLayout title="Thank You — Message Received" description="Thanks for contacting Braven Digital. We will reply within one business day." noindex>
+  <section class="container-x grid min-h-[60vh] place-items-center py-20 text-center">
+    <div class="max-w-xl">
+      <span class="mx-auto grid size-16 place-items-center rounded-full bg-pine text-honey"><Icon name="check" class="size-8" /></span>
+      <h1 class="mt-6 text-4xl font-extrabold sm:text-5xl">Thanks — we got your message!</h1>
+      <p class="lead mt-5">
+        You will hear from us within one business day. If it is urgent, book a call and pick a time that suits you.
+      </p>
+      <div class="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+        <a href={bookingHref} class="btn btn-primary" {...ext}><Icon name="calendar" />Book a Free Call</a>
+        <a href="/blog/" class="btn btn-secondary">Read our guides</a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>
