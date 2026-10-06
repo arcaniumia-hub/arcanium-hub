@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Nem toda birra é só birra</title>
+<style>
+  @font-face { font-family: 'Corm'; src: url(fonts/corm.woff2) format('woff2'); font-weight: 300 700; font-style: normal; }
+  @font-face { font-family: 'Corm'; src: url(fonts/cormi.woff2) format('woff2'); font-weight: 300 700; font-style: italic; }
+  @font-face { font-family: 'Mont'; src: url(fonts/mont.woff2) format('woff2'); font-weight: 100 900; font-style: normal; }
+  html, body { margin: 0; background: #111; }
+  canvas { display: block; width: 1080px; height: 1920px; }
+  /* preview mode: scale to window */
+  body.preview { display: flex; justify-content: center; align-items: center; height: 100vh; }
+  body.preview canvas { height: 96vh; width: auto; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script src="anim.js"></script>
+</body>
+</html>

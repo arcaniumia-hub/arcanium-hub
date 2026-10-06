@@ -1,0 +1,3 @@
+out/*
+!out/birra-reel.mp4
+node_modules
