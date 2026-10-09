@@ -6,6 +6,9 @@
 | `solara-reel/` | SOLARA orange drink — before/after product reel (AI clips + edit) |
 | `burger-reel/` | EMBER & BUN burger — before/after product reel (AI clips + edit) |
 | `lumarc-ads/` | LUMARC group-ad images (generic "AI look" flyer vs premium on-brand poster) |
+| `lumarc-motion/` | LUMARC before/after motion graphics (PT, canvas 2D) |
+| `lumarc-motion-en/` | LUMARC before/after motion graphics (EN, three.js 3D) |
+| `onyx-trailer/` | ONYX X1 headphones — basic slideshow vs blockbuster trailer (6 AI clips + trailer edit) |
 
 ## House rule: LUMARC CTA
 
