@@ -1,11 +1,11 @@
-"""Score + sound design for the SILENCE ONE motion piece -> music.wav (48 kHz stereo, 30 s, 120 BPM).
-Cuts: 3.0 drop · 8.0 specs · 14.0 materials · 18.5 noise · 20.0 ANC (silence) · 23.0 hit · 26.5 LUMARC sting
+"""Score + sound design for the SILENCE ONE motion piece -> music.wav (48 kHz stereo, 34.5 s, 120 BPM).
+Cuts: 3.0 drop · 8.0 teardown · 18.0 specs · 23.0 noise · 24.5 ANC (silence) · 27.5 hit · 31.0 LUMARC sting
 """
 import subprocess, math
 from itertools import accumulate
 import numpy as np
 
-SR, DUR = 48000, 30.0
+SR, DUR = 48000, 34.5
 N = int(SR * DUR); BEAT = .5
 rng = np.random.default_rng(11)
 def T(s): return int(round(s * SR))
@@ -59,14 +59,14 @@ for i, at in enumerate((.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5)): tick(at, 1800 + 120 
 impact(3.0, .9); whoosh(3.0, .6, .4)
 
 # --- groove sections
-def groove(a, b, g=1., clap_from=None, plucks=True, bass=True):
+def groove(a, b, g=1., clap_from=None, plucks=True, bass=True, half=False):
     k = 0
     while a + k * BEAT < b - 1e-6:
         at = a + k * BEAT
-        add(mus, KICK, at, .85 * g)
+        if not half or k % 2 == 0: add(mus, KICK, at, .85 * g)
         add(mus, HAT, at + BEAT / 2, .2 * g)
-        if k % 2 == 1: add(mus, HAT, at + BEAT * .75, .08 * g)
-        if (clap_from is None or at >= clap_from) and k % 4 in (1, 3): add(mus, CLAP, at, .2 * g)
+        if k % 2 == 1 or half: add(mus, HAT, at + BEAT * .75, .08 * g)
+        if not half and (clap_from is None or at >= clap_from) and k % 4 in (1, 3): add(mus, CLAP, at, .2 * g)
         k += 1
     bar = 4 * BEAT; c = 0; at = a
     while at < b - 1e-6:
@@ -81,52 +81,68 @@ def groove(a, b, g=1., clap_from=None, plucks=True, bass=True):
                 if s % 8 in (3, 7): continue
                 add(mus, pluck(notes[[0, 2, 4, 1, 3, 2, 4, 1][s % 8]] + 12) * .14 * g, at + s * BEAT / 2)
         at = e; c += 1
-groove(3.0, 18.5, 1., clap_from=5.0, plucks=False)
-# plucks only from 8.0 (the specs section)
-for s in range(int((18.5 - 8.0) / (BEAT / 2))):
-    if s % 8 in (3, 7): continue
-    at = 8.0 + s * BEAT / 2; root, notes = CH[int((at - 3.0) // (8 * BEAT)) % 4]
-    add(mus, pluck(notes[[0, 2, 4, 1, 3, 2, 4, 1][s % 8]] + 12) * .14, at)
-for at in (8.6, 9.5, 10.4, 11.3): tick(at, 2600, .12); tick(at + .45, 3200, .07)   # spec callouts
-whoosh(8.0, .5, .3); whoosh(14.0, .5, .3)
-for at in (15.3, 15.65, 16.0): tick(at, 2000, .08)
+def clack(at, g=.3, f=3200):  # metallic latch release
+    n = T(.18); tt = t_(n)
+    x = hp(noise(n), 2500) * np.exp(-tt / .008) + np.sin(2 * np.pi * f * tt) * np.exp(-tt / .03) * .5 + np.sin(2 * np.pi * f * 1.47 * tt) * np.exp(-tt / .02) * .3
+    add(sfx, x, at, g)
 
-# --- 18.5-20: the world is loud (music muffled, noise floods in) / 20.0 ANC click -> silence
-i0, i1 = T(18.5), T(20.0)
-mus[i0:i1] = np.stack([lp(mus[i0:i1, 0], 500), lp(mus[i0:i1, 1], 500)], 1) * .7
+# --- 3-8: hero
+groove(3.0, 8.0, 1., clap_from=5.0, plucks=False)
+
+# --- 8-18: teardown — half-time groove, scanner, latches, layer clicks, snap back
+whoosh(8.0, .5, .3)
+n = T(1.1); tt = t_(n); scan = np.sin(2 * np.pi * (400 * tt + 360 * tt ** 2)) * (.5 + .5 * np.sin(2 * np.pi * 14 * tt)) * np.sin(np.pi * tt / tt[-1])
+add(sfx, scan, 8.2, .07)
+groove(8.0, 15.9, .75, plucks=True, half=True)
+whoosh(9.4, .7, .32)
+for at in (9.45, 9.65, 9.85): clack(at, .22)
+for at in (9.9, 10.3, 10.7, 11.0): tick(at, 2600, .1)
+whoosh(11.5, .6, .3); whoosh(12.3, .5, .25)
+for i in range(9): clack(12.35 + i * .2, .14, 2400 + 180 * i)
+for i in range(9): tick(12.9 + i * .3, 2800, .08)
+n = T(.95); tt = t_(n); add(mus, lp(noise(n), 3500) * (tt / tt[-1]) ** 3 * .4, 15.9)   # rewind riser
+whoosh(16.85, .9, .45); impact(16.85, .8); clack(16.85, .45, 2000)
+add(mus, pad([62, 65, 69, 72, 76], 1.3, att=.05, rel=.6, bright=1500), 16.85, .9)
+for i in range(5): add(mus, pluck(86 + [0, 3, 7, 10, 12][i], .8, .25) * .07, 17.0 + i * .08)
+
+# --- 18-23: turntable + specs
+whoosh(18.0, .5, .3)
+groove(18.0, 23.0, 1., plucks=True)
+for at in (18.5, 19.1, 19.7, 20.3): tick(at, 2600, .12); tick(at + .45, 3200, .07)
+
+# --- 23-24.5: the world is loud (music muffled, noise floods in) / 24.5 ANC click -> silence
+i0, i1 = T(23.0), T(24.5)
+groove(23.0, 24.5, .6, plucks=False)
+mus[i0:i1] = np.stack([lp(mus[i0:i1, 0], 450), lp(mus[i0:i1, 1], 450)], 1)
 n = i1 - i0; tt = t_(n)
 city = lp(noise(n), 1800) * .5 + lp(noise(n), 200) * 1.6 + hp(noise(n), 3000) * .08 * (np.sin(2 * np.pi * 9 * tt) > .6)
 for at, f in ((.2, 415), (.8, 370), (1.15, 440)):
     m = T(.35); t2 = t_(m); h = np.tanh(3 * (np.sin(2 * np.pi * f * t2) + .7 * np.sin(2 * np.pi * f * 1.26 * t2))) * np.minimum(1, (t2[-1] - t2) / .05)
     city[T(at):T(at) + m] += lp(h, 2500) * .35
-add(sfx, city * np.minimum(1, tt / .15), 18.5, 1.3)
-whoosh(18.5, .4, .3)
-mus[T(20.0):T(23.0)] = 0; sfx[T(20.0):T(20.05)] *= np.linspace(1, 0, T(.05))[:, None]; sfx[T(20.05):T(22.6)] = 0
-n = T(.05); tt = t_(n); add(sfx, np.sin(2 * np.pi * 1900 * tt) * np.exp(-tt / .005) * .7 + np.sin(2 * np.pi * 150 * tt) * np.exp(-tt / .012), 20.0, .5)
-# soft return: pad + plucks, no drums
-add(mus, pad([62, 65, 69, 72], 2.6, att=1.0, rel=.4, bright=1100), 20.5, .9)
-for s in range(5): add(mus, pluck([74, 77, 81, 79, 76][s], 1.2, .3) * .12, 20.7 + s * .5)
-n = T(.7); tt = t_(n); add(mus, lp(noise(n), 4000) * (tt / tt[-1]) ** 3 * .35, 22.3)
+add(sfx, city * np.minimum(1, tt / .15), 23.0, 1.3)
+whoosh(23.0, .4, .3)
+mus[T(24.5):T(27.5)] = 0; sfx[T(24.5):T(24.55)] *= np.linspace(1, 0, T(.05))[:, None]; sfx[T(24.55):T(27.1)] = 0
+n = T(.05); tt = t_(n); add(sfx, np.sin(2 * np.pi * 1900 * tt) * np.exp(-tt / .005) * .7 + np.sin(2 * np.pi * 150 * tt) * np.exp(-tt / .012), 24.5, .5)
+add(mus, pad([62, 65, 69, 72], 2.6, att=1.0, rel=.4, bright=1100), 25.0, .9)
+for s in range(5): add(mus, pluck([74, 77, 81, 79, 76][s], 1.2, .3) * .12, 25.2 + s * .5)
+n = T(.7); tt = t_(n); add(mus, lp(noise(n), 4000) * (tt / tt[-1]) ** 3 * .35, 26.8)
 
-# --- 23-26.5: final hero, full groove
-impact(23.0, 1.0)
-groove(23.0, 26.5, 1.)
-for s in range(int(3.5 / (BEAT / 2))):
-    if s % 8 in (3, 7): continue
-    root, notes = CH[(s // 16) % 4]; add(mus, pluck(notes[[0, 2, 4, 1, 3, 2, 4, 1][s % 8]] + 12) * .14, 23.0 + s * BEAT / 2)
-whoosh(26.5, .5, .35)
+# --- 27.5-31: final hero, full groove
+impact(27.5, 1.0)
+groove(27.5, 31.0, 1.)
+whoosh(31.0, .5, .35)
 
-# --- 26.5: LUMARC sting — hit + shimmering chord that rings out
-impact(26.5, .7)
+# --- 31: LUMARC sting — hit + shimmering chord that rings out
+impact(31.0, .7)
 n = T(3.5); tt = t_(n); sh = np.zeros(n, np.float32)
 for m in (50, 57, 62, 66, 69, 74, 78):
     for det in (-.1, .1): sh += np.sin(2 * np.pi * mtof(m) * (1 + det / 100) * tt) * (.12 if m < 60 else .06)
 sh *= np.minimum(1, tt / .03) * np.exp(-tt / 1.4)
-add(mus, sh, 26.5, .9)
-for i in range(6): add(mus, pluck(86 + [0, 3, 7, 10, 12, 15][i], .8, .2) * .08, 26.6 + i * .09)
+add(mus, sh, 31.0, .9)
+for i in range(6): add(mus, pluck(86 + [0, 3, 7, 10, 12, 15][i], .8, .2) * .08, 31.1 + i * .09)
 
 mix = mus * .8 + sfx
-mix[T(20.05):T(20.5)] = 0
+mix[T(24.55):T(25.0)] = 0
 mix[-T(.4):] *= np.linspace(1, 0, T(.4))[:, None]
 mix = np.tanh(mix * 1.1) / 1.1; mix = mix / (np.abs(mix).max() + 1e-6) * .89
 subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', 'music.wav'],

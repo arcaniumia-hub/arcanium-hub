@@ -1,6 +1,6 @@
-// SILENCE ONE — product launch motion graphics (1080x1920, 30 fps, 30 s) + LUMARC CTA.
+// SILENCE ONE — product launch motion graphics (1080x1920, 30 fps, 34.5 s) + LUMARC CTA.
 // window.renderAt(t) draws one deterministic frame; opened normally, the page plays itself in real time.
-const W = 1080, H = 1920, DUR = 30;
+const W = 1080, H = 1920, DUR = 34.5;
 const ctx = document.getElementById('c').getContext('2d');
 const $ = id => document.getElementById(id);
 const IMG = { hero: $('hero'), macro: $('macro'), logo: $('logo'), o0: $('o0'), o1: $('o1'), o2: $('o2'), o3: $('o3') };
@@ -161,7 +161,7 @@ function sHero(t) {
   const lt = t - 3; bgInk(t, 1);
   const k = eout(seg(lt, 0, 2.4)), s = lerp(1.2, 1.0, k) + .015 * lt;
   const out = eio(seg(lt, 4.65, 5.0));
-  product(IMG.hero, W / 2, 1010 - 30 * k, 1000 * s * (1 + .15 * out), eout(seg(lt, 0, 1.1)) * (1 - out));
+  product(IMG.hero, W / 2, 1010 - 30 * k, 1000 * s * (1 + .06 * out), eout(seg(lt, 0, 1.1)));
   sweep(40, 460, 1000, 1100, seg(lt, .35, 1.7), .2);
   sweep(40, 460, 1000, 1100, seg(lt, 3.3, 4.4), .12);
   dust(t, 70, .9);
@@ -173,16 +173,16 @@ function sHero(t) {
   text('Adaptive noise-cancelling headphones', W / 2, 1770, { size: 28, w: 300, color: MUTED, alpha: a, spacing: 1 });
 }
 
-// ---------- 3: turntable + specs (8 – 14)
+// ---------- 4: turntable + specs (18 – 23)
 const SPECS = [
-  { t: .6, num: '−42', unit: 'dB', label: 'ADAPTIVE NOISE CANCELLING', side: 'L', y: 330, px: 395, py: 820 },
-  { t: 1.5, num: 40, unit: 'h', label: 'BATTERY LIFE', side: 'R', y: 330, px: 700, py: 690 },
-  { t: 2.4, num: '360°', unit: '', label: 'SPATIAL AUDIO', side: 'L', y: 1560, px: 405, py: 1180 },
-  { t: 3.3, num: 250, unit: 'g', label: 'FEATHERWEIGHT BUILD', side: 'R', y: 1560, px: 690, py: 1150 },
+  { t: .5, num: '−42', unit: 'dB', label: 'ADAPTIVE NOISE CANCELLING', side: 'L', y: 330, px: 395, py: 820 },
+  { t: 1.1, num: 40, unit: 'h', label: 'BATTERY LIFE', side: 'R', y: 330, px: 700, py: 690 },
+  { t: 1.7, num: '360°', unit: '', label: 'SPATIAL AUDIO', side: 'L', y: 1560, px: 405, py: 1180 },
+  { t: 2.3, num: 250, unit: 'g', label: 'FEATHERWEIGHT BUILD', side: 'R', y: 1560, px: 690, py: 1150 },
 ];
 function sOrbit(t) {
-  const lt = t - 8; bgInk(t, .9);
-  const out = eio(seg(lt, 5.6, 6.0));
+  const lt = t - 18; bgInk(t, .9);
+  const out = eio(seg(lt, 4.6, 5.0));
   const cx = W / 2, cy = 960;
   // HUD rings
   ctx.save(); ctx.globalAlpha = (1 - out) * .9; ctx.strokeStyle = 'rgba(230,200,150,.28)'; ctx.lineWidth = 1.5;
@@ -195,7 +195,7 @@ function sOrbit(t) {
     ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * 508, cy + Math.sin(a) * 508); ctx.stroke();
   }
   ctx.restore();
-  const f = 39 * eio(seg(lt, 0, 5.8));
+  const f = 39 * eio(seg(lt, 0, 4.9));
   orbitFrame(f, cx, cy, 800 * (1 + .04 * eout(seg(lt, 0, 6))) * (1 + .1 * out), eout(seg(lt, 0, .5)) * (1 - out));
   dust(t, 45, .7);
   SPECS.forEach((s, i) => {
@@ -221,40 +221,10 @@ function sOrbit(t) {
   });
 }
 
-// ---------- 4: materials (14 – 18.5)
-function sMaterials(t) {
-  const lt = t - 14; bgInk(t, .7);
-  const out = eio(seg(lt, 4.15, 4.5));
-  ctx.save(); ctx.globalAlpha = 1 - out;
-  maskText('Crafted,', W / 2, 300, seg(lt, .15, .6), { size: 104, w: 200 });
-  maskText('not assembled.', W / 2, 418, seg(lt, .35, .8), { size: 104, w: 200, gold: true });
-  // macro window: opens from a gold line
-  const x = 60, y = 540, w = 960, h = 860, k = eio(seg(lt, .2, 1.1));
-  const hh = h * k;
-  ctx.save(); ctx.beginPath(); ctx.roundRect(x, y + (h - hh) / 2, w, Math.max(2, hh), 34); ctx.clip();
-  ctx.fillStyle = '#000'; ctx.fillRect(x, y, w, h);
-  if (IMG.macro.naturalWidth) {
-    const s = lerp(1.18, 1.0, eout(seg(lt, .2, 4.4))), iw = w * 1.04 * s, ih = iw * IMG.macro.naturalHeight / IMG.macro.naturalWidth;
-    ctx.drawImage(IMG.macro, x + w / 2 - iw / 2 - 30 * seg(lt, 0, 4.5), y + h / 2 - ih / 2, iw, ih);
-  }
-  ctx.restore();
-  sweep(x, y, w, h, seg(lt, 1.2, 2.4), .18, -.5);
-  ctx.save(); ctx.strokeStyle = 'rgba(230,200,150,.35)'; ctx.lineWidth = 1.5; ctx.globalAlpha = k;
-  ctx.beginPath(); ctx.roundRect(x, y + (h - hh) / 2, w, Math.max(2, hh), 34); ctx.stroke(); ctx.restore();
-  const MAT = [['01', 'Protein leather cushions'], ['02', 'Champagne anodized aluminum'], ['03', 'Woven acoustic fabric']];
-  MAT.forEach(([n, s], i) => {
-    const a = eout(seg(lt, 1.3 + i * .35, 1.8 + i * .35)), yy = 1500 + i * 110, dx = (1 - a) * -60;
-    text(n, 90 + dx, yy, { size: 30, w: 500, gold: true, align: 'left', alpha: a, spacing: 2 });
-    text(s, 170 + dx, yy, { size: 40, w: 300, align: 'left', alpha: a });
-    line(90, yy + 36, 990, yy + 36, eout(seg(lt, 1.4 + i * .35, 2.2 + i * .35)), 'rgba(230,200,150,.25)', 1);
-  });
-  ctx.restore();
-}
-
-// ---------- 5: the silence demo (18.5 – 23)
+// ---------- 5: the silence demo (23 – 27.5)
 const ANC = 1.5;  // lt when the switch flips
 function sSilence(t) {
-  const lt = t - 18.5; bgInk(t, lt > ANC ? 1 : .3);
+  const lt = t - 23; bgInk(t, lt > ANC ? 1 : .3);
   const out = eio(seg(lt, 4.15, 4.5)), on = eout(seg(lt, ANC, ANC + .7));
   const shake = lt < ANC ? (1 - seg(lt, 0, .2) * 0) * 6 : 0;
   ctx.save(); ctx.translate((rnd(Math.floor(t * 30)) - .5) * shake, (rnd(Math.floor(t * 30) + 7) - .5) * shake); ctx.globalAlpha = 1 - out;
@@ -290,9 +260,9 @@ function sSilence(t) {
   if (lt > ANC) flash(.35 * (1 - seg(lt, ANC, ANC + .25)), '255,240,215');
 }
 
-// ---------- 6: final hero (23 – 26.5)
+// ---------- 6: final hero (27.5 – 31)
 function sFinal(t) {
-  const lt = t - 23; bgInk(t, 1.2);
+  const lt = t - 27.5; bgInk(t, 1.2);
   const out = eio(seg(lt, 3.15, 3.5)), k = eout(seg(lt, 0, 1.6)), s = lerp(1.1, 1.0, k);
   const pw = 860 * s, cy = 800;
   const ph = pw * 1075 / 1000;
@@ -313,7 +283,7 @@ function sFinal(t) {
   flash(.55 * (1 - seg(lt, 0, .3)), '255,240,215');
 }
 
-// ---------- 7: LUMARC CTA (26.5 – 30)
+// ---------- 7: LUMARC CTA (31 – 34.5)
 function bgBrand(t) {
   ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
   [[.2, .25, 700, '59,91,255'], [.85, .7, 760, '139,61,255'], [.5, 1.05, 650, '106,85,255']].forEach(([x, y, r, c], i) => {
@@ -327,7 +297,7 @@ function bgBrand(t) {
   ctx.stroke();
 }
 function sCTA(t) {
-  const lt = t - 26.5; bgBrand(t);
+  const lt = t - 31; bgBrand(t);
   const k = eout(seg(lt, .1, .7));
   if (IMG.logo.naturalWidth) {
     ctx.save(); ctx.globalAlpha = k; const lw = 700 * (.9 + .1 * k), lh = lw * IMG.logo.naturalHeight / IMG.logo.naturalWidth;
@@ -344,18 +314,75 @@ function sCTA(t) {
 }
 
 // =====================================================================
-const CUTS = [3, 8, 14, 18.5, 23, 26.5];
+// ---------- 3: teardown — procedural 3D exploded view (8 – 18), see teardown.js
+const STACK = [['shell', 'Stone-finish shell'], ['ring', 'Champagne ring · ANC mics'], ['pcb', 'ANC-H2 noise processor'], ['battery', '40-hour Li-ion cell'],
+  ['magnet', 'Neodymium magnet'], ['coil', 'Copper voice coil'], ['driver', '40 mm titanium driver'], ['mesh', 'Acoustic mesh'], ['cushion', 'Protein-leather cushion']];
+const GLOBAL = [['sleeve', 'Woven acoustic fabric', 1.9], ['core', 'Aerospace aluminum band', 2.3], ['slider', 'Champagne sliders', 2.7], ['cushionL', 'Memory-foam cushions', 3.0]];
+function callout(anchor, num, label, a, ly) {
+  if (a <= .01 || !anchor || !anchor[2]) return;
+  const [ax, ay0] = anchor, ay = clamp(ly === undefined ? ay0 : ly, 110, 1810), L = ax < W / 2, tx = L ? 64 : W - 64, lx = L ? 330 : W - 330;
+  ctx.save(); ctx.globalAlpha = a;
+  const by = anchor[1];
+  ctx.fillStyle = GOLD; ctx.beginPath(); ctx.arc(ax, by, 6, 0, TAU); ctx.fill();
+  ctx.strokeStyle = 'rgba(230,200,150,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(ax, by, 14, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(ax, by);
+  const k = eout(a); ctx.lineTo(lerp(ax, lx, k), lerp(by, ay, k)); ctx.lineTo(lerp(ax, tx, k), ay); ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.globalAlpha = a * .55; const pg = ctx.createLinearGradient(L ? 0 : W, 0, L ? 520 : W - 520, 0);
+  pg.addColorStop(0, 'rgba(5,5,6,.9)'); pg.addColorStop(1, 'rgba(5,5,6,0)'); ctx.fillStyle = pg; ctx.fillRect(L ? 0 : W - 520, ay - 50, 520, 110); ctx.restore();
+  text(num, tx, ay - 16, { size: 24, w: 500, gold: true, align: L ? 'left' : 'right', alpha: a, spacing: 3 });
+  text(label, tx, ay + 40, { size: 32, w: 300, align: L ? 'left' : 'right', alpha: a });
+}
+function blueprint(t, a) {
+  if (a <= .01) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.strokeStyle = 'rgba(230,200,150,.06)'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let x = 0; x <= W; x += 60) { ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, H); }
+  for (let y = 0; y <= H; y += 60) { ctx.moveTo(0, y + .5); ctx.lineTo(W, y + .5); }
+  ctx.stroke(); ctx.restore();
+}
+function sTeardown(t) {
+  const lt = t - 8; bgInk(t, .9);
+  const r = window.TD ? window.TD.render(lt) : null;
+  blueprint(t, r ? .5 + .5 * Math.max(r.ex1, r.iso) : 0);
+  const scan = eio(seg(lt, .2, 1.3)), sy = lerp(-40, H + 40, scan);
+  if (r) {  // 3D above the scan line …
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, sy); ctx.clip(); ctx.globalCompositeOperation = 'lighten'; ctx.drawImage(window.TD.canvas, 0, 0); ctx.restore();
+  }
+  if (scan < 1) {  // … the photo below it
+    ctx.save(); ctx.beginPath(); ctx.rect(0, sy, W, H - sy); ctx.clip(); product(IMG.hero, W / 2, 980, 1000 * 1.075 * 1.06); ctx.restore();
+    const g = ctx.createLinearGradient(0, sy - 90, 0, sy + 6); g.addColorStop(0, 'rgba(230,200,150,0)'); g.addColorStop(1, 'rgba(230,200,150,.35)');
+    ctx.fillStyle = g; ctx.fillRect(0, sy - 90, W, 96); ctx.fillStyle = '#fff3dc'; ctx.fillRect(0, sy - 1, W, 3);
+    text('SCANNING', 64, sy - 18, { size: 20, w: 500, spacing: 6, color: GOLD, align: 'left', alpha: Math.sin(Math.PI * scan) });
+  }
+  dust(t, 35, .5);
+  if (!r) return;
+  text('INSIDE SILENCE ONE', W / 2, 180, { size: 30, w: 500, spacing: 14, color: MUTED, alpha: eout(seg(lt, 1.4, 1.9)) * (1 - seg(lt, 3.3, 3.6)) });
+  const g0 = 1 - seg(lt, 3.3, 3.6);
+  GLOBAL.forEach(([n, s, at], i) => callout(r.an[n], '0' + (i + 1), s, eout(seg(lt, at, at + .35)) * g0));
+  // tower labels: keep same-side labels at least 96 px apart
+  const L = STACK.map(([n, s], i) => ({ n, s, i, a: eout(seg(lt, 4.9 + i * .3, 5.25 + i * .3)) * (1 - seg(lt, 7.6, 7.95)), an: r.an[n] }))
+    .filter(o => o.a > .01 && o.an && o.an[2]);
+  [true, false].forEach(left => {
+    const side = L.filter(o => (o.an[0] < W / 2) === left).sort((p, q) => p.an[1] - q.an[1]);
+    let prev = -1e9; side.forEach(o => { o.ly = Math.max(o.an[1], prev + 96); prev = o.ly; });
+  });
+  L.forEach(o => callout(o.an, String(o.i + 1).padStart(2, '0'), o.s, o.a, o.ly));
+  maskText('Engineered for silence.', W / 2, 1720, seg(lt, 9.0, 9.4), { size: 64, w: 250, gold: true });
+  sweep(0, 300, W, 1300, seg(lt, 8.9, 9.8), .16);
+  if (lt > 9.6) { ctx.fillStyle = `rgba(5,5,6,${eio(seg(lt, 9.6, 10))})`; ctx.fillRect(0, 0, W, H); }
+}
+
+const CUTS = [3, 8, 18, 23, 27.5, 31];
 function renderAt(t) {
   T = t; ctx.save();
   if (t < 3) sIntro(t);
   else if (t < 8) sHero(t);
-  else if (t < 14) sOrbit(t);
-  else if (t < 18.5) sMaterials(t);
-  else if (t < 23) sSilence(t);
-  else if (t < 26.5) sFinal(t);
+  else if (t < 18) sTeardown(t);
+  else if (t < 23) sOrbit(t);
+  else if (t < 27.5) sSilence(t);
+  else if (t < 31) sFinal(t);
   else sCTA(t);
-  CUTS.forEach(c => { const d = 1 - Math.abs(t - c) / .1; if (d > 0 && c !== 23) flash(.35 * d, '5,5,6'); });
-  vignette(t < 26.5 ? .55 : .45);
+  CUTS.forEach(c => { const d = 1 - Math.abs(t - c) / .1; if (d > 0 && c !== 27.5 && c !== 8) flash(.35 * d, '5,5,6'); });
+  vignette(t < 31 ? .55 : .45);
   grain(.055);
   ctx.restore();
 }
@@ -364,6 +391,7 @@ window.ready = (async () => {
   makeNoise();
   await Promise.all(['200', '250', '300', '400', '500'].map(w => document.fonts.load(`${w} 40px Outfit`)));
   await Promise.all(Object.values(IMG).map(im => im.complete ? 1 : new Promise(r => { im.onload = im.onerror = r; })));
+  await new Promise(r => { const chk = () => window.TD ? r() : setTimeout(chk, 30); chk(); });
   window.renderAt = renderAt; renderAt(0); return true;
 })();
 

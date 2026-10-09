@@ -10,7 +10,7 @@
 | `lumarc-motion-en/` | LUMARC before/after motion graphics (EN, three.js 3D) |
 | `onyx-trailer/` | ONYX X1 headphones — basic slideshow vs blockbuster trailer (6 AI clips + trailer edit) |
 | `silence-ad/` | 16:9 headphone ad — flat promo post shatters into a premium commercial (11 Cinema Studio 3.0 clips, ElevenLabs VO, synthesized score) |
-| `silence-motion/` | SILENCE ONE product launch — HTML/canvas motion graphics (open `index.html` to play) + LUMARC CTA |
+| `silence-motion/` | SILENCE ONE product launch — HTML/canvas motion graphics with a procedural three.js exploded-view teardown (`npm run build`, then open `index.html`) + LUMARC CTA |
 
 ## House rule: LUMARC CTA
 

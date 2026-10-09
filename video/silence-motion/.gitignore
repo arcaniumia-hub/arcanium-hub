@@ -3,3 +3,4 @@ render.log
 music.wav
 *.mp4
 *.zip
+node_modules/

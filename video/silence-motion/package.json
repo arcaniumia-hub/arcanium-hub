@@ -1,0 +1,10 @@
+{
+  "name": "silence-motion",
+  "private": true,
+  "scripts": {
+    "build": "esbuild teardown.js --bundle --format=iife --minify --outfile=teardown.bundle.js",
+    "render": "node render.cjs"
+  },
+  "dependencies": { "three": "0.169.0" },
+  "devDependencies": { "esbuild": "0.28.2" }
+}

@@ -1,10 +1,10 @@
-// Renders the 900 frames to silence-motion.mp4 (needs music.wav from sound.py).
+// Renders every frame (DUR × 30) to silence-motion.mp4 (needs music.wav from sound.py and teardown.bundle.js from `npm run build`).
 // node render.cjs              -> video
 // node render.cjs stills 2 9.8 -> JPEG stills (s<t>.jpg)
 const { chromium } = require('playwright'); const { spawn } = require('child_process'); const path = require('path');
 (async () => {
   const mode = process.argv[2] || 'video';
-  const b = await chromium.launch({ args: ['--allow-file-access-from-files', '--disable-web-security'] });
+  const b = await chromium.launch({ args: ['--allow-file-access-from-files', '--disable-web-security', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const pg = await b.newPage({ viewport: { width: 1080, height: 1920 } });
   await pg.addInitScript(() => { window.__RENDER = true; });
   pg.on('pageerror', e => console.error('PAGEERR', e.message));
@@ -19,7 +19,8 @@ const { chromium } = require('playwright'); const { spawn } = require('child_pro
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', '30', '-c:v', 'mjpeg', '-i', '-', '-i', 'music.wav',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-af', 'loudnorm=I=-14:TP=-1.5:LRA=11', '-ar', '48000',
     '-movflags', '+faststart', '-shortest', 'silence-motion.mp4'], { stdio: ['pipe', 'inherit', 'inherit'] });
-  for (let f = 0; f < 900; f++) {
+  const N = Math.round(await pg.evaluate(() => DUR) * 30);
+  for (let f = 0; f < N; f++) {
     const d = await pg.evaluate(t => { renderAt(t); return document.getElementById('c').toDataURL('image/jpeg', .95); }, f / 30);
     if (!ff.stdin.write(Buffer.from(d.slice(23), 'base64'))) await new Promise(r => ff.stdin.once('drain', r));
     if (f % 150 === 0) console.log('frame', f);
