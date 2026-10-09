@@ -70,7 +70,7 @@ T_ONYX = text_sprite(['ONYX'], F(CINZEL, 260, 700), (255, 255, 255), spacing=40,
 CARDS = {12.1: text_sprite(['SILENCE', 'THE WORLD.'], F(CINZEL, 100, 700), (255, 255, 255), spacing=14, gold=True, glow=((255, 160, 50), 26, 1.1)),
          19.9: text_sprite(['HEAR', 'EVERYTHING.'], F(CINZEL, 100, 700), (255, 255, 255), spacing=14, gold=True, glow=((255, 160, 50), 26, 1.1))}
 SPECS = [(13.4, 'ACTIVE NOISE CANCELLING'), (16.5, 'SPATIAL AUDIO'), (17.7, '40-HOUR BATTERY'), (18.9, 'ZERO-LATENCY MODE')]
-T_SPECS = [text_sprite([s], F(OUTFIT, 64, 600), (255, 255, 255), spacing=8, glow=((0, 0, 0), 18, 1.2)) for _, s in SPECS]
+T_SPECS = [text_sprite([s], F(OUTFIT, 52, 600), (255, 255, 255), spacing=6, glow=((0, 0, 0), 18, 1.2)) for _, s in SPECS]
 T_X1 = text_sprite(['ONYX X1'], F(CINZEL, 150, 700), (255, 255, 255), spacing=22, gold=True, glow=((255, 160, 50), 34, 1.2))
 T_TAG = text_sprite(['HEAR THE IMPOSSIBLE.'], F(OUTFIT, 46, 400), (230, 225, 215), spacing=14)
 # basic slideshow pieces
@@ -143,7 +143,7 @@ FLIPS = [FLIPS[i] for i in np.random.default_rng(2).permutation(len(FLIPS))]
 
 before = Image.open('before.png').convert('RGB'); hero = cover(Image.open('hero.png'))
 enc = subprocess.Popen(['ffmpeg', '-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-', '-i', 'mix.wav',
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-shortest', sys.argv[1]], stdin=subprocess.PIPE)
+    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '14M', '-bufsize', '20M', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', '-shortest', sys.argv[1]], stdin=subprocess.PIPE)
 IMPACTS = [7.6, 9.85, 12.1, 12.9, 15.9, 19.9, 20.6, 23.6, 24.65, 25.8]
 _gl = Image.new('RGBA', (W, H), (0, 0, 0, 0)); ImageDraw.Draw(_gl).ellipse((W / 2 - 480, 760 - 480, W / 2 + 480, 760 + 480), fill=(106, 85, 255, 70))
 END_GLOW = _gl.filter(ImageFilter.GaussianBlur(150))
