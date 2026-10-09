@@ -130,29 +130,26 @@ EDGES = []
 def build_shards():
     global FROZEN
     FROZEN = Image.fromarray(np.asarray(before_frame(4.6)))  # stickers already gone
-    nx, ny = 10, 6
-    P = {}
-    for j in range(ny + 1):
-        for i in range(nx + 1):
-            jx = 0 if i in (0, nx) else (rnd(i * 31 + j * 7) - .5) * .7
-            jy = 0 if j in (0, ny) else (rnd(i * 17 + j * 43) - .5) * .7
-            P[i, j] = ((i + jx) * W / nx, (j + jy) * H / ny)
-    k = 0
-    for j in range(ny):
-        for i in range(nx):
-            a, b, c, d = P[i, j], P[i + 1, j], P[i + 1, j + 1], P[i, j + 1]
-            for tri in ((a, b, c), (a, c, d)) if (i + j) % 2 else ((a, b, d), (b, c, d)):
-                xs = [p[0] for p in tri]; ys = [p[1] for p in tri]
-                x0, y0, x1, y1 = int(min(xs)), int(min(ys)), int(math.ceil(max(xs))) + 1, int(math.ceil(max(ys))) + 1
-                m = Image.new('L', (x1 - x0, y1 - y0), 0)
-                ImageDraw.Draw(m).polygon([(p[0] - x0, p[1] - y0) for p in tri], fill=255)
-                patch = FROZEN.crop((x0, y0, x1, y1)).convert('RGBA'); patch.putalpha(m)
-                cx, cy = sum(xs) / 3, sum(ys) / 3
-                dx, dy = cx - W / 2, cy - H / 2; dist = math.hypot(dx, dy) + 1
-                EDGES.extend([(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])])
-                SHARDS.append(dict(p=patch, cx=cx, cy=cy, ux=dx / dist, uy=dy / dist, dist=dist,
-                                   v=900 + 1300 * rnd(k * 3.3), rot=(rnd(k * 5.1) - .5) * 160, delay=.12 * dist / 1100 * rnd(k + 9) ))
-                k += 1
+    def rr(p): return math.hypot(p[0] - W / 2, (p[1] - H / 2) / .9)
+    def near(A, r): return min(range(len(A)), key=lambda n: abs(rr(A[n]) - r))
+    k = 0; bands = (0, 150, 330, 560, 900, 9999)
+    for c in range(15):  # shards follow the crack web: wedges between radial cracks, cut by the rings
+        A, B = CRACKS[c], CRACKS[(c + 1) % 15]
+        for b0, b1 in zip(bands, bands[1:]):
+            ia0, ia1, ib0, ib1 = near(A, b0), near(A, b1), near(B, b0), near(B, b1)
+            poly = A[ia0:ia1 + 1] + B[ib0:ib1 + 1][::-1]
+            if len(poly) < 3: continue
+            xs = [p[0] for p in poly]; ys = [p[1] for p in poly]
+            x0, y0 = max(0, int(min(xs))), max(0, int(min(ys))); x1, y1 = min(W, int(math.ceil(max(xs))) + 1), min(H, int(math.ceil(max(ys))) + 1)
+            if x1 - x0 < 2 or y1 - y0 < 2: continue
+            m = Image.new('L', (x1 - x0, y1 - y0), 0)
+            ImageDraw.Draw(m).polygon([(p[0] - x0, p[1] - y0) for p in poly], fill=255)
+            patch = FROZEN.crop((x0, y0, x1, y1)).convert('RGBA'); patch.putalpha(m)
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            dx, dy = cx - W / 2, cy - H / 2; dist = math.hypot(dx, dy) + 1
+            SHARDS.append(dict(p=patch, cx=cx, cy=cy, ux=dx / dist, uy=dy / dist, dist=dist,
+                               v=700 + 1100 * rnd(k * 3.3), rot=(rnd(k * 5.1) - .5) * 120, delay=.2 * dist / 1300 * (.5 + .5 * rnd(k + 9))))
+            k += 1
 CRACKS = []
 for c in range(15):  # radial glass cracks with jagged kinks, plus web rings between them
     a0 = c / 15 * 2 * math.pi + (rnd(c * 3.7) - .5) * .3; pts = [(W / 2, H / 2)]; r = 0
@@ -178,7 +175,7 @@ def shatter(under, t):
     base = Image.fromarray(under).convert('RGBA')
     for s in SHARDS:
         q = clamp((u - s['delay']) / (1 - s['delay']))
-        e = q ** 1.6
+        e = q ** 2
         zs = 1 + 4.5 * e * (1.4 - s['dist'] / 1300)
         if zs > 7 or q >= 1: continue
         x = s['cx'] + s['ux'] * (s['v'] * e + 260 * e * zs); y = s['cy'] + s['uy'] * (s['v'] * e + 260 * e * zs) + 300 * e * e
