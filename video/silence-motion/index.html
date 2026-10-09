@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SILENCE ONE — motion</title>
+<style>
+@font-face{font-family:'Outfit';src:url(fonts/outfit.woff2) format('woff2');font-weight:100 900}
+html,body{margin:0;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden}
+canvas{display:block}
+#play{position:fixed;inset:auto 0 32px 0;margin:auto;width:max-content;padding:14px 28px;border-radius:40px;border:1px solid rgba(230,200,150,.5);
+  background:rgba(5,5,6,.7);color:#e6c896;font:500 16px Outfit,sans-serif;letter-spacing:3px;cursor:pointer}
+</style></head>
+<body><canvas id="c" width="1080" height="1920"></canvas>
+<button id="play">▶ PLAY WITH SOUND</button>
+<audio id="music" src="music.mp3" preload="auto"></audio>
+<div style="display:none">
+<img id="hero" src="img/hero.jpg"><img id="macro" src="img/macro.jpg"><img id="logo" src="img/logo.png">
+<img id="o0" src="img/orbit0.jpg"><img id="o1" src="img/orbit1.jpg"><img id="o2" src="img/orbit2.jpg"><img id="o3" src="img/orbit3.jpg">
+</div>
+<script src="anim.js"></script></body></html>
