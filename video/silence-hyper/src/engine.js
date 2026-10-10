@@ -114,7 +114,9 @@ export function createEngine() {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2)); quad.frustumCulled = false; quadScene.add(quad);
   const sm = (frag, uniforms, extra = {}) => new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: frag, uniforms, depthTest: false, depthWrite: false, ...extra });
   const mCompose = sm(COMPOSE, { tBg: { value: BG.t }, tFg: { value: FG.t }, t3d: { value: rt3d.texture }, has3d: { value: 0 }, exposure: { value: 1 }, weight: { value: 1 } });
-  const mComposeAcc = sm(COMPOSE, mCompose.uniforms, { blending: THREE.AdditiveBlending, transparent: true });
+  // sub-frame accumulation: plain ONE/ONE add of (c*w) so the weights sum to exactly 1 (AdditiveBlending would square them)
+  const mComposeAcc = sm(COMPOSE, mCompose.uniforms, { transparent: true, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor });
   const mBright = sm(BRIGHT, { tSrc: { value: rtComp.texture }, texel: { value: new THREE.Vector2(1 / W, 1 / H) }, threshold: { value: .7 }, knee: { value: .25 } });
   const mBlur = sm(BLUR, { tSrc: { value: null }, dir: { value: new THREE.Vector2() } });
   const U = { tComp: { value: rtComp.texture }, tB1: { value: rtQa.texture }, tB2: { value: rtEa.texture }, res: { value: new THREE.Vector2(W, H) }, seed: { value: 0 } };
@@ -148,9 +150,12 @@ export function createEngine() {
     E.fx = { ...FX_DEFAULTS, zoomCenter: [.5, .5], shake: [0, 0], flashColor: [1, 1, 1], tint: [1, 1, 1] };
     E._used3d = false;
     const b = E.bg, f = E.fg;
-    b.setTransform(1, 0, 0, 1, 0, 0); b.globalAlpha = 1; b.globalCompositeOperation = 'source-over'; b.filter = 'none';
+    // full context reset every frame: clears pixels AND any state a scene leaked (unbalanced save(), clip, transform, filter...)
+    for (const c of [b, f]) {
+      if (c.reset) c.reset();
+      else { c.setTransform(1, 0, 0, 1, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; c.filter = 'none'; c.clearRect(0, 0, W, H); }
+    }
     b.fillStyle = E.clearColor; b.fillRect(0, 0, W, H);
-    f.setTransform(1, 0, 0, 1, 0, 0); f.globalAlpha = 1; f.globalCompositeOperation = 'source-over'; f.filter = 'none'; f.clearRect(0, 0, W, H);
     drawFrame(t);
     BG.t.needsUpdate = true; FG.t.needsUpdate = true;
     mCompose.uniforms.has3d.value = E._used3d ? 1 : 0; mCompose.uniforms.exposure.value = E.fx.exposure; mCompose.uniforms.weight.value = weight;

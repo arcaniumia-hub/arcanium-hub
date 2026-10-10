@@ -7,7 +7,9 @@ import SCENES from './scenes/index.js';
 const E = createEngine();
 SCENES.forEach(s => { s.t0 = b2s(s.start); s.t1 = b2s(s.end); });
 const DUR = SCENES[SCENES.length - 1].t1;
-const sceneAt = t => SCENES.find(s => t >= s.t0 && t < s.t1) || SCENES[SCENES.length - 1];
+// beat boundaries are floats (b2s(24) = 9.600000000000001) while frames are f/30: compare with an epsilon
+const EPS = 1e-6;
+const sceneAt = t => SCENES.find(s => t >= s.t0 - EPS && t < s.t1 - EPS) || SCENES[SCENES.length - 1];
 
 // global edit layer: a short punch on every hard cut unless the incoming scene opts out (cutIn: 'none')
 function editFX(t, s) {
@@ -22,7 +24,8 @@ function drawFrame(t) {
   editFX(t, s);
 }
 function renderAt(t) {
-  t = clamp(t, 0, DUR - 1e-4);
+  // nudge by 20 µs so a frame that lands exactly on a beat counts as ON it (t/BEAT >= n) despite float error
+  t = clamp(t + 2e-5, 0, DUR - 1e-4);
   const s = sceneAt(t);
   const mb = s.motionBlur ? s.motionBlur(t - s.t0, t) : 1;
   E.renderFrame(t, drawFrame, mb);
