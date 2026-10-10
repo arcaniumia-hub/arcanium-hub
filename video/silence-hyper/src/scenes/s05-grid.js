@@ -17,7 +17,14 @@ const TX = 607.5, TY = 1020;
 const DIVE_F0 = 330 - 288;                                // local frame of b27.5
 const MITOSIS = 5;
 const DIVE_S = 16.8;                                       // the target cell (135x120) ends at 2160x1920: it IS the frame
-const DIVE_IN = 960 / .64 / DIVE_S / (120 * 1.06);        // inner contra-zoom so the product is ~960 px wide at f335                                        // frames for children to separate
+const DIVE_IN = 960 / .64 / DIVE_S / (120 * 1.06);        // inner contra-zoom so the product is ~960 px wide at f335
+// dive progress u = 0..1 over f330..f335. Scale is an ease-OUT in log space: 2x at f331, 4.2x f332, 8x f333 (the cell
+// already spans the frame width), 12.5x f334, 16.8x f335 -> the target fills the frame for the last frames and lands
+// softly on the s06 match cut instead of snapping in on the last frame.
+const diveU = lf => clamp((lf - DIVE_F0) / 5);
+const diveS = u => Math.pow(DIVE_S, Math.pow(Math.sin(u * Math.PI / 2), 1.3));
+const LETTER_GAP = .5;                                    // frames between letter slams (S I | L E | N C | E: f324-327)
+const LETTER_SETTLE = 2.5;                                // frames for a letter slam to settle
 const LETTERS = 'SILENCE';
 const MINUS = '\u2212';
 const TW = '#ebe6dc';                                     // warm white kept just under the bloom threshold
@@ -82,6 +89,16 @@ function capText(ctx, s, cx, cy, o) {
   text(ctx, s, cx, cy + (asc - dsc) / 2, o);
 }
 
+// Anton has no real minus (U+2212 falls back to a short hyphen): draw the minus as an en-dash-wide bar on the cap centre
+function tileText(ctx, s, size, color) {
+  if (s[0] !== MINUS) { capText(ctx, s, 0, 0, { size, family: FONT.impact, color }); return; }
+  const rest = s.slice(1);
+  ctx.save(); ctx.font = font(size, 400, FONT.impact); const wr = ctx.measureText(rest).width; ctx.restore();
+  const mw = .40 * size, th = .085 * size, gap = .07 * size, x0 = -(mw + gap + wr) / 2;
+  ctx.fillStyle = color; ctx.fillRect(x0, -th / 2, mw, th);
+  capText(ctx, rest, x0 + mw + gap + wr / 2, 0, { size, family: FONT.impact, color });
+}
+
 // ------------------------------------------------------------------ layout model
 const cellRect = (st, c, r) => { const [nc, nr] = DIMS[st]; const w = W / nc, h = H / nr; return { x: c * w, y: r * h, w, h, cx: c * w + w / 2, cy: r * h + h / 2 }; };
 // global ping-pong: frame 0 on even beats, 39 on odd beats (cosine ease = the product nods to the groove)
@@ -128,7 +145,11 @@ function paintCell(E, ctx, st, c, r, b, d, scale, parent) {
     let { cx, cy, size, frame } = C;
     if (C.crest) size *= 1 + .1 * C.crest * C.crest;     // the stadium "stands up"
     // mitosis: start from the parent's image (same place, same size) and separate
-    if (parent && parent.kind === 'sprite' && life < MITOSIS + 1) {
+    if (parent && parent.kind === 'sprite' && st === 1 && life < 5) {
+      // 1 -> 2: the child already shows the WHOLE product fitted into its cell (no parent crop), it drops in from above
+      const e = expoOut(clamp((life + 1) / 5));
+      size *= lerp(1.14, 1, e); cy += lerp(-60, 0, e);
+    } else if (parent && parent.kind === 'sprite' && life < MITOSIS + 1) {
       const e = expoOut(clamp(life / MITOSIS));
       cx = lerp(parent.cx, cx, e); cy = lerp(parent.cy, cy, e); size = lerp(parent.size, size, e); frame = lerp(parent.frame, frame, e);
     } else if (parent && life < 4) {
@@ -145,22 +166,25 @@ function paintCell(E, ctx, st, c, r, b, d, scale, parent) {
     }
     // contra-zoom inside the target during the dive: the product lands ~960 px wide at f335 while the grid rushes out
     if (C.target && b >= 27.5) { const k = seg(b, 27.5, 27.5 + 5 / 12); size *= lerp(1, DIVE_IN, k * k); }
+    const inkK = st === 7 ? 1 - seg(b, 27.5, 27.6) : 1;  // gold cells / letter tiles fade to ink as the dive starts
     sprite(ctx, frame, cx, cy, size, scale, { fade: size * scale > 300 });
-    if (C.gold) {
-      ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = COL.gold; ctx.fillRect(R.x, R.y, R.w, R.h);
-      ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = '#3a2a14'; ctx.fillRect(R.x, R.y, R.w, R.h);
-      ctx.globalCompositeOperation = 'source-over';
+    if (C.gold && inkK > 0) {
+      // toned down: a gold-toned product on ink (no lifted brown block), so the 7 letter tiles are the only gold squares
+      ctx.save(); ctx.globalAlpha = .6 * inkK; ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = COL.gold; ctx.fillRect(R.x, R.y, R.w, R.h); ctx.restore();
     }
     if (C.crest) { ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = `rgba(230,200,150,${.2 * Math.pow(C.crest, 5)})`; ctx.fillRect(R.x, R.y, R.w, R.h); ctx.globalCompositeOperation = 'source-over'; }
   } else if (C.kind === 'word') {
     // 'SILENCE' rising out of the gutter, tracking in
-    const k = expoOut(clamp(life / 5));
-    const sp = lerp(70, 6, eout(clamp(life / 14)));
-    const sz = fitSize(ctx, 'SILENCE', 960, 220, 900, FONT.display, sp);
+    // Fixed size (fitted at the final tracking) + a start tracking capped so the whole word, S to E, always sits inside
+    // x 65..1015 (~50..1030 under the split punch-in): it tracks in, it never grows and it never touches the frame edges.
+    const k = expoOut(clamp((life + 1) / 5));
+    const w0 = measure(ctx, 'SILENCE', 100, 900, FONT.display);        // glyph advance at 100 px, no tracking
+    const sz = Math.min(220, (920 - 6 * 6) * 100 / w0);
+    const sp0 = clamp((950 - sz * w0 / 100) / 6, 6, 70);      // 950: leaves room for the 1.03 split punch-in
+    const sp = lerp(sp0, 6, eout(clamp(life / 14)));
     ctx.save(); ctx.beginPath(); ctx.rect(0, 1500 - sz * 1.05, W, sz * 1.3); ctx.clip();
     text(ctx, 'SILENCE', 540 + sp * .5, 1500 + (1 - k) * sz * 1.2, { size: sz, weight: 900, family: FONT.display, color: TW, spacing: sp });
     ctx.restore();
-    text(ctx, 'SILENCE ONE  ·  ACTIVE NOISE CANCELLING', 540, 1600, { size: 30, weight: 400, family: FONT.mono, color: COL.gold, spacing: 4, alpha: seg(life, 1, 4) * .9 });
   } else if (C.kind === 'one') {
     const k = expoOut(clamp(life / 4));
     ctx.save(); ctx.translate(R.cx, R.cy); const s = lerp(1.35, 1, k) * (1 + .03 * nb); ctx.scale(s, s);
@@ -174,15 +198,18 @@ function paintCell(E, ctx, st, c, r, b, d, scale, parent) {
     if (C.gold) { ctx.fillStyle = tileGold(ctx, R); ctx.fillRect(R.x, R.y, R.w, R.h); }
     const sz = Math.min(150, fitSize(ctx, C.s, R.w * .82, 150, 400, FONT.impact));
     ctx.save(); ctx.translate(R.cx, R.cy); const s = lerp(1.3, 1, k) * (1 + .03 * nb); ctx.scale(s, s);
-    capText(ctx, C.s, 0, 0, { size: sz, family: FONT.impact, color: C.gold ? COL.ink : TW });
+    tileText(ctx, C.s, sz, C.gold ? COL.ink : TW);
     ctx.restore();
     if (life < 1 && C.gold) { ctx.fillStyle = 'rgba(255,240,210,.35)'; ctx.fillRect(R.x, R.y, R.w, R.h); }
   } else if (C.kind === 'letter') {
     // the diagonal letters slam in one per frame from the top
-    const on = life - C.k;
+    const on = life - C.k * LETTER_GAP;
     if (on >= 0) {
+      const ink = 1 - seg(b, 27.5, 27.6);                 // the tiles go back to ink as the dive starts (no gold smear)
+      if (ink <= 0) { ctx.restore(); return C; }
+      ctx.globalAlpha = ink;
       ctx.fillStyle = tileGold(ctx, R); ctx.fillRect(R.x, R.y, R.w, R.h);
-      const k = expoOut(clamp(on / 3));
+      const k = expoOut(clamp(on / LETTER_SETTLE));
       ctx.save(); ctx.translate(R.cx, R.cy); const s = lerp(1.6, 1, k); ctx.scale(s, s);
       capText(ctx, C.s, 0, 0, { size: 96, family: FONT.impact, color: COL.ink });
       ctx.restore();
@@ -240,7 +267,9 @@ export default {
   id: 's05-grid', start: 24, end: 28,
   cutIn: 'none',
   init(E) { buildMips(E); },
-  motionBlur(lt) { const q = lt * 30; return q < 3 ? 4 : q >= DIVE_F0 + .5 && q < DIVE_F0 + 4.6 ? 3 : 1; },
+  // whip landing only. The dive uses a single sample + zoom blur centred on the target (sub-frames of a 2x-per-frame
+  // scale change read as ghost copies of the target cell).
+  motionBlur(lt) { const q = lt * 30; return q < 1 ? 6 : q < 3 ? 4 : 1; },
   draw(E, lt, t) {
     const fx = E.fx, bg = E.bg, fg = E.fg;
     const lf = lt * 30;                                   // local frames (fractional)
@@ -253,10 +282,13 @@ export default {
 
     // ---------------- global transform: whip landing (from the right) + Droste dive about the target cell
     let s = 1, tx = 0, ty = 0;
-    if (lf < 5) tx = 260 * (1 - expoOut(lf / 4));                 // residual momentum of s04's whip
-    const kd = clamp((lf - DIVE_F0) / 5);
+    // residual momentum of s04's whip (s04 lands in light, so this is only a settle). Gentle cubic settle: ~36 px of
+    // travel inside the hit frame's shutter, so DROP 1 opens on a READABLE product with a short smear, not the strobed
+    // triple copy an expo landing (450 px/frame at lf 0) gave. Sub-frames before the cut keep the velocity (no clamp).
+    if (lf < 5) tx = lf >= 0 ? 120 * (1 - eout(lf / 5)) : 120 - 72 * lf;
+    const kd = diveU(lf);
     if (lf >= DIVE_F0) {
-      s = Math.pow(DIVE_S, kd * kd);
+      s = diveS(kd);
       const m = (s - 1) / (DIVE_S - 1);
       const cx = lerp(TX, 540, m), cy = lerp(TY, 960, m);
       tx = cx - TX * s; ty = cy - TY * s;
@@ -286,11 +318,13 @@ export default {
     // ---------------- fg: gutters + lock-on frame around the target
     fg.save(); fg.setTransform(s, 0, 0, s, tx, ty);
     gutters(fg, st, lf, s, 1 - clamp(kd * 2.5));
-    if (st === 7 && b >= 27.25 && lf < DIVE_F0) {
+    // lock-on frame: snaps onto the target at b27.25, then rides the dive and rushes out past the frame edges
+    const lockA = 1 - seg(kd, .4, .6);                 // gone by f333, before its edges reach the frame border
+    if (st === 7 && b >= 27.25 && lockA > 0) {
       const R = cellRect(7, TARGET.c, TARGET.r), k = expoOut(seg(b, 27.25, 27.25 + 4 / 12));
       const pad = lerp(26, 0, k);
-      fg.strokeStyle = COL.goldHi; fg.lineWidth = 4 / Math.pow(s, .55); fg.globalAlpha = k;
-      fg.shadowColor = 'rgba(247,226,184,.9)'; fg.shadowBlur = 16;
+      fg.strokeStyle = COL.goldHi; fg.lineWidth = 4 / Math.pow(s, .55); fg.globalAlpha = k * lockA;
+      if (lf < DIVE_F0) { fg.shadowColor = 'rgba(247,226,184,.9)'; fg.shadowBlur = 16; }
       fg.strokeRect(R.x - pad + 2, R.y - pad + 2, R.w + 2 * pad - 4, R.h + 2 * pad - 4);
     }
     fg.restore();
@@ -322,8 +356,9 @@ export default {
     // the dive: zoom blur toward the target cell
     if (lf >= DIVE_F0) {
       const m = (s - 1) / (DIVE_S - 1), cx = lerp(TX, 540, m), cy = lerp(TY, 960, m);
-      fx.zoomBlur = Math.max(fx.zoomBlur, .24 * Math.sin(Math.PI * Math.min(1, kd * .9 + .05))); fx.zoomCenter = [cx / W, 1 - cy / H];
-      fx.rgb = Math.max(fx.rgb, .0015 + .0075 * Math.sin(Math.PI * Math.min(1, kd * .85 + .1)));
+      // capped at .3, centred exactly on the (moving) target centre: the product stays sharp, the grid streaks outward
+      fx.zoomBlur = Math.min(.3, Math.max(fx.zoomBlur, .3 * Math.sin(Math.PI * Math.min(1, kd * 1.15 + .1)))); fx.zoomCenter = [cx / W, 1 - cy / H];
+      fx.rgb = Math.max(fx.rgb, .0015 + .0075 * Math.sin(Math.PI * Math.min(1, kd * 1.15 + .1)));
     }
   },
 };

@@ -65,7 +65,7 @@ export function materials() {
   if (BASE) return BASE;
   const T = textures();
   BASE = {
-    stone: new THREE.MeshPhysicalMaterial({ color: 0x9d9488, roughness: .52, metalness: .05, clearcoat: .25, clearcoatRoughness: .4 }),
+    stone: new THREE.MeshPhysicalMaterial({ color: 0x8e8b85, roughness: .5, metalness: .03, clearcoat: .15, clearcoatRoughness: .45 }),  // the film's one stone-grey (matches hero.jpg / orbit sprites)
     gold: new THREE.MeshPhysicalMaterial({ color: 0xdcb98a, metalness: 1, roughness: .2 }),
     fabric: new THREE.MeshStandardMaterial({ map: T.fabric, bumpMap: T.fabric, bumpScale: 1.2, roughness: .95 }),
     leather: new THREE.MeshStandardMaterial({ map: T.leather, bumpMap: T.leather, bumpScale: 1.5, roughness: .6 }),

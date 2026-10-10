@@ -7,6 +7,9 @@
 // b47.5 the camera rushes through the gap between the cups into the right cup's acoustic mesh (dot pattern fills the frame
 // at f575 for the s09 match cut).
 //
+// b40 hit device: a gold RING WIPE leaves the product (no full-frame flash; frame 0 is an exposure/bloom lift).
+// Product: the film's one look (stone-grey shell, champagne gold, charcoal cushions) under a neutral key + soft gold rims.
+// Only the best-facing ring is at 100 %, the others at 50 %; back faces 20 %; rails are drawn in the band shader.
 // Layers: bg2d warm radial glow + giant rotating '360°' + a faint yaw dial
 //         3D   the product (opaque) + 3 type rings (custom shader: back faces 35 %, front faces drawn after, nested-shell
 //              painter order so every ring/product overlap is depth-correct) + gold hairline rails + 22k gold dust
@@ -31,11 +34,11 @@ const rushEase = x => { x = clamp(x); return x < .8 ? .9 * Math.pow(x / .8, 2.3)
 // ------------------------------------------------------------------ the three rings
 const RINGS = [
   { str: '360° SPATIAL AUDIO  ·  ', family: FONT.display, weight: 900, size: 168, ch: 290, spacing: 6, color: COL.white, gold: false,
-    intensity: 2.1, r: 13, rT: 10.6, band: 3.0, snap: 40.0, speed: 90, prec: 9, lockY: 2.5, bandTint: [1, .86, .62], bandA: .07 },
+    intensity: 2.1, r: 12.4, rT: 10.7, band: 2.7, snap: 40.0, speed: 90, prec: 9, lockY: 2.5, bandTint: [1, .86, .62], bandA: .07 },
   { str: 'SILENCE ONE  ·  ', family: FONT.impact, weight: 400, size: 230, ch: 300, spacing: 10, color: COL.gold, gold: true,
-    intensity: 1.5, r: 14.5, rT: 11.6, band: 3.4, snap: 40.5, speed: -120, prec: 0, lockY: -5.3, bandTint: [1, .8, .5], bandA: .06 },
+    intensity: 1.5, r: 13.5, rT: 11.5, band: 3.0, snap: 40.5, speed: -120, prec: 0, lockY: -5.3, bandTint: [1, .8, .5], bandA: .06 },
   { str: '40 H  ·  −42 dB  ·  250 G  ·  40 MM  ·  ANC-H2  ·  ', family: FONT.mono, weight: 700, size: 96, ch: 150, spacing: 4, color: COL.gold, gold: false,
-    intensity: 1.7, r: 16, rT: 12.6, band: 1.3, snap: 41.0, speed: 60, prec: -11, lockY: -2.1, bandTint: [1, .82, .55], bandA: .09 },
+    intensity: 1.7, r: 14.6, rT: 12.3, band: 1.2, snap: 41.0, speed: 60, prec: -11, lockY: -2.1, bandTint: [1, .82, .55], bandA: .09 },
 ];
 // gyroscope tilts (see report: the 'Saturn' ring is read as an open ellipse so its type stays legible)
 const TILTS = [
@@ -49,7 +52,7 @@ varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 void main(){ vUv = uv; vec4 mv = modelViewMatrix*vec4(position, 1.); vN = normalize(normalMatrix*normal); vV = -mv.xyz;
   gl_Position = projectionMatrix*mv; }`;
 const RF = `
-uniform sampler2D map; uniform float uRep, uInt, uAlpha, uGlintPos, uGlint, uBandA, uFlash, uDim, uFlip; uniform vec3 uBandCol;
+uniform sampler2D map; uniform float uRep, uInt, uAlpha, uGlintPos, uGlint, uBandA, uFlash, uDim, uFlip, uRail; uniform vec3 uBandCol;
 varying vec2 vUv; varying vec3 vN; varying vec3 vV;
 void main(){
   vec4 tx = texture2D(map, vec2(vUv.x*uRep*uFlip, vUv.y));
@@ -61,8 +64,12 @@ void main(){
   vec3 txt = tx.rgb*(uInt*shade*(1. + uFlash) + g*4.);
   vec3 band = uBandCol*(.35 + g*2.)*shade;
   float ba = uBandA*edge*(.5 + .5*facing) + g*.12*edge;
+  // hairline rails on both band edges, ~1.4 px whatever the distance (the ANC-ring language, one per edge)
+  float ed = min(vUv.y, 1. - vUv.y)/max(fwidth(vUv.y), 1e-5);
+  float rl = (1. - smoothstep(.7, 1.9, ed))*(.55 + .45*facing);
   vec3 col = mix(band, txt, tx.a);
-  float a = max(tx.a, ba);
+  col = mix(col, vec3(1., .8, .52)*(uRail + g*3.), rl);
+  float a = max(max(tx.a, ba), rl);
   gl_FragColor = vec4(col*uDim, a*uAlpha);
 }`;
 
@@ -84,23 +91,20 @@ function buildRing(R, i) {
   tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
   const rep = Math.max(1, Math.round(TAU * R.r / (R.band * c.width / c.height)));
   const uniforms = { map: { value: tex }, uRep: { value: rep }, uInt: { value: R.intensity }, uAlpha: { value: 1 }, uGlintPos: { value: 0 },
-    uGlint: { value: 0 }, uBandA: { value: R.bandA }, uFlash: { value: 0 }, uBandCol: { value: new THREE.Vector3(...R.bandTint) } };
+    uGlint: { value: 0 }, uBandA: { value: R.bandA }, uFlash: { value: 0 }, uRail: { value: 2 }, uBandCol: { value: new THREE.Vector3(...R.bandTint) } };
   const geo = new THREE.CylinderGeometry(R.r, R.r, R.band, 320, 1, true);
   const mk = (side, alpha) => new THREE.ShaderMaterial({ vertexShader: RV, fragmentShader: RF, side, transparent: true, depthWrite: false,
     // back faces (inner surface) are flipped so type reads correctly from inside the gyroscope too
     uniforms: { ...uniforms, uAlpha: { value: alpha }, uDim: { value: alpha < 1 ? .5 : 1 }, uFlip: { value: side === THREE.BackSide ? -1 : 1 } } });
-  const mBack = mk(THREE.BackSide, .35), mFront = mk(THREE.FrontSide, 1);
+  const mBack = mk(THREE.BackSide, .2), mFront = mk(THREE.FrontSide, 1);
   const back = new THREE.Mesh(geo, mBack), front = new THREE.Mesh(geo, mFront);
   // painter order for nested shells: backs outer->inner, product (opaque), fronts inner->outer
   back.renderOrder = 10 + (2 - i); front.renderOrder = 20 + i;
   const pivot = new THREE.Group(), spin = new THREE.Group(); pivot.add(spin); spin.add(back); spin.add(front);
-  // gold hairline rails on both band edges (the ANC-ring language in 3D)
-  const railMat = new THREE.MeshStandardMaterial({ color: lin('#dcb98a'), metalness: 1, roughness: .22, emissive: lin(COL.gold), emissiveIntensity: 2.4 });
-  [-1, 1].forEach(s => { const tg = new THREE.TorusGeometry(R.r, .04, 8, 320); tg.rotateX(Math.PI / 2); const m = new THREE.Mesh(tg, railMat); m.position.y = s * R.band / 2; spin.add(m); });
   // snap shockwave: a hairline that leaves the ring and fades
   const waveMat = new THREE.MeshBasicMaterial({ color: lin(COL.gold).multiplyScalar(4), ...ADDITIVE, opacity: 0 });
   const wg = new THREE.TorusGeometry(R.r, .06, 6, 320); wg.rotateX(Math.PI / 2); const wave = new THREE.Mesh(wg, waveMat); pivot.add(wave);
-  return { R, pivot, spin, back, front, mBack, mFront, railMat, wave, waveMat, rep };
+  return { R, pivot, spin, back, front, mBack, mFront, wave, waveMat, rep };
 }
 
 // ------------------------------------------------------------------ gold dust
@@ -120,34 +124,69 @@ void main(){
 const DF = `uniform sampler2D uDot; uniform float uBright; varying float vA; varying vec3 vC;
 void main(){ float d = texture2D(uDot, gl_PointCoord).r; gl_FragColor = vec4(vC*uBright*d*vA, d*vA); }`;
 
+// ------------------------------------------------------------------ the ONE product look (film preset, as s04/s09):
+// stone-grey shell #8e8b85 r.5 with a fine mineral grain, champagne-gold metal r.22, charcoal cushions, warm-grey woven
+// band. This scene only relights it (neutral key + gold rims); it never recolours it.
+let GRAIN = null;
+function grainTex() {
+  if (GRAIN) return GRAIN;
+  const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const x = c.getContext('2d'), im = x.createImageData(N, N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const v = .5 + .24 * (rnd(i * 1.37 + j * 91.3) - .5) + .14 * (noise1(i / 19 + j * .37) - .5);
+    const k = (j * N + i) * 4, b = Math.round(clamp(v) * 255); im.data[k] = im.data[k + 1] = im.data[k + 2] = b; im.data[k + 3] = 255;
+  }
+  x.putImageData(im, 0, 0);
+  GRAIN = new THREE.CanvasTexture(c); GRAIN.colorSpace = THREE.NoColorSpace; GRAIN.wrapS = GRAIN.wrapT = THREE.RepeatWrapping; GRAIN.repeat.set(3, 3);
+  return GRAIN;
+}
+function applyLook(hp) {
+  const g = grainTex();
+  hp.root.traverse(o => {
+    const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    ms.forEach(m => {
+      if (!m.color) return;
+      const hx = m.color.getHex(), sh = new THREE.Color(0x9d9488).convertSRGBToLinear().getHex(), gd = new THREE.Color(0xdcb98a).convertSRGBToLinear().getHex();
+      if ((hx === 0x9d9488 || hx === 0x8e8b85 || hx === sh) && m.clearcoat !== undefined) {            // stone shell
+        m.color.set('#8e8b85'); m.roughness = .5; m.metalness = .02; m.clearcoat = .12; m.clearcoatRoughness = .5; m.bumpMap = g; m.bumpScale = .35; m.needsUpdate = true;
+      } else if ((hx === 0xdcb98a || hx === gd) && m.metalness === 1) {             // champagne gold
+        m.color.set('#dcbf93'); m.roughness = .22;
+      } else if (m.map && m.bumpScale === 1.5) {                                     // leather cushions: charcoal
+        m.color.setRGB(.92, .92, .95); m.roughness = .62;
+      } else if (m.map && m.bumpScale === 1.2) {                                     // woven band: warm grey, not tan
+        m.color.setRGB(.86, .86, .86);
+      }
+    });
+  });
+}
+
 // ------------------------------------------------------------------ build
 let R = null;
 function build(E) {
-  const scene = new THREE.Scene(); scene.userData._envSet = true; scene.environment = E.env; scene.environmentIntensity = .42;
+  const scene = new THREE.Scene(); scene.userData._envSet = true; scene.environment = E.env; scene.environmentIntensity = .5;
   const cam = new THREE.PerspectiveCamera(FOV, W / H, .08, 2000);
   const prod = new THREE.Group(); scene.add(prod);
   const hp = createHeadphone(); prod.add(hp.root); hp.explode(0);
   prod.rotation.set(TILT, 0, 0); prod.position.set(0, PROD_Y, 0); prod.updateMatrixWorld(true);
-  // this instance's stone: a touch darker / cooler + more clearcoat so it reads stone-grey (not cream) under the warm studio
-  hp.root.traverse(o => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
-    ms.forEach(m => { if (m.color && m.color.getHex() === 0x9d9488 && m.clearcoat !== undefined) { m.color.setHex(0x8b867f); m.clearcoat = .4; m.clearcoatRoughness = .3; m.roughness = .46; } }); });
+  applyLook(hp);
+  // the internal PCB glows teal through the cushion opening on the back-side orbit: keep the cup interior dark
+  hp.cups.forEach(c => { const pc = c.userData.parts.pcb; (Array.isArray(pc.material) ? pc.material : [pc.material]).forEach(m => m.color.setRGB(.12, .12, .12)); });
   const ringMats = hp.cups.map(c => c.userData.parts.ring.material);
   ringMats.forEach(m => { m.emissive = lin(COL.gold); m.emissiveIntensity = 0; });
   const meshMat = hp.cups[1].userData.parts.mesh.material;
   meshMat.emissive = new THREE.Color(1, 1, 1); meshMat.emissiveMap = meshMat.map; meshMat.emissiveIntensity = 0;
 
   // studio: warm key, gold rims (they become the key when the camera orbits behind), cool low fill
-  const key = new THREE.DirectionalLight(0xfff0dc, 1.9); key.position.set(26, 30, 38); scene.add(key);
-  const rimL = new THREE.DirectionalLight(0xffd49c, 7); rimL.position.set(-34, 14, -30); scene.add(rimL);
-  const rimR = new THREE.DirectionalLight(0xffe2b8, 6); rimR.position.set(36, -6, -26); scene.add(rimR);
+  const key = new THREE.DirectionalLight(0xf6f4f0, 1.35); key.position.set(26, 30, 38); scene.add(key);
+  const rimL = new THREE.DirectionalLight(0xffe4c0, 3.1); rimL.position.set(-34, 14, -30); scene.add(rimL);
+  const rimR = new THREE.DirectionalLight(0xf6f0e8, 2.4); rimR.position.set(36, -6, -26); scene.add(rimR);
   // (fill / front folded into the key + env: every extra light costs ~10% of the frame on SwiftShader)
   const core = new THREE.PointLight(0xffc98a, 0, 60, 1.3); core.position.set(0, 0, 4); scene.add(core);
-  const camLight = new THREE.PointLight(0xffe0b0, 0, 40, 1.4); scene.add(camLight);
+  const camLight = new THREE.PointLight(0xffdca0, 0, 40, 1.4); scene.add(camLight);
 
   const rings = RINGS.map((r, i) => { const o = buildRing(r, i); scene.add(o.pivot); return o; });
 
   // dust
-  const N = 7000, pos = new Float32Array(N * 3), rr = new Float32Array(N);
+  const N = 5000, pos = new Float32Array(N * 3), rr = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const u = rnd(i * 2.1 + 3) * 2 - 1, th = rnd(i * 3.7 + 1) * TAU, rad = 6 + 26 * Math.pow(rnd(i * 5.3 + 2), .8);
     const s = Math.sqrt(1 - u * u); pos.set([rad * s * Math.cos(th), rad * u * .75, rad * s * Math.sin(th)], i * 3); rr[i] = rnd(i * 1.37 + .5);
@@ -169,7 +208,7 @@ function build(E) {
   const rg = hp.cups[1].userData.parts.ring; rg.updateMatrixWorld(true);
   const macroT = rg.localToWorld(V3(-3.99 * Math.sin(38 * DEG), .1, 3.99 * Math.cos(38 * DEG)));
 
-  return { scene, cam, prod, hp, key, rimL, rimR, core, camLight, ringMats, meshMat, rings, dust, dmat, ctr, dist8, capC, inward, cupMid, ringC, macroT, cupR: hp.cups[1].getWorldPosition(V3()), mbGain: probeMB(E) };
+  return { scene, cam, prod, hp, key, rimL, rimR, core, camLight, ringMats, meshMat, rings, dust, dmat, ctr, dist8, capC, inward, cupMid, ringC, macroT, cupR: hp.cups[1].getWorldPosition(V3()) };
 }
 
 // ------------------------------------------------------------------ camera
@@ -189,28 +228,31 @@ function orbitK(b) {
   const D = R.dist8;
   if (b < 46) {
     const o = eout(seg(b, 40, 41.2));
-    return { dist: lerp(D, 104, o) - 6 * eio(seg(b, 41.2, 44)), pitch: lerp(Math.atan2(2.5, D), 9 * DEG, o) + 5 * DEG * eio(seg(b, 41.2, 44)),
-      Ys: lerp(980, 955, o), fov: FOV, roll: 0 };
+    // the product stays the hero: ~880 px wide on the downbeat, a gentle breathe-out + crane up (never smaller than ~800 px)
+    return { dist: lerp(D, D * 1.1, o) - 3 * eio(seg(b, 41.2, 44)), pitch: lerp(Math.atan2(2.5, D), 10 * DEG, o) + 4 * DEG * eio(seg(b, 41.2, 44)),
+      Ys: lerp(980, 965, o), fov: FOV, roll: 0 };
   }
   const k = eio(seg(b, 46, 47.5));
-  return { dist: lerp(100, 74, k), pitch: lerp(13, 7, k) * DEG, Ys: 960, fov: FOV, roll: -4 * DEG * Math.sin(Math.PI * seg(b, 46, 46.5)) };
+  return { dist: lerp(D * 1.12, D * .98, k), pitch: lerp(13, 7, k) * DEG, Ys: 965, fov: FOV, roll: -4 * DEG * Math.sin(Math.PI * seg(b, 46, 46.5)) };
 }
 // b44-46 hard-cut presets [pos, target, fov, roll, drift]
 const PRESETS = [
-  { name: 'TOP', pos: [0, 52, 10], tgt: [0, -1, 0], fov: 50, roll: 0, drift: [0, -6, -1.5], spinRoll: 14 },
+  // HIGH 3/4 (55° elevation): the locked rings read as near-concentric ellipses, the band arc and both cups stay visible
+  { name: 'HIGH', pos: [12.6, 37.3, 23.6], tgt: [0, -1.5, 0], fov: 50, roll: -4, drift: [-1.2, -3.6, -2.3], spinRoll: 8 },
   { name: 'LOW', pos: [-14, -21, 30], tgt: [0, 3.5, 0], fov: 46, roll: -9, drift: [-2.5, 1.5, -3] },
-  { name: 'MACRO', pos: [.45, .02, .89], tgt: [0, 0, 0], fov: 11, roll: 9, drift: [0, 0, 0] },
+  { name: 'MACRO', pos: [.45, .02, .89], tgt: [0, 0, 0], fov: 15, roll: 9, drift: [0, 0, 0] },
   { name: 'WIDE', pos: [52, 30, 102], tgt: [0, -1, 0], fov: 24, roll: -6, drift: [-4, 2, -8] },
 ];
 
 function camAt(b) {
   // returns { pos, tgt, fov, roll, Ys, yaw (deg, continuous), cut (preset index or -1) }
-  if (b >= 44 && b < 46) {
-    const i = Math.min(3, Math.floor((b - 44) * 2)), P = PRESETS[i], k = eout(seg(b, 44 + i * .5, 44.5 + i * .5));
+  const fq = Math.round((b - 40) * 12);          // frame index (same for every motion-blur sub-frame): cuts land on the frame
+  if (fq >= 48 && fq < 72) {
+    const i = Math.min(3, Math.floor((fq - 48) / 6)), P = PRESETS[i], k = eout(seg(b, 44 + i * .5, 44.5 + i * .5));
     const T = R.ctr;
     const pos = V3(P.pos[0] + P.drift[0] * k, P.pos[1] + P.drift[1] * k, P.pos[2] + P.drift[2] * k).add(T);
     const tgt = V3(...P.tgt).add(T);
-    if (P.name === 'MACRO') { tgt.copy(R.macroT); pos.copy(R.macroT).addScaledVector(V3(...P.pos).normalize(), 21 - 2.5 * k); }
+    if (P.name === 'MACRO') { tgt.copy(R.macroT); pos.copy(R.macroT).addScaledVector(V3(...P.pos).normalize(), 30 - 3 * k); }
     const yaw = 180 + (((Math.atan2(pos.x - T.x, pos.z - T.z) / DEG) - 180 + 540) % 360 - 180);
     return { pos, tgt, fov: P.fov, roll: (P.roll + (P.spinRoll || 0) * k) * DEG, Ys: 960, yaw, cut: i };
   }
@@ -266,11 +308,11 @@ function drawBG(bg, b, lt, yaw, kick) {
   // giant 360°
   bg.save(); bg.translate(540, 960); bg.rotate(-6 * DEG * lt);
   const s = 1 + .025 * kick; bg.scale(s, s);
-  text(bg, '360°', 0, 0, { size: 760, weight: 400, family: FONT.impact, color: COL.white, alpha: .1, baseline: 'middle' });
+  text(bg, '360°', 0, 0, { size: 760, weight: 400, family: FONT.impact, color: COL.white, alpha: .08, baseline: 'middle' });
   bg.restore();
   // yaw dial: 120 ticks on r 860, rotating with the camera (parallax cue for the orbit)
   bg.save(); bg.translate(540, 960); bg.rotate(-yaw * DEG);
-  bg.strokeStyle = 'rgba(230,200,150,.2)'; bg.lineWidth = 2;
+  bg.strokeStyle = 'rgba(230,200,150,.13)'; bg.lineWidth = 2;
   for (let i = 0; i < 120; i++) {
     const a = i / 120 * TAU, L = i % 10 === 0 ? 46 : 18;
     bg.beginPath(); bg.moveTo(Math.cos(a) * 860, Math.sin(a) * 860); bg.lineTo(Math.cos(a) * (860 + L), Math.sin(a) * (860 + L)); bg.stroke();
@@ -309,11 +351,21 @@ function drawHUD(fg, b, lt, yaw, cut, hudA, kick) {
   // reveal: characters type on over the first beat
   const on = seg(b, 40.1, 40.6);
   fg.save(); fg.globalAlpha = hudA;
+  // text-safe plate: a soft dark falloff behind the readout block (strong on MACRO, where the shell fills the corner)
+  {
+    const sa = (cut === 2 ? .9 : .5) * clamp(on * 2);
+    if (sa > .003) {
+      fg.save(); fg.translate(310, 1546); fg.scale(1, .34);
+      const g = fg.createRadialGradient(0, 0, 0, 0, 0, 520);
+      g.addColorStop(0, `rgba(5,5,6,${sa})`); g.addColorStop(.68, `rgba(5,5,6,${sa * .92})`); g.addColorStop(1, 'rgba(5,5,6,0)');
+      fg.fillStyle = g; fg.fillRect(-520, -520, 1040, 1040); fg.restore();
+    }
+  }
   const label = 'θ ' + String(y360).padStart(3, '0') + '°';
   const nShow = Math.ceil(label.length * on);
   text(fg, label.slice(0, nShow), 80, 1560, { size: 64, weight: 700, family: FONT.mono, color: COL.white, align: 'left' });
   const sub = 'SPATIAL AUDIO · HEAD-TRACKED';
-  text(fg, sub.slice(0, Math.ceil(sub.length * seg(b, 40.4, 41))), 80, 1610, { size: 30, weight: 400, family: FONT.mono, color: COL.muted, align: 'left', spacing: 1 });
+  text(fg, sub.slice(0, Math.ceil(sub.length * seg(b, 40.4, 41))), 80, 1610, { size: 30, weight: 400, family: FONT.mono, color: '#c4beb2', align: 'left', spacing: 1 });
   // live dot
   const blink = (Math.floor(lt * 30 / 6) % 2) ? .35 : 1;
   if (on > 0) { fg.fillStyle = COL.gold; fg.globalAlpha = hudA * blink; fg.beginPath(); fg.arc(86, 1478, 7, 0, TAU); fg.fill(); fg.globalAlpha = hudA; }
@@ -330,17 +382,33 @@ function mbAt(lt) {
   if (f >= 90 && f <= 94) return f >= 92 ? 3 : 2;              // rush into the mesh
   return 1;                                                    // f95 lands crisp: the dots must read for the match cut
 }
-// The engine accumulates motion-blur sub-frames with AdditiveBlending (src*alpha + dst) while also weighting colour by
-// 1/n, so an n-sample frame comes out at 1/n brightness. Probe it once and compensate with fx.tint (linear, pre-grade),
-// so this scene stays correct whether or not the engine gets fixed.
-function probeMB(E) {
-  try {
-    const gl = E.renderer.getContext(), px = new Uint8Array(4);
-    const draw = () => { E.bg.fillStyle = '#c0c0c0'; E.bg.fillRect(0, 0, W, H); Object.assign(E.fx, { bloom: 0, grain: 0, vignette: 0, rgb: 0 }); };
-    E.renderFrame(0, draw, 1); gl.readPixels(540, 960, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const a = px[0];
-    E.renderFrame(0, draw, 2); gl.readPixels(540, 960, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const c = px[0];
-    return c < a * .85 ? 1 : 0;                      // 1: bug present -> gain n
-  } catch (e) { return 0; }
+// b40 gold ring wipe: a hot hairline ring leaves the product (centre 540,980) and sweeps out of frame in 3 frames.
+// The light it throws is ADDITIVE gold on the bg layer (behind the 3D): a luminous halo hugging the ring's outer edge that
+// falls off to nothing — real light on the dark stage, never a flat tinted veil over the image.
+const WIPE = [[560, 1, 16], [880, .55, 11], [1200, .22, 7]];
+function wipeHalo(bg, Fr) {
+  const S = WIPE[Fr]; if (!S) return;
+  const [r, k] = S, cx = 540, cy = 980;
+  bg.save(); bg.globalCompositeOperation = 'lighter';
+  const r0 = r * .88, r1 = r + 240, f = x => (x - r0) / (r1 - r0);
+  const g = bg.createRadialGradient(cx, cy, r0, cx, cy, r1);
+  g.addColorStop(0, 'rgba(255,190,105,0)');
+  g.addColorStop(f(r - 20), `rgba(255,200,120,${.16 * k})`);
+  g.addColorStop(f(r), `rgba(255,218,158,${.58 * k})`);
+  g.addColorStop(f(r + 60), `rgba(245,180,96,${.2 * k})`);
+  g.addColorStop(f(r + 150), `rgba(220,150,70,${.05 * k})`);
+  g.addColorStop(1, 'rgba(200,140,70,0)');
+  bg.fillStyle = g; bg.fillRect(0, 0, W, H);
+  bg.restore();
+}
+function ringWipe(fg, Fr) {
+  const S = WIPE[Fr]; if (!S) return;
+  const [r, , w] = S, cx = 540, cy = 980;
+  fg.save();
+  fg.lineWidth = w; fg.strokeStyle = '#fff1d6'; fg.shadowColor = 'rgba(255,205,130,1)'; fg.shadowBlur = 60;
+  fg.beginPath(); fg.arc(cx, cy, r, 0, TAU); fg.stroke();
+  fg.lineWidth = w * .35; fg.strokeStyle = '#ffffff'; fg.shadowBlur = 0; fg.stroke();
+  fg.restore();
 }
 const KICKS = [41, 42, 43, 44, 45, 46, 47].map(b2s);
 const CUTS = [44, 44.5, 45, 45.5, 46];
@@ -368,12 +436,15 @@ export default {
     R.camLight.position.copy(C.pos);
 
     // ---------------- rings
+    const legib = [];
     R.rings.forEach((o, i) => {
       const r = RINGS[i], S = ringState(i, b, lt);
       const qT = new THREE.Quaternion().setFromAxisAngle(V3(0, 1, 0), r.prec * DEG * lt).multiply(TILTS[i]);
       const q = qT.clone().slerp(new THREE.Quaternion(), S.L);
       o.pivot.quaternion.copy(q);
       o.pivot.position.copy(R.ctr).add(V3(0, r.lockY * S.L, 0));
+      // MACRO: Ring C rides at the lens height so its mono type streaks past in front of the cup ring (hidden by the cuts)
+      if (C.cut === 2 && i === 2) o.pivot.position.y = R.macroT.y + .9;
       const s = Math.max(1e-3, S.sn);
       o.pivot.scale.set(s * S.rad, s, s * S.rad);
       o.pivot.visible = S.sn > .002;
@@ -381,7 +452,10 @@ export default {
       // camera inside this ring: its inner faces are all we see -> show them fully
       o.pivot.updateMatrixWorld(true); const cl = o.pivot.worldToLocal(C.pos.clone());
       const inside = 1 - clamp((Math.hypot(cl.x, cl.z) - (r.r - 1.5)) / 2);
-      o.mBack.uniforms.uAlpha.value = lerp(.35, .9, inside); o.mBack.uniforms.uDim.value = lerp(.5, 1, inside);
+      o.mBack.uniforms.uAlpha.value = lerp(.2, .9, inside); o.mBack.uniforms.uDim.value = lerp(.55, 1, inside);
+      // legibility: a band reads best when its axis is perpendicular to the line of sight (seen side-on, not face-on)
+      const ax = V3(0, 1, 0).applyQuaternion(o.pivot.quaternion), vd = o.pivot.position.clone().sub(C.pos).normalize();
+      legib[i] = S.sn > .5 ? 1 - Math.abs(ax.dot(vd)) : -1;
       // glint: one sweep round the ring on its snap, then on the claps and on every cut
       const snapF = (b - r.snap) / .7;
       let glint = 0, gpos = 0;
@@ -389,72 +463,80 @@ export default {
       for (const cb of [41, 43, 45, 47]) { const k = (b - cb) / .5; if (k >= 0 && k < 1 && glint < 1 - k) { glint = (1 - k) * .8; gpos = k * .9 + i * .33 + cb * .1; } }
       const flash = 2.5 * Math.exp(-Math.max(0, b - r.snap) * BEAT / .1) * (b >= r.snap ? 1 : 0);
       for (const m of [o.mBack, o.mFront]) { m.uniforms.uGlint.value = glint; m.uniforms.uGlintPos.value = gpos; m.uniforms.uFlash.value = flash + .25 * kick; }
-      const rail = 3 + 9 * Math.exp(-Math.max(0, b - r.snap) * BEAT / .15) * (b >= r.snap ? 1 : 0) + 3 * kick;
-      // up close the rails read as polished gold rods (reflections) instead of flat glowing bars
-      const near = Math.max(.5, Math.abs(C.pos.distanceTo(o.pivot.position) - r.r * S.rad * S.sn));
-      const thick = .08 * H / (2 * Math.tan(C.fov / 2 * DEG) * near);          // projected rail thickness (px)
-      o.railMat.emissiveIntensity = rail * .8 * clamp((16 - thick) / 11, .06, 1);
+      o.mFront.uniforms.uRail.value = 2.2 + 7 * Math.exp(-Math.max(0, b - r.snap) * BEAT / .15) * (b >= r.snap ? 1 : 0) + 1.5 * kick;
       // snap shockwave
       const wk = seg(b, r.snap, r.snap + .75);
       o.wave.visible = wk > 0 && wk < 1;
       if (o.wave.visible) { const ws = 1 + .45 * expoOut(wk); o.wave.scale.set(ws * S.rad, 1, ws * S.rad); o.waveMat.opacity = (1 - wk) * (1 - wk); o.wave.rotation.y = S.ang; }
     });
 
+    // only one ring fully legible at a time: the best-facing one at 100 %, the others at 50 % (smooth hand-over)
+    const lmax = Math.max(...legib);
+    R.rings.forEach((o, i) => {
+      const lv = legib[i] < 0 ? 1 : .5 + .5 * clamp(1 - (lmax - legib[i]) / .14);
+      o.mFront.uniforms.uAlpha.value = lv; o.mFront.uniforms.uDim.value = .55 + .45 * lv;
+    });
+
     // ---------------- product + lights
     const drop = Math.exp(-lt / (BEAT * .45));
     R.ringMats.forEach(m => { m.emissiveIntensity = 4 * drop + .12 + .5 * kick; });
-    R.core.intensity = 500 * drop;
+    R.core.intensity = 260 * drop;
     const rush = seg(b, 47.5, 47.5 + 5 / 12);
     // lamp on the camera, keeping the mesh's irradiance constant as we close in (decay 1.4)
-    R.camLight.intensity = 4.2 * eio(seg(b, 47.45, 47.8)) * Math.min(12, Math.pow(Math.max(1, C.pos.distanceTo(R.capC) / 1.05), 1.4));
+    R.camLight.intensity = 8.4 * eio(seg(b, 47.45, 47.8)) * Math.min(12, Math.pow(Math.max(1, C.pos.distanceTo(R.capC) / 1.05), 1.4));
     R.meshMat.emissiveIntensity = 0;
     // entering the cup: the studio falls away, only a dim lamp on the camera
     const dark = 1 - .78 * eio(seg(b, 47.6, 47.9));
-    R.key.intensity = (1.9 + 1.2 * drop) * dark; R.rimL.intensity = 7 * dark; R.rimR.intensity = 6 * dark;
+    R.key.intensity = (1.35 + .6 * drop) * dark * (C.cut === 2 ? .8 : 1); R.rimL.intensity = 2.7 * dark; R.rimR.intensity = 2.1 * dark;
     R.core.visible = R.core.intensity > 5; R.camLight.visible = R.camLight.intensity > .01;
     scene.environmentIntensity = .42 * (.4 + .6 * dark);
 
     // dust
     const du = R.dmat.uniforms; du.uTime.value = t; du.uSpin.value = 0; du.uPx.value = H / (2 * Math.tan(C.fov / 2 * DEG));
-    du.uBright.value = .55 + .35 * kick;
+    du.uBright.value = .42 + .25 * kick;
 
     // ---------------- 2D
     drawBG(bg, b, lt, C.yaw, kick);
+    wipeHalo(bg, Fr);
     E.render3D(scene, cam);
     const hudA = 1 - seg(b, 47.45, 47.75);
     drawHUD(fg, b, lt, C.yaw, C.cut, hudA, kick);
 
-    // ---------------- post
-    fx.exposure = .8; fx.sat = 1.1; fx.contrast = 1.08; fx.bloom = .9; fx.bloomThreshold = .74; fx.grain = .045; fx.vignette = .4;
-    // b40 DROP 2 punch
+    // ---------------- post (AFTER look; resting rgb .0015 so HUD and dust stay crisp)
+    fx.exposure = .8; fx.sat = 1.04; fx.contrast = 1.08; fx.bloom = .85; fx.bloomThreshold = .78; fx.grain = .045; fx.vignette = .4; fx.rgb = .0015;
+    if (C.cut === 2) fx.exposure = .7;                                // MACRO: keep the stone shell off the clip
+    // b40 DROP 2 hit — its own device: a GOLD RING WIPE out of the reassembled product, carried by the full storyboard
+    // punch (zoom 1.18 expoOut 8 f, rgb .035 -> .002 over the beat, radial zoom blur from the product, decaying shake).
+    // No full-frame flash / mix veil: frame 0 is an exposure + bloom lift with the image at full contrast, the zoom blur
+    // radiates from the product centre so the payoff stays readable on the hit, and the gold is additive light (wipeHalo).
     {
-      const fr = lf;
-      fx.flash = fr < 9 ? .85 * Math.exp(-fr / .8) * (1 - fr / 9) : 0; fx.flashColor = [1, .82, .55];
-      fx.zoom = 1 + .18 * (1 - expoOut(clamp(fr / 8)));
-      fx.rgb = .002 + .033 * Math.max(0, 1 - fr / 12);
-      fx.zoomBlur = .8 * Math.max(0, 1 - fr / 6);
-      const sh = .012 * Math.max(0, 1 - fr / 12);
+      const L = [[.22, 1.35], [.08, 1.05]][Fr];
+      if (L) { fx.exposure += L[0]; fx.bloom = L[1]; }
+      fx.zoom = 1 + .18 * (1 - expoOut(clamp(lf / 8)));
+      fx.rgb = Math.max(fx.rgb, .002 + .024 * Math.pow(Math.max(0, 1 - lf / 12), 2.2));
+      fx.zoomBlur = .42 * Math.pow(Math.max(0, 1 - lf / 6), 1.3);
+      fx.zoomCenter = [.5, 1 - 980 / H];
+      const sh = .012 * Math.pow(Math.max(0, 1 - lf / 12), 1.5);
       fx.shake = [(rnd(Fr * 1.7 + 3) - .5) * 2 * sh, (rnd(Fr * 2.9 + 5) - .5) * 2 * sh];
+      ringWipe(fg, Fr);
     }
-    // kicks
-    for (const a of KICKS) { const fr = (t - a) * 30; if (fr >= 0 && fr < 4) { const k = 1 - fr / 4; fx.zoom *= 1 + .02 * k; fx.rgb = Math.max(fx.rgb, .002 + .004 * k); } }
+    // kicks: zoom 1.02 over 4 frames, rgb kick gone within 3 frames
+    for (const a of KICKS) { const fr = (t - a) * 30; if (fr >= 0 && fr < 4) { fx.zoom *= 1 + .02 * (1 - fr / 4); if (fr < 3) fx.rgb = Math.max(fx.rgb, .0015 + .004 * (1 - fr / 3)); } }
     // ring snaps B, C: small aberration kicks
-    for (const sb of [40.5, 41]) { const fr = (b - sb) * 12; if (fr >= 0 && fr < 4) fx.rgb = Math.max(fx.rgb, .01 * (1 - fr / 4)); }
-    // hard cuts: 2-frame glitch slices + 1-frame rgb + shake
+    for (const sb of [40.5, 41]) { const fr = (b - sb) * 12; if (fr >= 0 && fr < 3) fx.rgb = Math.max(fx.rgb, .0015 + .0045 * (1 - fr / 3)); }
+    // hard cuts: 2-frame glitch slices + ONE frame of rgb (capped .006) + shake
     for (const cb of CUTS) {
       const fr = Math.round((b - cb) * 12 * 100) / 100;
-      if (fr >= 0 && fr < 2) { fx.glitch = Math.max(fx.glitch, .25 * (fr < 1 ? 1 : .6)); fx.glitchSeed = cb * 13 + Math.floor(fr) * 7; }
-      if (fr >= 0 && fr < 1) { fx.rgb = Math.max(fx.rgb, .015); const s = .006; fx.shake = [fx.shake[0] + (rnd(cb * 3.1) - .5) * 2 * s, fx.shake[1] + (rnd(cb * 5.7) - .5) * 2 * s]; }
+      if (fr >= 0 && fr < 2) { fx.glitch = Math.max(fx.glitch, .22 * (fr < 1 ? 1 : .5)); fx.glitchSeed = cb * 13 + Math.floor(fr) * 7; }
+      if (fr >= 0 && fr < 1) { fx.rgb = Math.max(fx.rgb, .006); const s = .006; fx.shake = [fx.shake[0] + (rnd(cb * 3.1) - .5) * 2 * s, fx.shake[1] + (rnd(cb * 5.7) - .5) * 2 * s]; }
       if (fr >= 0 && fr < 6 && cb === 44) fx.zoom *= 1 + .06 * (1 - expoOut(fr / 6));
     }
-    // b46 second whip: zoom blur during the move
-    if (b >= 46 && b < 46.5) { const k = Math.sin(Math.PI * seg(b, 46, 46.5)); fx.zoomBlur = Math.max(fx.zoomBlur, .35 * k); fx.rgb = Math.max(fx.rgb, .012 * k); }
-    if (b >= 40.05 && b < 40.5) { const k = Math.sin(Math.PI * seg(b, 40, 40.5)); fx.zoomBlur = Math.max(fx.zoomBlur, .3 * k); }
-    // b47-47.75: rgb pulses on every 1/16
-    if (b >= 47 && b < 47.75) { const f16 = ((b - 47) * 4) % 1; fx.rgb = Math.max(fx.rgb, .002 + .008 * Math.max(0, 1 - f16 * 3)); }
+    // whips: zoom blur during the move
+    if (b >= 46 && b < 46.5) { const k = Math.sin(Math.PI * seg(b, 46, 46.5)); fx.zoomBlur = Math.max(fx.zoomBlur, .3 * k); fx.rgb = Math.max(fx.rgb, .0015 + .0045 * k); }
+    if (b >= 40.05 && b < 40.5) { const k = Math.sin(Math.PI * seg(b, 40, 40.5)); fx.zoomBlur = Math.max(fx.zoomBlur, .28 * k); }
+    // b47-47.75: rgb pulses on every 1/16 (gone within a frame)
+    if (b >= 47 && b < 47.75) { const f16 = ((b - 47) * 4) % 1; fx.rgb = Math.max(fx.rgb, .0015 + .0045 * Math.max(0, 1 - f16 * 3)); }
     // b47.5-48: rush
-    if (b >= 47.5) { fx.zoomBlur = Math.max(fx.zoomBlur, .8 * ein(seg(b, 47.5, 47.85)) * (1 - .7 * seg(lf, 94, 95))); fx.zoomCenter = [.5, .5]; fx.rgb = Math.max(fx.rgb, .006 + .02 * ein(rush) * (1 - .6 * seg(lf, 94, 95))); }
-    // motion-blur brightness compensation (see probeMB)
-    if (R.mbGain) { const n = mbAt(lt); if (n > 1) fx.tint = fx.tint.map(v => v * n); }
+    if (b >= 47.5) { fx.zoomBlur = Math.max(fx.zoomBlur, .8 * ein(seg(b, 47.5, 47.85)) * (1 - .7 * seg(lf, 94, 95))); fx.zoomCenter = [.5, .5]; fx.rgb = Math.max(fx.rgb, .004 + .014 * ein(rush) * (1 - .6 * seg(lf, 94, 95))); }
   },
 };

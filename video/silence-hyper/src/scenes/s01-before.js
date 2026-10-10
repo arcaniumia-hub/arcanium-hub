@@ -50,10 +50,11 @@ function starPath(ctx, cx, cy, n, ro, ri, rot = -Math.PI / 2) {
 }
 function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
 // cheap text: optional hard shadow + fill + outline
-function ctext(ctx, s, x, y, { size = 46, color = '#222', stroke = 0, strokeColor = '#000', shadow = null, align = 'center', alpha = 1 } = {}) {
+function ctext(ctx, s, x, y, { size = 46, color = '#222', stroke = 0, strokeColor = '#000', under = 0, underColor = '#000', shadow = null, align = 'center', alpha = 1 } = {}) {
   if (alpha <= .003) return;
   ctx.save(); ctx.globalAlpha *= alpha; ctx.font = `700 ${size}px "${CHEAP}"`; ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.letterSpacing = '0px';
   if (shadow) { ctx.fillStyle = shadow[2]; ctx.fillText(s, x + shadow[0], y + shadow[1]); }
+  if (under) { ctx.lineJoin = 'round'; ctx.lineWidth = under; ctx.strokeStyle = underColor; ctx.strokeText(s, x, y); }
   ctx.fillStyle = color; ctx.fillText(s, x, y);
   if (stroke) { ctx.lineJoin = 'round'; ctx.lineWidth = stroke; ctx.strokeStyle = strokeColor; ctx.strokeText(s, x, y); }
   ctx.restore();
@@ -190,14 +191,15 @@ function slide2(ctx, beat) {
   const z = 1 + .04 * Math.max(0, beat - 9);
   framedPhoto(ctx, 540, 1000, 900, { border: 10, borderColor: '#ffffff', shadow: [18, 18], rot: -4 * Math.PI / 180, scale: z });
   // WordArt
-  wordArt(ctx, 'AMAZING', 540, 430, 80, tSec, 0);
-  wordArt(ctx, 'SOUND!!!', 540, 530, 80, tSec, 3);
+  wordArt(ctx, 'AMAZING', 540, 452, 80, tSec, 0);
+  wordArt(ctx, 'SOUND!!!', 540, 552, 80, tSec, 3);
   // 40 HRS!! red circle
-  ctx.save(); ctx.translate(230, 1380);
-  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.arc(8, 8, 120, 0, TAU); ctx.fill();
-  ctx.fillStyle = '#e01010'; ctx.beginPath(); ctx.arc(0, 0, 120, 0, TAU); ctx.fill();
-  ctx.lineWidth = 5; ctx.strokeStyle = '#ffe600'; ctx.beginPath(); ctx.arc(0, 0, 108, 0, TAU); ctx.stroke();
-  ctx.rotate(10 * Math.PI / 180); ctext(ctx, '40 HRS!!', 0, 16, { size: 46, color: '#ffe600', stroke: 2, strokeColor: '#5a0000' });
+  ctx.save(); ctx.translate(232, 1380);
+  ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.beginPath(); ctx.arc(8, 8, 132, 0, TAU); ctx.fill();
+  ctx.fillStyle = '#e01010'; ctx.beginPath(); ctx.arc(0, 0, 132, 0, TAU); ctx.fill();
+  ctx.lineWidth = 6; ctx.strokeStyle = '#ffe600'; ctx.beginPath(); ctx.arc(0, 0, 119, 0, TAU); ctx.stroke();
+  ctx.rotate(-10 * Math.PI / 180); ctext(ctx, '40', 0, -6, { size: 92, color: '#ffe600', under: 8, underColor: '#5a0000' });
+  ctext(ctx, 'HRS!!', 0, 56, { size: 52, color: '#ffffff', under: 7, underColor: '#5a0000' });
   ctx.restore();
   // five stars (drawn as paths: no glyph fallback surprises)
   for (let i = 0; i < 5; i++) {
@@ -215,7 +217,7 @@ function slide2(ctx, beat) {
     ctx.fillStyle = g; roundRect(ctx, -240, -55, 480, 110, 24); ctx.fill();
     ctx.fillStyle = 'rgba(255,255,255,.45)'; roundRect(ctx, -228, -49, 456, 46, 18); ctx.fill();
     ctx.lineWidth = 4; ctx.strokeStyle = '#0d5a1e'; roundRect(ctx, -240, -55, 480, 110, 24); ctx.stroke();
-    ctext(ctx, 'BUY NOW!', 0, 19, { size: 54, color: '#ffffff', stroke: 2, strokeColor: '#0d5a1e' });
+    ctext(ctx, 'BUY NOW!', 0, 21, { size: 60, color: '#ffffff', under: 8, underColor: '#0b3f15', shadow: [3, 4, 'rgba(0,0,0,.45)'] });
     ctx.restore();
     const hx = 540 + 270 + 28 + 14 * Math.sin(TAU * 2.5 * tSec), hy = y + 34 + 6 * Math.sin(TAU * 2.5 * tSec + 1);
     pointerHand(ctx, hx, hy, 4.4, -1.15);
@@ -234,16 +236,17 @@ export function renderBefore(ctx, beat) {
     } else slide1(ctx, beat);
   } else if (beat < 9) {
     // PowerPoint SWIVEL: slide 1 turns away (scaleX = cos 0..pi/2, shrinking 1 -> .6), slide 2 turns in from the other side
-    ctx.fillStyle = '#1b1b1b'; ctx.fillRect(0, 0, W, H);
+    // behind the turning card: slide 2's own gradient (the PowerPoint canvas is never dark, the frame is never empty)
+    ctx.drawImage(BG2, 0, 0);
     const u = seg(beat, 8, 9);
     if (u < .5) {
-      const v = u / .5, sx = Math.cos(eio(v) * Math.PI / 2), s = lerp(1, .6, eio(v));
-      ctx.save(); ctx.translate(540, 960); ctx.scale(Math.max(.002, sx) * s, s); ctx.translate(-540, -960); slide1(ctx, 8);
-      ctx.fillStyle = `rgba(0,0,0,${.45 * eio(v)})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+      const v = u / .5, sx = Math.cos(eio(v) * Math.PI / 2), s = lerp(1, .72, eio(v));
+      ctx.save(); ctx.translate(540, 960); ctx.scale(Math.max(.06, sx) * s, s); ctx.translate(-540, -960); slide1(ctx, 8);
+      ctx.fillStyle = `rgba(20,10,60,${.22 * eio(v)})`; ctx.fillRect(0, 0, W, H); ctx.restore();
     } else {
-      const v = (u - .5) / .5, sx = Math.sin(eio(v) * Math.PI / 2), s = lerp(.6, 1, eio(v));
-      ctx.save(); ctx.translate(540, 960); ctx.scale(-Math.max(.002, sx) * s, s); ctx.scale(-1, 1); ctx.translate(-540, -960); slide2(ctx, beat);
-      ctx.fillStyle = `rgba(0,0,0,${.45 * (1 - eio(v))})`; ctx.fillRect(0, 0, W, H); ctx.restore();
+      const v = (u - .5) / .5, sx = Math.sin(eio(v) * Math.PI / 2), s = lerp(.72, 1, eio(v));
+      ctx.save(); ctx.translate(540, 960); ctx.scale(Math.max(.06, sx) * s, s); ctx.translate(-540, -960); slide2(ctx, beat);
+      ctx.fillStyle = `rgba(20,10,60,${.22 * (1 - eio(v))})`; ctx.fillRect(0, 0, W, H); ctx.restore();
     }
   } else slide2(ctx, beat);
   ctx.restore();
@@ -253,10 +256,10 @@ export function renderBefore(ctx, beat) {
 export function renderNarrator(ctx, alpha = 1) {
   if (alpha <= .003) return;
   ctx.save(); ctx.globalAlpha *= alpha;
-  ctx.fillStyle = 'rgba(5,5,6,.97)'; ctx.beginPath(); ctx.roundRect(540 - 460, 285 - 75, 920, 150, 30); ctx.fill();
+  ctx.fillStyle = 'rgba(5,5,6,.97)'; ctx.beginPath(); ctx.roundRect(540 - 480, 287 - 88, 960, 176, 34); ctx.fill();
   ctx.restore();
-  text(ctx, 'What if instead of presenting', 540, 262, { size: 50, family: FONT.serif, italic: true, color: COL.white, alpha });
-  text(ctx, 'your product like this...', 540, 318, { size: 50, family: FONT.serif, italic: true, color: COL.white, alpha });
+  text(ctx, 'What if instead of presenting', 540, 268, { size: 60, family: FONT.serif, italic: true, color: COL.white, alpha });
+  text(ctx, 'your product like this...', 540, 336, { size: 60, family: FONT.serif, italic: true, color: COL.white, alpha });
 }
 
 export default {

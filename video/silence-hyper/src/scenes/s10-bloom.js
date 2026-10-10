@@ -20,7 +20,6 @@ const N = 150000, NL = 14000;   // trails: SwiftShader rasterises long lines slo
 const FOV = 32;
 const lin = hex => new THREE.Color(hex).convertSRGBToLinear();
 const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
-const MINUS = '−';
 const PC = .7;                         // model-space centre height of the product
 
 // ------------------------------------------------------------------ deterministic Math.random during hp.sample
@@ -213,15 +212,59 @@ function buildBokeh(n = 260) {
   return { pts, U };
 }
 
-// ------------------------------------------------------------------ motion-blur brightness probe (see s09)
-function probeMB(E) {
-  try {
-    const gl = E.renderer.getContext(), px = new Uint8Array(4);
-    const draw = () => { E.bg.fillStyle = '#c0c0c0'; E.bg.fillRect(0, 0, W, H); Object.assign(E.fx, { bloom: 0, grain: 0, vignette: 0, rgb: 0 }); };
-    E.renderFrame(0, draw, 1); gl.readPixels(540, 960, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const a = px[0];
-    E.renderFrame(0, draw, 2); gl.readPixels(540, 960, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); const c = px[0];
-    return c < a * .85 ? 1 : 0;
-  } catch (e) { return 0; }
+// ------------------------------------------------------------------ b56 HIT: an IRIS BURST out of the gate's vanishing point
+// A 7-blade aperture snaps open from (540,900) on three crisp frames (r 300 -> 750 -> 1875); a hot gold core and
+// radial rays fill the opening. The 3D image is never washed out: no linear flash, only an exposure/bloom lift.
+const VP = [540, 900], NB = 7;
+function irisBurst(ctx, f) {               // f = whole frames since b56 (0, 1, 2)
+  if (f > 2) return;
+  const [cx, cy] = VP, r = 300 * Math.pow(2.5, f), rot = .42 + f * .19, k = 1 - f / 3, kc = [1, .5, 0][f];
+  const v = Array.from({ length: NB }, (_, i) => { const a = rot + i / NB * TAU; return [cx + Math.cos(a) * r, cy + Math.sin(a) * r]; });
+  const poly = () => { ctx.beginPath(); v.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath(); };
+  ctx.save();
+  // blades: brushed dark metal outside the opening
+  ctx.beginPath(); ctx.rect(0, 0, W, H); v.slice().reverse().forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+  let g = ctx.createRadialGradient(cx, cy, r * .85, cx, cy, r * 2.4);
+  g.addColorStop(0, '#2a241b'); g.addColorStop(.25, '#120f0b'); g.addColorStop(1, '#050506');
+  ctx.fillStyle = g; ctx.fill('evenodd');
+  // blade seams: each aperture edge continues out as the edge of its blade (the pinwheel)
+  ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(230,200,150,${.4 * k})`;
+  for (let i = 0; i < NB; i++) {
+    const [x0, y0] = v[(i + NB - 1) % NB], [x1, y1] = v[i], dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 + dx / L * 2600, y1 + dy / L * 2600); ctx.stroke();
+  }
+  // light through the opening: hot core + rays, clipped to the aperture
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.save(); poly(); ctx.clip();
+  if (kc > 0) {
+    const rc = Math.min(r, 420) * .9;
+    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rc);
+    g.addColorStop(0, `rgba(255,246,228,${.95 * kc})`); g.addColorStop(.15, `rgba(247,226,184,${.5 * kc})`);
+    g.addColorStop(.5, `rgba(230,200,150,${.1 * kc})`); g.addColorStop(1, 'rgba(184,146,90,0)');
+    ctx.fillStyle = g; ctx.fillRect(cx - rc, cy - rc, rc * 2, rc * 2);
+  }
+  for (let i = 0; i < 90; i++) {
+    const a = rnd(i * 3.17 + 1.3) * TAU, r0 = r * (.06 + .25 * rnd(i * 5.1 + 2)), r1 = r * (.45 + .9 * rnd(i * 7.7 + 3)) * (1 + .5 * f);
+    const hot = rnd(i * 9.3) < .3;
+    ctx.strokeStyle = hot ? `rgba(255,244,222,${.7 * k})` : `rgba(230,200,150,${.45 * k})`; ctx.lineWidth = hot ? 2 : 1.4;
+    ctx.beginPath(); ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0); ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1); ctx.stroke();
+  }
+  ctx.restore();
+  // the aperture rim: a crisp gold hairline with a soft glow (strokes, no shadowBlur)
+  poly(); ctx.lineJoin = 'round';
+  ctx.lineWidth = 34; ctx.strokeStyle = `rgba(230,200,150,${.16 * k})`; ctx.stroke();
+  ctx.lineWidth = 12; ctx.strokeStyle = `rgba(230,200,150,${.3 * k})`; ctx.stroke();
+  ctx.lineWidth = 3.5; ctx.strokeStyle = `rgba(255,240,210,${.95 * k})`; ctx.stroke();
+  ctx.restore();
+}
+// '−42 dB' in Anton with a TRUE minus: Anton has no U+2212 (it falls back to a short hyphen), so the bar is drawn
+function dbLabel(ctx, cx, base, size, o = {}) {
+  ctx.save(); ctx.font = `400 ${size}px "${FONT.impact}"`;
+  const s = '42 dB', w = ctx.measureText(s).width, cap = ctx.measureText('4').actualBoundingBoxAscent || size * .72;
+  const mw = size * .46, gap = size * .08, th = Math.max(4, size * .095), x0 = cx - (mw + gap + w) / 2;
+  ctx.fillStyle = o.color || COL.white; ctx.fillRect(x0, base - cap * .5 - th / 2, mw, th);
+  ctx.restore();
+  text(ctx, s, x0 + mw + gap, base, { size, family: FONT.impact, color: o.color || COL.white, align: 'left' });
 }
 
 // ------------------------------------------------------------------ shot table (beats)
@@ -242,7 +285,7 @@ function mbAt(lt) {
   const b = B0 + lt / BEAT + 1e-6;
   if (b < 56.25) return 3;
   if (b < 56.5) return 2;
-  if (b >= 59.5 && b < 60) return 2;
+  if (b >= 59.5 && b < 60) return 4;   // 2D-only shot: 4 sub-frames are cheap and smooth the whip
   return 1;
 }
 
@@ -263,25 +306,28 @@ export default {
     const sea = buildSea(150, -110, 52, 150, 104);
     sea.mesh.position.y = -14; scene.add(sea.mesh);
     // lights (re-weighted per shot)
-    const key = new THREE.DirectionalLight(0xffe6c4, 2.2); key.position.set(30, 40, 30); scene.add(key);
+    const key = new THREE.DirectionalLight(0xfff4ea, 2.2); key.position.set(30, 40, 30); scene.add(key);
     const rimL = new THREE.DirectionalLight(0xffd9a0, 0); rimL.position.set(-40, 15, -30); scene.add(rimL);
     const rimR = new THREE.DirectionalLight(0xfff2de, 0); rimR.position.set(40, 10, -30); scene.add(rimR);
     const under = new THREE.PointLight(0xffc070, 0, 0, 2); under.position.set(0, -12, 6); scene.add(under);
     const sweep = new THREE.PointLight(0xfff0d8, 0, 0, 2); scene.add(sweep);
-    const hemi = new THREE.HemisphereLight(0xfff0dc, 0x221a10, .3); scene.add(hemi);
+    const hemi = new THREE.HemisphereLight(0xf4f1ec, 0x16140f, .3); scene.add(hemi);
     const BK = buildBokeh(); scene.add(BK.pts);
-    R = { bokeh: BK.pts, bokehU: BK.U, scene, cam, prod, hp, P, sea, key, rimL, rimR, under, sweep, hemi, mbGain: probeMB(E), hpA: -1 };
+    R = { bokeh: BK.pts, bokehU: BK.U, scene, cam, prod, hp, P, sea, key, rimL, rimR, under, sweep, hemi, hpA: -1 };
   },
   motionBlur(lt) { return mbAt(lt); },
   draw(E, lt, t) {
     const b = B0 + lt / BEAT + 1e-6, fx = E.fx, bg = E.bg, fg = E.fg;
+    // always issue a real draw op on fg: Chromium can skip re-uploading a canvas that was only reset(), which leaked
+    // the b56 iris (and the graze flare) into later frames that draw nothing on fg
+    fg.clearRect(0, 0, W, H); fg.fillStyle = 'rgba(0,0,0,0.004)'; fg.fillRect(0, 0, 1, 1);
     // the SHOT is picked from the frame's own time (so motion-blur sub-frames never mix two shots on a cut);
     // the animation inside it uses the sub-frame time
     const S = shotAt(B0 + Math.round(lt * 30) / 30 / BEAT + 1e-6), sf = (b - S.a) * 12;   // frames into the current shot
     const Fr = Math.floor(t * 30 + .5);
     const { scene, cam, prod, hp, P, sea } = R;
     fx.exposure = .88; fx.bloom = .6; fx.bloomThreshold = .72; fx.grain = .045; fx.vignette = .4; fx.sat = 1.05;
-    scene.environmentIntensity = S.id === 'graze' ? .1 : .4;
+    scene.environmentIntensity = S.id === 'front' ? .05 : .4;
     const setHP = a => { if (Math.abs(a - R.hpA) > 1e-4) { hp.setOpacity(hp.root, a); R.hpA = a; } };
 
     if (S.id === 'bloom') {
@@ -295,7 +341,7 @@ export default {
       const kick = KICKS.reduce((m, k) => Math.max(m, b >= k ? Math.exp(-(b - k) * BEAT / .1) : 0), 0);
       P.U.uKick.value = kick * .6;
       P.U.uBright.value = .155 * (.15 + .85 * st[0] * st[0]) * (1 - .3 * eout(seg(b, 58.5, 59)));
-      P.LU.uBright.value = .3; P.U.uLine.value = 1;
+      P.LU.uBright.value = .3 * (.35 + .65 * seg(b, 56.12, 56.4)); P.U.uLine.value = 1;
       P.U.uSize.value = .34;
       P.pts.visible = P.lines.visible = true; sea.mesh.visible = true;
       // product orbit + the real mesh fading in inside the cloud
@@ -324,9 +370,15 @@ export default {
       E.render3D(scene, cam);
       // FX: b56 gold flash + zoom blur; kicks; b57/b58 rgb kicks
       const f0 = (b - 56) * 12;
-      if (f0 < 4) { fx.flash = .5 * Math.pow(1 - f0 / 4, 4); fx.flashColor = [1, .82, .55]; }
-      if (f0 < 6) { fx.zoomBlur = .6 * (1 - f0 / 6); }
-      fx.rgb = Math.max(fx.rgb, .0015 + .02 * Math.max(0, 1 - f0 / 8));
+      // HIT b56: iris burst (crisp, frame-quantised) + exposure/bloom lift; no linear flash, so the frame keeps its contrast
+      const fq = Math.round((B0 + Math.round(lt * 30) / 30 / BEAT - 56) * 12);
+      irisBurst(fg, fq);
+      if (fq <= 1) { fx.exposure *= fq === 0 ? 1.6 : 1.25; fx.bloom = Math.max(fx.bloom, fq === 0 ? 1.5 : 1.2); }
+      if (f0 < 4) { fx.zoomBlur = .3 * Math.pow(1 - f0 / 4, 2); fx.zoomCenter = [.5, 1 - VP[1] / H]; }
+      fx.zoom *= 1 + .06 * (1 - expoOut(clamp(f0 / 8)));
+      fx.rgb = Math.max(fx.rgb, .0015 + .007 * Math.max(0, 1 - f0 / 8));
+      // the assembling cloud is a dense web of hairlines: keep its blacks deep on the frames right after the hit
+      if (f0 > .5 && f0 < 6) fx.contrast = 1 + .22 * (1 - f0 / 6);
       kickPump(fx, t, KICKS.slice(1).map(k => k * BEAT), { zoom: 1.03, rgb: .008 });
       for (const k of [57, 58]) { const f = (b - k) * 12; if (f >= 0 && f < 6) fx.rgb = Math.max(fx.rgb, .015 * Math.pow(1 - f / 6, 2)); }
       { const f = (b - 58.5) * 12; if (f >= 0 && f < 6) fx.rgb = Math.max(fx.rgb, .008 * (1 - f / 6)); }
@@ -336,56 +388,47 @@ export default {
       const k = sf / 6;
       drawCover(bg, E.img.macro, 0, 0, W, H, { zoom: lerp(1.2, 1.3, k), fx: lerp(.66, .72, k), fy: .5 });
       fx.displace = .04 * (1 - .5 * k); fx.displaceScale = 2.5;
-    } else if (S.id === 'graze' || S.id === 'front') {
+    } else if (S.id === 'graze') {
+      // b59.5: macro of the real product (hero.jpg): headband sleeve, left gold slider and cushion, whipping sideways;
+      // a hot anamorphic streak rides the slider's top edge (frame-quantised so the motion blur does not double it)
+      const e = lerp(sf / 6, eio(sf / 6), .5), Z = 1.55, sc = Math.max(W / 1000, H / 1075) * Z, iw = 1000 * sc, ih = 1075 * sc;
+      const fxp = lerp(.10, .26, e), fyp = lerp(.37, .34, e);
+      drawCover(bg, E.img.hero, 0, 0, W, H, { zoom: Z, fx: fxp, fy: fyp });
+      const fq6 = clamp((Math.round(lt * 30) / 30 / BEAT + B0 - S.a) * 2), fe = lerp(fq6, eio(fq6), .5);
+      const ox = (W - iw) * lerp(.10, .26, fe), oy = (H - ih) * lerp(.37, .34, fe);
+      const x = 207 * sc + ox, y = 440 * sc + oy;
+      fg.save(); fg.globalCompositeOperation = 'lighter';
+      fg.save(); fg.translate(x, y); fg.scale(1, .045);
+      let g = fg.createRadialGradient(0, 0, 0, 0, 0, 760);
+      g.addColorStop(0, 'rgba(255,236,200,.5)'); g.addColorStop(.4, 'rgba(230,200,150,.16)'); g.addColorStop(1, 'rgba(230,200,150,0)');
+      fg.fillStyle = g; fg.fillRect(-760, -760, 1520, 1520); fg.restore();
+      g = fg.createLinearGradient(x - 1000, 0, x + 1000, 0);
+      g.addColorStop(0, 'rgba(255,240,215,0)'); g.addColorStop(.5, 'rgba(255,244,225,.8)'); g.addColorStop(1, 'rgba(255,240,215,0)');
+      fg.fillStyle = g; fg.fillRect(x - 1000, y - 1.5, 2000, 3);
+      g = fg.createRadialGradient(x, y, 0, x, y, 80); g.addColorStop(0, 'rgba(255,248,235,.85)'); g.addColorStop(1, 'rgba(255,230,190,0)');
+      fg.fillStyle = g; fg.fillRect(x - 80, y - 80, 160, 160);
+      fg.restore();
+      fx.vignette = .5;
+    } else if (S.id === 'front') {
       P.pts.visible = P.lines.visible = false; sea.mesh.visible = false; R.bokeh.visible = false;
       setHP(1); prod.scale.setScalar(1);
-      if (S.id === 'graze') {
-        // extreme close-up grazing along the right gold slider and up the woven sleeve, tracking sideways fast
-        const k = sf / 6;
-        prod.rotation.set(0, 0, 0);
-        const e = eio(k);
-        // close tracking shot: up the right gold slider into the woven sleeve, the camera sliding sideways past it
-        const ang = lerp(-.08, .62, e);
-        const tgt = ang < .17 ? V3(7.95, lerp(-1.6, .55, (ang + .08) / .25), 0) : V3(Math.cos(ang) * 8.1, Math.sin(ang) * 8.1 - PC, 0);
-        const az = lerp(40, 14, e) * DEG, dz = 15.5;
-        cam.position.set(tgt.x + Math.sin(az) * dz, tgt.y - 2.2 + 2.6 * e, Math.cos(az) * dz);
-        cam.lookAt(tgt);
-        cam.rotateZ(lerp(-12, 9, e) * DEG);
-        cam.setViewOffset(W, H, 0, 0, W, H);
-        R.key.intensity = .08; R.rimL.intensity = 4.5; R.rimR.intensity = 0; R.under.intensity = 0; R.hemi.intensity = .04;
-        R.sweep.position.set(tgt.x + lerp(5, -3, e), tgt.y + 4.5, 3.5); R.sweep.intensity = 45;
-      } else {
-        // front-on, rim-lit on ink
-        const k = sf / 3;
-        prod.rotation.set(0, 0, 0);
-        cam.position.set(0, -.5, lerp(60, 56, k)); cam.lookAt(0, -.5, 0);
-        cam.setViewOffset(W, H, 0, 0, W, H);
-        R.key.intensity = .6; R.rimL.intensity = 7; R.rimR.intensity = 7; R.under.intensity = 0; R.sweep.intensity = 0; R.hemi.intensity = .05;
-        R.rimL.position.set(-30, 25, -40); R.rimR.position.set(30, 25, -40);
-      }
+      // front-on, rim-lit on ink
+      const k = sf / 3;
+      // 3/4 front (the hero.jpg angle) so the cup faces and gold rings read, instead of edge-on discs
+      prod.rotation.set(0, lerp(-.62, -.56, k), 0);
+      const d = lerp(58, 54, k);
+      cam.position.set(0, 3.2, d); cam.lookAt(0, -.3, 0);
+      cam.setViewOffset(W, H, 0, 0, W, H);
+      R.key.intensity = .05; R.rimL.intensity = 9; R.rimR.intensity = 9; R.under.intensity = 0; R.sweep.intensity = 0; R.hemi.intensity = .05;
+      R.rimL.position.set(-30, 25, -40); R.rimR.position.set(30, 25, -40);
       E.render3D(scene, cam);
       R.rimL.position.set(-40, 15, -30); R.rimR.position.set(40, 10, -30);
-      if (S.id === 'graze') {
-        // anamorphic light streak riding the move
-        const k = clamp((Math.round(lt * 30) / 30 / BEAT + B0 - S.a) * 2), y = lerp(1180, 700, eio(k)), x = lerp(-150, 1230, eio(k));   // frame-quantised: no double flare under motion blur
-        fg.save(); fg.globalCompositeOperation = 'lighter';
-        // anamorphic flare: wide soft ellipse + hairline core + hot point
-        fg.save(); fg.translate(x, y); fg.scale(1, .05);
-        let g = fg.createRadialGradient(0, 0, 0, 0, 0, 700);
-        g.addColorStop(0, 'rgba(255,236,200,.55)'); g.addColorStop(.4, 'rgba(230,200,150,.18)'); g.addColorStop(1, 'rgba(230,200,150,0)');
-        fg.fillStyle = g; fg.fillRect(-700, -700, 1400, 1400); fg.restore();
-        g = fg.createLinearGradient(x - 900, 0, x + 900, 0);
-        g.addColorStop(0, 'rgba(255,240,215,0)'); g.addColorStop(.5, 'rgba(255,244,225,.85)'); g.addColorStop(1, 'rgba(255,240,215,0)');
-        fg.fillStyle = g; fg.fillRect(x - 900, y - 1.5, 1800, 3);
-        g = fg.createRadialGradient(x, y, 0, x, y, 70); g.addColorStop(0, 'rgba(255,248,235,.9)'); g.addColorStop(1, 'rgba(255,230,190,0)');
-        fg.fillStyle = g; fg.fillRect(x - 70, y - 70, 140, 140);
-        fg.restore();
-      }
     } else if (S.id === 'mirror') {
       const k = sf / 6;
       const sh = [E.img.orbit0, E.img.orbit1, E.img.orbit2, E.img.orbit3];
-      orbitFrame(bg, sh, lerp(29, 32, k), lerp(220, 250, k), 1000, lerp(1300, 1400, k), { mode: 'source-over' });
-      fx.mirror = 1; fx.tint = [1.12, 1, .82]; fx.sat = 1.1;
+      // the mirror axis runs through the headband centre (x 540): a perfectly symmetrical front view, centred on y 960
+      orbitFrame(bg, sh, Math.round(lerp(31, 34, k)), 540, 960, lerp(1500, 1580, eout(k)), { mode: 'source-over' });
+      fx.mirror = 1; fx.tint = [1.04, 1, .95]; fx.sat = 1.05;
     } else if (S.id === 'hero') {
       const k = sf / 6;
       drawCover(bg, E.img.hero, 0, 0, W, H, { zoom: lerp(1.4, 1.52, k), fx: .62, fy: .55 });
@@ -406,14 +449,14 @@ export default {
       const s = fitSize(bg, 'ONE', 900, 1200, 400, FONT.impact);
       const sc = lerp(1.1, 1, eout(sf / 3));
       bg.save(); bg.translate(540, 960); bg.scale(sc, sc);
-      text(bg, 'ONE', 0, s * .36, { size: s, family: FONT.impact, gold: true });
+      text(bg, 'ONE', 0, s * .36, { size: s, family: FONT.impact, gold: true, alpha: 1 });
       bg.restore();
     } else if (S.id === 'db') {
       const sh = [E.img.orbit0, E.img.orbit1, E.img.orbit2, E.img.orbit3];
       orbitFrame(bg, sh, 10, 540, 780, lerp(1150, 1200, sf / 3), { mode: 'source-over' });
       const sc = lerp(1.25, 1, expoOut(sf / 2));
       fg.save(); fg.translate(540, 1450); fg.scale(sc, sc);
-      text(fg, MINUS + '42 dB', 0, 0, { size: 200, family: FONT.impact, color: COL.white });
+      dbLabel(fg, 0, 0, 200);
       fg.restore();
     } else {
       // ---------------- PART 3: 'Hear nothing.'
@@ -424,12 +467,13 @@ export default {
 
     // ---------------- cascade cut kicks
     if (b >= 59 && b < 62) {
-      if (sf < 1) fx.rgb = Math.max(fx.rgb, .02);
+      if (sf < 1) fx.rgb = Math.max(fx.rgb, .012);
       fx.zoom *= 1 + .04 * (1 - expoOut(clamp(sf / 3)));
-      if (b >= 61 && sf < 2) { fx.glitch = .25 * (1 - sf / 2); fx.glitchSeed = Fr * 7 + 3; }
+      if (b >= 61) {
+        if (Math.round(sf) < 1) { fx.glitch = .15; fx.glitchSeed = Fr * 7 + 3; }   // the cut frame only; the next 2 frames are clean
+        fx.rgb = Math.min(fx.rgb, .006);
+        if (S.id === 'one' || S.id === 'db') { fx.bloomThreshold = .9; fx.bloom = Math.min(fx.bloom, S.id === 'db' ? .2 : .45); }
+      }
     }
-    // motion-blur brightness compensation
-    const nMB = mbAt(Math.round(lt * 30) / 30);
-    if (R.mbGain && nMB > 1) { fx.tint = fx.tint.map(v => v * nMB); fx.bloomThreshold /= nMB; }
   },
 };

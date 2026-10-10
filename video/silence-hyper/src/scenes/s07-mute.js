@@ -45,7 +45,11 @@ const ARMS = [
   ['L.magnet', 'L.coil', 'L.driver', 'L.battery', 'L.pcb', 'L.ring', 'L.mesh', 'L.cushion', 'L.shell'],
   ['R.magnet', 'R.coil', 'R.driver', 'R.battery', 'R.pcb', 'R.ring', 'R.mesh', 'R.cushion', 'R.shell'],
 ];
-const DEPTH = [.84, .68, .92, .72, .82, 1.06, .97, 1.12, .88];          // × K0 distance
+const DEPTH = [.84, .68, .92, .72, .82, 1.06, 1.18, 1.5, 1.45];        // × K0 distance (mesh / cushion / shell pushed back: smaller, calmer)
+// hero parts brought toward the lens (big, sharp, caught by the gliding key one after the other)
+const HERO_DEPTH = { 'L.ring': .5, 'L.pcb': .6, 'R.driver': .56 };
+// text-safe zones (screen px, in every camera of the silent drift): the −42 dB / italic line block and ANC ● ON
+const SAFE = [{ cx: 540, cy: 995, rx: 390, ry: 230 }, { cx: 540, cy: 292, rx: 230, ry: 64 }];
 const ORIENT = {
   magnet: [.5, .6, 0], coil: [.9, .7, 0], driver: [-.35, .45, 0], battery: [.2, .15, -8], pcb: [.12, .2, 4],
   ring: [.95, .35, 0], mesh: [-.55, .3, 0], cushion: [.6, -.25, 0], shell: [-.5, -.45, 0],
@@ -65,6 +69,9 @@ attribute vec3 aOff; attribute vec3 aCol; attribute float aTF; attribute float a
 uniform float uTau, uP, uTrem, uFrame, uScale, uSize, uHot;
 varying vec3 vCol; varying float vA;
 vec3 hash3(float n){ return fract(sin(vec3(n, n+1.7, n+3.1))*43758.5453)*2.-1.; }
+uniform float uSafe; uniform vec2 uSafeC; uniform vec2 uSafeR;
+float safeK(vec4 cp){ vec2 nd = cp.xy/max(cp.w, 1e-4); vec2 sp = vec2((nd.x+1.)*.5*${W}., (1.-nd.y)*.5*${H}.);
+  float e = length((sp - uSafeC)/uSafeR); return mix(1., .1 + .9*smoothstep(.72, 1.12, e), uSafe); }
 void main(){
   float tau = min(uTau, aTF);
   float h = (1. - exp(-max(tau, 0.)/${TC.toFixed(3)}))*aHN;
@@ -82,6 +89,7 @@ void main(){
   vCol = aCol*(1. + hot*2.5); vA = a*smoothstep(0., .012, uTau);
   gl_PointSize = ps;
   gl_Position = projectionMatrix*mv;
+  vA *= safeK(gl_Position);
 }`;
 // frozen motion trails: the same flight, drawn as radial hairlines (tail = an earlier point of the same path)
 const LV = `
@@ -89,6 +97,9 @@ attribute vec3 aOff; attribute vec3 aCol; attribute float aTF; attribute float a
 uniform float uTau, uP, uTrem, uFrame, uHot;
 varying vec3 vCol; varying float vA;
 vec3 hash3(float n){ return fract(sin(vec3(n, n+1.7, n+3.1))*43758.5453)*2.-1.; }
+uniform float uSafe; uniform vec2 uSafeC; uniform vec2 uSafeR;
+float safeK(vec4 cp){ vec2 nd = cp.xy/max(cp.w, 1e-4); vec2 sp = vec2((nd.x+1.)*.5*${W}., (1.-nd.y)*.5*${H}.);
+  float e = length((sp - uSafeC)/uSafeR); return mix(1., .1 + .9*smoothstep(.72, 1.12, e), uSafe); }
 void main(){
   float tau = min(uTau, aTF);
   float h = (1. - exp(-max(tau, 0.)/${TC.toFixed(3)}))*aHN;
@@ -100,6 +111,7 @@ void main(){
   float hot = uHot*(1. - smoothstep(0., aTF, tau));
   vCol = aCol*(1. + hot*2.5); vA = aEnd*smoothstep(0., .012, uTau)*smoothstep(1., 6., -mv.z);
   gl_Position = projectionMatrix*mv;
+  vA *= safeK(gl_Position);
 }`;
 const PF = `
 uniform sampler2D uDot; uniform float uBright; varying vec3 vCol; varying float vA;
@@ -146,6 +158,9 @@ function build(E) {
   hp.explode(0);
   prod.rotation.set(TILT, 0, 0); prod.position.set(0, .25 * Math.sin(8 * BEAT * 2.1), 0);   // = s06 at b36 (spin 8π)
   prod.updateMatrixWorld(true);
+  // sample the debris NOW, on the assembled product: hp.sample() runs explode(0), which rewrites the local positions of
+  // sleeve / core / sliders / cup layers — after the pivot re-parenting below that would break the assembled pose
+  const smp = seeded(() => hp.sample(NP));
 
   // lights: s06's cold studio at the clamp, a detonation light, the gliding cold key of the silence
   const key = new THREE.DirectionalLight(0xe4edf7, 3.8); key.position.set(30, 34, 30); scene.add(key);
@@ -190,9 +205,43 @@ function build(E) {
   ARMS.forEach((arm, a) => arm.forEach((n, j) => {
     const [sx, sy] = spiralSlot(a, j, arm.length);
     // parts right of centre sit deeper: the orbit (camera to +x) slides near things leftward, across the type
-    TGT[n] = toWorld(Km, sx, sy, Km.dist * DEPTH[j] * (a ? 1.04 : 1) * (1 + .15 * clamp((sx - 470) / 400)));
+    TGT[n] = toWorld(Km, sx, sy, Km.dist * (HERO_DEPTH[n] || DEPTH[j] * (a ? 1.04 : 1) * (1 + .15 * clamp((sx - 470) / 400))));
   }));
   for (const [n, [sx, sy, dk]] of Object.entries(FREE)) TGT[n] = toWorld(Km, sx, sy, Km.dist * dk);
+  // keep the type block clear: in every camera of the silent drift (b37.5 -> b39.5) each part's projected disc
+  // (centre ± its screen radius) is pushed radially out of the safe ellipses, at constant distance from the lens
+  {
+    const fpx = H / (2 * Math.tan(FOV / 2 * DEG));
+    const checks = [0, .15, .3, .45, .6, .75, .9, 1].map(k => lerpK(K0, K1, k));
+    const wp = V3();
+    let moved = 1;
+    for (let it = 0; it < 16 && moved; it++) { moved = 0; for (const n of Object.keys(TGT)) {
+      const sz = new THREE.Box3().setFromObject(named[n]).getSize(V3());
+      const rad = Math.max(sz.x, sz.y, sz.z) * .5;
+      for (const Kc of checks) {
+        setCam(cam, Kc);
+        wp.copy(TGT[n]); prod.localToWorld(wp);
+        const z = wp.distanceTo(cam.position);
+        const [sx, sy, sz2] = project(cam, wp);
+        if (sz2 > 1) continue;
+        const rs = rad * fpx / z * .9;
+        for (const Z of HERO_DEPTH[n] ? SAFE.slice(0, 1) : SAFE) {   // heroes may pass behind the small ANC label
+          const dx = (sx - Z.cx) / (Z.rx + rs), dy = (sy - Z.cy) / (Z.ry + rs), e = Math.hypot(dx, dy);
+          if (e >= 1) continue;
+          let nx, ny;
+          if (HERO_DEPTH[n]) {                       // near heroes swing sideways with the orbit: clear them vertically only
+            nx = sx; ny = Z.cy + Math.sign(dy || -1) * (Z.ry + rs) * Math.sqrt(Math.max(0, 1 - dx * dx)) * 1.08;
+          } else {
+            const ux = e > .05 ? dx / e : (sx < Z.cx ? -1 : 1), uy = e > .05 ? dy / e : 0;
+            nx = Z.cx + ux * (Z.rx + rs) * 1.04; ny = Z.cy + uy * (Z.ry + rs) * 1.04;
+          }
+          TGT[n] = toWorld(Kc, nx, ny, z);
+          moved++;
+          break;
+        }
+      }
+    } }
+  }
   for (const n of Object.keys(TGT)) {
     const o = ORIENT[n.slice(2)] || [0, 0, 0];
     const toCam = prod.worldToLocal(camK1.clone()).sub(TGT[n]).normalize();
@@ -233,8 +282,7 @@ function build(E) {
     idx++;
   }
 
-  // ---- 100k debris particles from the assembled surface
-  const smp = seeded(() => hp.sample(NP));
+  // ---- 100k debris particles from the assembled surface (sampled above, before the re-parenting)
   const g = new THREE.BufferGeometry();
   const pos = smp.positions, col = new Float32Array(NP * 3), off = new Float32Array(NP * 3), aTF = new Float32Array(NP), aHN = new Float32Array(NP), aR = new Float32Array(NP);
   const armPts = ARMS.map(a => [C0.clone(), ...a.map(n => TGT[n].clone())]);
@@ -277,7 +325,8 @@ function build(E) {
   g.setAttribute('aTF', new THREE.BufferAttribute(aTF, 1)); g.setAttribute('aHN', new THREE.BufferAttribute(aHN, 1)); g.setAttribute('aRnd', new THREE.BufferAttribute(aR, 1));
   const pmat = new THREE.ShaderMaterial({ vertexShader: PV, fragmentShader: PF, ...ADDITIVE,
     uniforms: { uTau: { value: 0 }, uP: { value: 1 }, uTrem: { value: 0 }, uFrame: { value: 0 }, uScale: { value: 1 }, uSize: { value: .065 },
-      uHot: { value: 0 }, uDot: { value: dotTexture() }, uBright: { value: .5 } } });
+      uHot: { value: 0 }, uDot: { value: dotTexture() }, uBright: { value: .5 },
+      uSafe: { value: 0 }, uSafeC: { value: new THREE.Vector2(540, 1000) }, uSafeR: { value: new THREE.Vector2(400, 230) } } });
   const points = new THREE.Points(g, pmat); points.frustumCulled = false; prod.add(points);
   // streaks: the first NS particles of the shell + arm kinds again, as 2-vertex lines
   const NS = 6000, lg = new THREE.BufferGeometry();
@@ -291,6 +340,7 @@ function build(E) {
   const ae = new Float32Array(sel.length * 2); for (let j = 0; j < sel.length; j++) ae[j * 2 + 1] = 1; lg.setAttribute('aEnd', new THREE.BufferAttribute(ae, 1));
   const lmat = new THREE.ShaderMaterial({ vertexShader: LV, fragmentShader: LF, ...ADDITIVE,
     uniforms: { uTau: pmat.uniforms.uTau, uP: pmat.uniforms.uP, uTrem: pmat.uniforms.uTrem, uFrame: pmat.uniforms.uFrame, uHot: pmat.uniforms.uHot,
+      uSafe: pmat.uniforms.uSafe, uSafeC: pmat.uniforms.uSafeC, uSafeR: pmat.uniforms.uSafeR,
       uDot: { value: null }, uBright: { value: .5 } } });
   const lines = new THREE.LineSegments(lg, lmat); lines.frustumCulled = false; prod.add(lines);
 
@@ -317,7 +367,9 @@ function build(E) {
   const mx = document.createElement('canvas').getContext('2d');
   mx.font = `400 300px "${FONT.impact}"`; const capA = mx.measureText('0').actualBoundingBoxAscent;
   mx.font = `400 240px "${FONT.serif}"`; const capS = mx.measureText('42').actualBoundingBoxAscent;
-  return { wb, scene, cam, prod, hp, key, rimL, rimR, fill, strobe, boom, glide, rings, parts, points, lines, pmat, lmat, table, wc, K0, K1, K2, capA, capS };
+  // the gliding cold key visits the hero parts one by one (positions in prod-local, nudged toward the lens)
+  const heroPath = ['L.pcb', 'L.ring', 'R.driver'].map(n => TGT[n].clone().add(prod.worldToLocal(camK1.clone()).sub(TGT[n]).normalize().multiplyScalar(7)));
+  return { heroPath, wb, scene, cam, prod, hp, key, rimL, rimR, fill, strobe, boom, glide, rings, parts, points, lines, pmat, lmat, table, wc, K0, K1, K2, capA, capS };
 }
 
 // ------------------------------------------------------------------ camera
@@ -438,28 +490,33 @@ export default {
     // ---------------- particles
     const u = R.pmat.uniforms;
     u.uTau.value = tau; u.uP.value = P; u.uTrem.value = trem * .12; u.uFrame.value = Fr;
-    u.uScale.value = H / (2 * Math.tan(FOV / 2 * DEG)); u.uHot.value = 1;
-    u.uBright.value = lerp(.4, .26, seg(b, 36.25, 37)) * (1 + 1.2 * rw); R.lmat.uniforms.uBright.value = lerp(.5, .32, seg(b, 36.25, 37)) * (1 + rw);
+    u.uScale.value = H / (2 * Math.tan(FOV / 2 * DEG)); u.uHot.value = .55;
+    u.uBright.value = lerp(.3, .24, seg(b, 36.25, 37)) * (1 + .6 * rw); R.lmat.uniforms.uBright.value = lerp(.4, .3, seg(b, 36.25, 37)) * (1 + .5 * rw);
+    u.uSafe.value = eio(seg(b, 36.25, 37)) * (1 - rw);     // dust clears a pocket behind the type
 
     // ---------------- lights
     const det = Math.exp(-tau / .06);
-    R.boom.intensity = 900 * det * (tau > 0 ? 1 : 0);
+    R.boom.intensity = 220 * det * (tau > 0 ? 1 : 0);
     const calm = seg(b, 36.25, 37);                        // studio steps down with the counter
     R.key.intensity = lerp(3.8, .5, calm); R.rimL.intensity = lerp(8, 6, calm); R.rimR.intensity = lerp(6, 4.5, calm);
     scene.environmentIntensity = lerp(.38, .13, calm) + .25 * rw;
-    R.strobe.intensity = 3 * Math.exp(-tau / .05); R.fill.intensity = .5;
+    R.strobe.intensity = (tau < .02 ? 4.5 : 1.6) * Math.exp(-tau / .05); R.fill.intensity = .5;
     R.rings.forEach(m => { m.emissiveIntensity = 4 * Math.exp(-tau / .12) + .1; });
     // the cold key glides across the frozen parts (left -> right, high -> low, in front)
     const gk = eio(seg(b, 36.6, 39.5));
-    R.glide.position.set(lerp(-15, 14, gk) + 6 * Math.sin(gk * Math.PI), lerp(25, -24, gk), 9);
-    R.glide.intensity = 700 * seg(b, 36.4, 37) * (1 - .6 * rw);
+    {
+      const hp3 = R.heroPath, u3 = gk * (hp3.length - 1), j3 = Math.min(hp3.length - 2, Math.floor(u3));
+      const gp = hp3[j3].clone().lerp(hp3[j3 + 1], eio(u3 - j3));
+      prod.localToWorld(gp); R.glide.position.copy(gp);
+    }
+    R.glide.intensity = 520 * seg(b, 36.4, 37) * (1 - .6 * rw);
     // the rewind: light returns warm
     R.key.intensity += 2.4 * rw; R.rimL.intensity += 4 * rw;
 
     // ---------------- bg2d
     bg.fillStyle = '#050607'; bg.fillRect(0, 0, W, H);
     const gl = bg.createRadialGradient(540, 940, 0, 540, 940, 1000);
-    gl.addColorStop(0, `rgba(96,106,118,${.16 + .22 * det})`); gl.addColorStop(.5, 'rgba(30,34,40,.1)'); gl.addColorStop(1, 'rgba(5,6,7,0)');
+    gl.addColorStop(0, `rgba(96,106,118,${.16 + .1 * det})`); gl.addColorStop(.5, 'rgba(30,34,40,.1)'); gl.addColorStop(1, 'rgba(5,6,7,0)');
     bg.fillStyle = gl; bg.fillRect(0, 0, W, H);
     const wStep = Fr < 3 ? 1 : Fr < 6 ? .6 : Fr < 9 ? .42 : Fr < 12 ? .32 : .22;
     const par = { zoom: .16 * kd, shift: 90 * Math.sin(K.yaw), roll: -K.roll, blur: Fr < 3 ? 1 : Fr < 12 ? 2 : 3 };
@@ -476,7 +533,9 @@ export default {
     const C = (x, y) => [lerp(x, 540, col), lerp(y, 960, col)];
     fg.save();
     // s06 HUD tail (f432-443): label + meter stepping down; the counter jumps to the centre at f435
-    if (Fr < 12) {
+    const hudA = Fr < 3 ? 1 : 1 - seg(lf, 3, 6);           // label + meter leave as the counter jumps to the centre (b36.25)
+    if (hudA > .003) {
+      fg.save(); fg.globalAlpha = hudA;
       const g2 = fg.createLinearGradient(0, 160, 0, 500);
       g2.addColorStop(0, 'rgba(5,6,7,.82)'); g2.addColorStop(.55, 'rgba(5,6,7,.55)'); g2.addColorStop(1, 'rgba(5,6,7,0)');
       fg.fillStyle = g2; fg.fillRect(0, 0, W, 500);
@@ -487,36 +546,50 @@ export default {
         '118'.split('').forEach((d, i) => text(fg, d, 80 + sh + adv * (i + .5), 360, { size: 96, weight: 400, family: FONT.impact, color: COLD }));
         text(fg, 'dB', 80 + sh + adv * 3 + 16, 360, { size: 40, weight: 500, family: FONT.display, color: COL.gold, align: 'left' });
       }
-      const lvl = Fr < 3 ? (Fr % 2 ? 1 : .95) : Fr < 6 ? 1 : Fr < 9 ? .54 : .09;
+      const lvl = Fr < 3 ? (Fr % 2 ? 1 : .95) : Fr < 4 ? .6 : Fr < 5 ? .3 : .1;   // meter drops with the counter
       const segs = 40, sw = 920 / segs, y = 396;
       fg.fillStyle = 'rgba(154,151,143,.28)'; for (let i = 0; i < segs; i++) fg.fillRect(80 + i * sw, y + 5, sw - 4, 2);
       for (let i = 0; i < segs; i++) {
         if (i >= lvl * segs) break;
-        const hot = i / segs > .82; fg.fillStyle = hot ? '#ffffff' : COLD; fg.globalAlpha = hot ? 1 : .85;
+        const hot = i / segs > .82; fg.fillStyle = hot ? '#ffffff' : COLD; fg.globalAlpha = hudA * (hot ? 1 : .85);
         fg.fillRect(80 + i * sw, y, sw - 4, 12);
       }
-      fg.globalAlpha = 1;
+      fg.restore();
     }
-    // the crushed hairline flashes gold on the click (1 frame)
+    // THE CLICK (1 frame): the crushed hairline ignites gold — a hot core, a soft halo and an anamorphic streak across
+    // the frame, so the hit frame carries one designed image instead of a white-out
     if (Fr === 0) {
-      fg.save(); fg.shadowColor = 'rgba(255,214,150,1)'; fg.shadowBlur = 60; fg.fillStyle = '#fff1d6';
-      fg.fillRect(537, 1020 - 170, 6, 340); fg.fillRect(537, 1020 - 170, 6, 340); fg.restore();
+      fg.save();
+      const hx = 540, hy = 1020;
+      const hal = fg.createRadialGradient(hx, hy, 0, hx, hy, 260);
+      hal.addColorStop(0, 'rgba(255,224,170,.55)'); hal.addColorStop(.35, 'rgba(230,200,150,.18)'); hal.addColorStop(1, 'rgba(230,200,150,0)');
+      fg.fillStyle = hal; fg.fillRect(hx - 260, hy - 260, 520, 520);
+      const st = fg.createLinearGradient(0, 0, W, 0);
+      st.addColorStop(0, 'rgba(230,200,150,0)'); st.addColorStop(.3, 'rgba(230,200,150,.5)'); st.addColorStop(.5, 'rgba(255,246,226,1)');
+      st.addColorStop(.7, 'rgba(230,200,150,.5)'); st.addColorStop(1, 'rgba(230,200,150,0)');
+      fg.fillStyle = st; fg.fillRect(0, hy - 2, W, 4);
+      fg.shadowColor = 'rgba(255,206,130,1)'; fg.shadowBlur = 50; fg.fillStyle = '#e6c896';
+      fg.fillRect(hx - 6, hy - 190, 12, 380);
+      fg.shadowBlur = 16; fg.fillStyle = '#fffaf0'; fg.fillRect(hx - 2.5, hy - 175, 5, 350);
+      fg.restore();
     }
+    // legibility: drawn BEFORE the type so the plates only darken the debris behind it, never the numerals
+    // text-safe ink plate: a soft radial plate behind the counter / −42 dB, plus a band behind the italic line
+    const plate = (cx, cy, rx, ry, a) => {
+      if (a <= .003) return;
+      fg.save(); fg.translate(cx, cy); fg.scale(1, ry / rx);
+      const sg = fg.createRadialGradient(0, 0, 0, 0, 0, rx);
+      sg.addColorStop(0, `rgba(5,5,6,${a})`); sg.addColorStop(.55, `rgba(5,5,6,${a * .8})`); sg.addColorStop(1, 'rgba(5,5,6,0)');
+      fg.fillStyle = sg; fg.fillRect(-rx, -rx, rx * 2, rx * 2); fg.restore();
+    };
+    plate(540, 975, 470, 300, seg(lf, 3, 9) * .58 * (1 - col));
+    plate(540, 1088, 400, 95, eio(seg(b, 37.5, 38.25)) * .65 * (1 - col));
+    plate(540, 290, 300, 72, seg(lf, 12, 14) * .82 * (1 - col));             // ANC ● ON stays legible when a hero part drifts behind it
     // dive numerals
     fg.save();
     if (col > 0) { const [cx, cy] = C(540, 930); fg.translate(cx, cy); fg.scale(1 - col, 1 - col); fg.translate(-540, -930); }
     drawDive(fg, lf + 1e-4, R.capA, jx, jy);
     fg.restore();
-    // legibility: a soft local darkening behind the type block (fades with it)
-    {
-      const a = (seg(lf, 9, 14) * .5) * (1 - col);
-      if (a > .003) {
-        fg.save(); fg.translate(540, 985); fg.scale(1, .42);
-        const sg = fg.createRadialGradient(0, 0, 0, 0, 0, 470);
-        sg.addColorStop(0, `rgba(4,5,6,${a})`); sg.addColorStop(.6, `rgba(4,5,6,${a * .7})`); sg.addColorStop(1, 'rgba(4,5,6,0)');
-        fg.fillStyle = sg; fg.fillRect(-480, -480, 960, 960); fg.restore();
-      }
-    }
     // −42 dB (serif, hairline), drifting +1.5% over the silence
     if (lf >= 9 + 3 - .01) {
       const a = seg(lf, 12, 16) * (1 - col);
@@ -549,7 +622,7 @@ export default {
       const [cx, cy] = C(540 + jx, 1100 + jy);
       if (a > .003) {
         fg.save(); fg.translate(cx, cy); fg.scale(1 - col, 1 - col);
-        text(fg, 'the world, on mute.', 0, 0, { size: 58, weight: 400, family: FONT.serif, italic: true, color: COL.muted, alpha: a });
+        text(fg, 'the world, on mute.', 0, 0, { size: 64, weight: 400, family: FONT.serif, italic: true, color: '#ebe7de', alpha: a * .9 });
         fg.restore();
       }
     }
@@ -567,10 +640,13 @@ export default {
     // ---------------- post: the step-down (one effect off per 1/16), then silence
     fx.exposure = .88; fx.vignette = .45; fx.grain = .05; fx.bloomThreshold = .74;
     if (Fr < 3) {                                          // f432-434 the click + detonation
-      fx.flash = [.9, .22, .05][Fr]; fx.flashColor = Fr === 0 ? [1, .88, .66] : [1, 1, 1];
-      fx.zoom = [1.12, 1.07, 1.035][Fr]; fx.rgb = .03; fx.zoomBlur = [.6, .42, .25][Fr]; fx.glitch = [.4, .25, .12][Fr]; fx.glitchSeed = 11 + Fr * 7;
+      // the hit is a LIFT (exposure + bloom) with only a light warm mix, so the clamped silhouette and the gold
+      // hairline read on frame 0; frame 1 carries the blast (zoom blur + glitch), frame 2 is clean
+      fx.flash = [.03, 0, 0][Fr]; fx.flashColor = Fr === 0 ? [1, .85, .6] : [1, 1, 1];
+      fx.exposure = .88 * [1.4, 1, 1][Fr]; fx.brightness = 0;
+      fx.zoom = [1.12, 1.07, 1.035][Fr]; fx.rgb = [.022, .03, .02][Fr]; fx.zoomBlur = [.12, .38, .2][Fr]; fx.glitch = [0, .3, .1][Fr]; fx.glitchSeed = 11 + Fr * 7;
       fx.shake = [(rnd(Fr * 3.3 + 1) - .5) * .03 * (1 - Fr / 3), (rnd(Fr * 7.9 + 2) - .5) * .03 * (1 - Fr / 3)];
-      fx.sat = .55; fx.bloom = .8; fx.contrast = 1.05;
+      fx.sat = .55; fx.bloom = [1.2, .8, .75][Fr]; fx.bloomThreshold = [.66, .74, .74][Fr]; fx.contrast = 1.05;
     } else if (Fr < 6) {                                   // b36.25 glitch, shake, zoom off
       fx.rgb = .014; fx.zoomBlur = .18 * (1 - (Fr - 3) / 3); fx.sat = .55; fx.bloom = .7; fx.contrast = 1.05; fx.bloomThreshold = 1.15;
     } else if (Fr < 9) {                                   // b36.5 rgb, zoom blur off
@@ -587,7 +663,7 @@ export default {
       fx.zoomBlur = .7 * ein(k); fx.zoomCenter = [.5, .5]; fx.rgb = .025 * ein(k); fx.sat = lerp(.3, 1, k);
       fx.tint = [lerp(.92, 1, k), lerp(.96, 1, k), lerp(1.04, 1, k)]; fx.bloom = lerp(.22, .6, k);
       fx.letterbox = Fr >= 46 ? 0 : .07;
-      fx.exposure = .88 + .25 * ein(k);
+      fx.exposure = .88 + .12 * ein(k);
     }
   },
 };

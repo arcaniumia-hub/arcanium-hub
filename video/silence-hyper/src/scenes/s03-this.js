@@ -20,25 +20,34 @@ const mk = () => { const c = document.createElement('canvas'); c.width = W; c.he
 const tri = (a, b) => Math.max(0, 1 - Math.abs(a) / b);
 
 let L = null;                                  // type layout
-let SOLID, EDGE, WIN;                          // canvases
+let SOLID, INK, EDGE, WIN;                     // canvases
+let HERO, MACRO, ORB;                          // window photos, pre-graded brighter (1.25 / 1.15) so the glyphs read as product, not grey metal
 let S3 = null, CUP = null;                     // 3D rigs
 
 // ------------------------------------------------------------------ layout of 'THIS.'
 function layout() {
   const c = document.createElement('canvas').getContext('2d');
-  const size = Math.round(fitSize(c, 'THIS.', 980, 900, 400, FONT.impact));
+  // 'THIS.' fitted to 880 px (was 980): the period lands inside the x <= 1000 safe zone, clear of the Reels right rail
+  const size = Math.round(fitSize(c, 'THIS.', 880, 900, 400, FONT.impact));
   c.font = font(size, 400, FONT.impact); c.textAlign = 'left'; c.textBaseline = 'alphabetic'; c.letterSpacing = '0px';
   const mH = c.measureText('H'), capH = mH.actualBoundingBoxAscent;
   const total = c.measureText('THIS.').width, wThis = c.measureText('THIS').width;
-  const x0 = 540 - total / 2, base = Math.round(960 + capH / 2);
+  const KERN = -8;                                     // period tucked 8 px closer to the S (-20 made the round dot touch the S terminal)
+  let x0 = 540 - (total + KERN) / 2;
+  const base = Math.round(960 + capH / 2);
   const mp = c.measureText('.');
-  const px0 = x0 + wThis - mp.actualBoundingBoxLeft, px1 = x0 + wThis + mp.actualBoundingBoxRight;
+  const pl = wThis - mp.actualBoundingBoxLeft + KERN, pr = wThis + mp.actualBoundingBoxRight + KERN;
   const py0 = base - mp.actualBoundingBoxAscent, py1 = base + mp.actualBoundingBoxDescent;
-  // ink extents of THIS (for the window content rect)
+  const pw = pr - pl, ph = py1 - py0;
+  const pd = 2 * Math.sqrt(pw * ph / Math.PI);           // the period is a CIRCLE of the glyph's visual area
+  // keep the dot's right edge <= x 972 even at the max window push-in (PUSH_MAX)
+  const pcx0 = (pl + pr) / 2, edge = (972 - 540) / PUSH_MAX + 540;
+  x0 = Math.min(x0, edge - pd / 2 - pcx0);
   const mt = c.measureText('THIS');
   return { size, capH, x0, base, wThis, rect: [x0 - mt.actualBoundingBoxLeft, base - mt.actualBoundingBoxAscent, mt.actualBoundingBoxLeft + mt.actualBoundingBoxRight, mt.actualBoundingBoxAscent + Math.max(0, mt.actualBoundingBoxDescent)],
-    pcx: (px0 + px1) / 2, pcy: (py0 + py1) / 2, pw: px1 - px0, ph: py1 - py0 };
+    pcx: x0 + pcx0, pcy: (py0 + py1) / 2, pd };
 }
+const PUSH_MAX = 1.025;
 
 // ------------------------------------------------------------------ the gold period / dot / streak body
 function goldBody(ctx, x, y, w, h, round, alpha, glow, hot = 0) {
@@ -72,6 +81,27 @@ function cover(ctx, img, rx, ry, rw, rh, zoom, fx, fy, dx = 0, dy = 0) {
   if (!img) return;
   const s = Math.max(rw / img.width, rh / img.height) * zoom, w = img.width * s, h = img.height * s;
   ctx.drawImage(img, rx + (rw - w) * fx + dx, ry + (rh - h) * fy + dy, w, h);
+}
+
+// cover-fit with zoom, centring the image point (px,py) in the rect, plus a pixel offset
+function coverAt(ctx, img, rx, ry, rw, rh, zoom, px, py, dx = 0, dy = 0) {
+  if (!img) return;
+  const s = Math.max(rw / img.width, rh / img.height) * zoom;
+  ctx.drawImage(img, rx + rw / 2 - px * s + dx, ry + rh / 2 - py * s + dy, img.width * s, img.height * s);
+}
+const bake = img => {
+  if (!img) return null;
+  const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+  const x = c.getContext('2d'); x.filter = 'brightness(1.25) contrast(1.15)'; x.drawImage(img, 0, 0); return c;
+};
+// one orbit turntable frame (0..39, fractional = cross-fade) from the graded sheets
+function orbitAt(ctx, f, cx, cy, size) {
+  const one = (i, a) => {
+    i = clamp(Math.round(i), 0, 39); const sh = ORB[Math.floor(i / 10)], j = i % 10; if (!sh || a <= 0) return;
+    ctx.globalAlpha = a; ctx.drawImage(sh, (j % 5) * 520, Math.floor(j / 5) * 520, 520, 520, cx - size / 2, cy - size / 2, size, size); ctx.globalAlpha = 1;
+  };
+  const f0 = Math.floor(clamp(f, 0, 39)), fr = clamp(f, 0, 39) - f0;
+  one(f0, 1); if (fr > .01) one(f0 + 1, fr);
 }
 
 // ------------------------------------------------------------------ 3D (a): detonation shards + dust
@@ -188,7 +218,7 @@ function ringProg(q) {
 }
 // period glide path (quadratic bezier from its typeset spot to the centre, bowing upward)
 function glidePos(k) {
-  const a = [540 + (L.pcx - 540) * 1.035, 960 + (L.pcy - 960) * 1.035], c = [lerp(L.pcx, 540, .35) + 60, Math.min(L.pcy, 960) - 260], b = [540, 960];
+  const a = [540 + (L.pcx - 540) * PUSH_MAX, 960 + (L.pcy - 960) * PUSH_MAX], c = [lerp(L.pcx, 540, .35) + 60, Math.min(L.pcy, 960) - 260], b = [540, 960];
   const u = 1 - k; return [u * u * a[0] + 2 * u * k * c[0] + k * k * b[0], u * u * a[1] + 2 * u * k * c[1] + k * k * b[1]];
 }
 
@@ -197,9 +227,11 @@ export default {
   cutIn: 'none',
   init(E) {
     L = layout();
-    SOLID = mk(); EDGE = mk(); WIN = mk();
+    SOLID = mk(); INK = mk(); EDGE = mk(); WIN = mk();
     const s = SOLID.getContext('2d');
     text(s, 'THIS', L.x0, L.base, { size: L.size, weight: 400, family: FONT.impact, color: COL.white, align: 'left' });
+    text(INK.getContext('2d'), 'THIS', L.x0, L.base, { size: L.size, weight: 400, family: FONT.impact, color: COL.ink, align: 'left' });
+    HERO = bake(E.img.hero); MACRO = bake(E.img.macro); ORB = [0, 1, 2, 3].map(i => bake(E.img['orbit' + i]));
     const e = EDGE.getContext('2d');
     text(e, 'THIS', L.x0, L.base, { size: L.size, weight: 400, family: FONT.impact, fill: false, stroke: 4.5, strokeColor: COL.gold, align: 'left' });
     e.globalCompositeOperation = 'destination-in'; e.drawImage(SOLID, 0, 0);
@@ -211,8 +243,11 @@ export default {
     fx.exposure = .88; fx.grain = .05; fx.vignette = .4; fx.bloom = .7; fx.bloomThreshold = .72; fx.sat = 1.05;
 
     // ---------------- background: ink + warm haze (blooms on the hit, breathes, dims for the darkness of b19)
-    bg.fillStyle = COL.ink; bg.fillRect(0, 0, W, H);
-    {
+    // frame 0 of the hit is a NEGATIVE: warm-white field, the word in ink, the gold dot. The only full-white hit of the film,
+    // and the image is fully there on the beat (no flash veil).
+    const NEG = q < .5;
+    bg.fillStyle = NEG ? COL.white : COL.ink; bg.fillRect(0, 0, W, H);
+    if (!NEG) {
       const hit = Math.exp(-q / 5), dark = 1 - .7 * seg(q, QG0, QB0);
       const a = (.05 + .05 * Math.sin(q * .09)) * dark + .35 * hit;
       const g = bg.createRadialGradient(560 + 40 * Math.sin(q * .03), 900, 0, 540, 960, 1150);
@@ -227,7 +262,7 @@ export default {
     }
 
     // ---------------- 3D (a): shards + dust from the detonation
-    if (q < 42) { S3.update(lt); E.render3D(S3.scene, S3.cam); }
+    if (q >= .5 && q < 42) { S3.update(lt); E.render3D(S3.scene, S3.cam); }
 
     // ---------------- 3D (b): the cup + the ring tube
     const prog = ringProg(q);
@@ -247,29 +282,29 @@ export default {
     }
 
     // ---------------- 2D type
-    const push = q < QW1 ? 1 : 1 + .035 * eio(seg(q, QW1, QSH + 4));
+    const push = q < QW1 ? 1 : 1 + (PUSH_MAX - 1) * eio(seg(q, QW1, QSH + 4));
     if (q < QW1) {
       // THE HIT: solid THIS. arriving as horizontal slices, scale 1.12 -> 1
       const sc = 1 + .12 * (1 - expoOut(q / 8)), off = 40 * clamp(1 - q / 3);
       fg.save(); fg.translate(540, 960); fg.scale(sc, sc); fg.translate(-540, -960);
-      const top = L.base - L.capH - 30, bandH = 34, nb = Math.ceil((L.capH + 60) / bandH);
+      const top = Math.round(L.base - L.capH - 30), bandH = 34, nb = Math.ceil((L.capH + 60) / bandH);
       for (let k = 0; k < nb; k++) {
-        const y = top + k * bandH, dx = off > 0 ? (k % 2 ? 1 : -1) * off * (.4 + 1.2 * rnd(k * 3.3 + F)) : 0;
-        fg.drawImage(SOLID, 0, y, W, bandH, dx, y, W, bandH);
+        const r = rnd(k * 3.3 + F), y = top + k * bandH, dx = off > 0 && r > .5 ? (k % 2 ? 1 : -1) * off * (.5 + 1.6 * (r - .5)) : 0;
+        fg.drawImage(NEG ? INK : SOLID, 0, y, W, bandH + 1, Math.round(dx), y, W, bandH + 1);
       }
       fg.restore();
-    } else if (q < QSH + 14) {
+    } else if (q < QSH + 8) {
       // WINDOWS: the letters show the product (hero -> macro -> orbit spin)
       const w = WIN.getContext('2d'); w.setTransform(1, 0, 0, 1, 0, 0); w.globalCompositeOperation = 'source-over'; w.globalAlpha = 1;
       w.fillStyle = '#000'; w.fillRect(0, 0, W, H);
       const [rx, ry, rw, rh] = L.rect;
       let seg0, seg1;
-      if (q < QW2) { seg0 = QW1; seg1 = QW2; const u = seg(q, QW1, QW1 + 12); cover(w, E.img.hero, rx, ry, rw, rh, 2.4, .66, .74, 0, 60 - 120 * u); }
-      else if (q < QW3) { seg0 = QW2; seg1 = QW3; const u = seg(q, QW2, QW2 + 12); cover(w, E.img.macro, rx, ry, rw, rh, 2.2, .72, .45, 70 - 120 * u, 0); }
+      if (q < QW2) { seg0 = QW1; seg1 = QW2; const u = seg(q, QW1, QW1 + 12); coverAt(w, HERO, rx, ry, rw, rh, 2.3, 660, 720, 0, 60 - 120 * u); }
+      else if (q < QW3) { seg0 = QW2; seg1 = QW3; const u = seg(q, QW2, QW2 + 12); coverAt(w, MACRO, rx, ry, rw, rh, 2.1, 800, 600, 70 - 120 * u, 0); }
       else {
         seg0 = QW3; seg1 = QSH + 6;
         const f = q < QSH ? 39 * seg(q, QW3, QSH) : (39 + (q - QSH) * 1.2) % 40;
-        orbitFrame(w, [E.img.orbit0, E.img.orbit1, E.img.orbit2, E.img.orbit3], f, 540, ry + rh * .5 + 40, 1250, { mode: 'source-over' });
+        orbitAt(w, f, 540, ry + rh * .5 - 220, 1300);
       }
       // a light sweep gliding across each window segment
       {
@@ -292,14 +327,16 @@ export default {
       fg.save(); fg.translate(540, 960); fg.scale(push, push); fg.translate(-540, -960);
       if (q < QSH) fg.drawImage(WIN, 0, 0);
       else {
-        // SWISS SHEAR: 12 columns of 90 px, even up / odd down, 2200 px, expoIn over 8 frames, staggered 1 frame, 3 ghosts
-        for (let i = 0; i < 12; i++) {
-          const dir = i % 2 ? 1 : -1, x = i * 90;
-          const offAt = qq => dir * 2200 * ein(seg(qq, QSH + i * .4, QSH + 6 + i * .4));
+        // SWISS SHEAR: 11 columns of 80 px over the word, even up / odd down, 2200 px, staggered .3 frame, 5-frame cubic-in travel,
+        // 3 ghosts. Every column (and its ghosts) is off-frame by f218 (q 26) so nothing hangs over the period's glide.
+        const cx0 = Math.floor(L.rect[0] + L.rect[2] / 2 - 440), gFade = 1 - seg(q, QSH + 5, QSH + 7.2);
+        for (let i = 0; i < 11; i++) {
+          const dir = i % 2 ? 1 : -1, x = cx0 + i * 80;
+          const offAt = qq => dir * 2200 * ein(seg(qq, QSH + i * .3, QSH + 5 + i * .3));
           for (let g = 3; g >= 0; g--) {
-            const oy = offAt(q - g * .55); if (g > 0 && Math.abs(offAt(q) - oy) < 2) continue;
-            fg.globalAlpha = g === 0 ? 1 : [0, .42, .22, .1][g];
-            fg.drawImage(WIN, x, 0, 90, H, x, oy, 90, H);
+            const oy = offAt(q - g * .5); if (g > 0 && Math.abs(offAt(q) - oy) < 2) continue;
+            fg.globalAlpha = g === 0 ? 1 : [0, .42, .22, .1][g] * gFade; if (fg.globalAlpha <= .004) continue;
+            fg.drawImage(WIN, x, 0, 80, H, x, oy, 80, H);
           }
           fg.globalAlpha = 1;
         }
@@ -308,7 +345,7 @@ export default {
     }
 
     // ---------------- shockwave from the detonating point (b16.0)
-    if (q < 10) {
+    if (q >= .5 && q < 10) {
       const k = expoOut(q / 9), r = lerp(30, 1500, k);
       fg.save(); fg.globalCompositeOperation = 'lighter'; fg.strokeStyle = `rgba(255,236,200,${.9 * (1 - q / 10)})`; fg.lineWidth = lerp(10, 1.5, k);
       fg.shadowColor = 'rgba(230,200,150,.9)'; fg.shadowBlur = 30; fg.beginPath(); fg.arc(540, 960, r, 0, TAU); fg.stroke(); fg.restore();
@@ -317,8 +354,8 @@ export default {
     // ---------------- the period: typeset -> glide -> heartbeat -> anamorphic streak -> bends into the ring
     {
       const pushP = (x, y) => [540 + (x - 540) * push, 960 + (y - 960) * push];
-      let [x, y] = pushP(L.pcx, L.pcy), w = L.pw * push, h = L.ph * push, round = .18, glow = 34, hot = 0;
-      if (q < QW1) { const sc = 1 + .12 * (1 - expoOut(q / 8)); x = 540 + (L.pcx - 540) * sc; y = 960 + (L.pcy - 960) * sc; w = L.pw * sc; h = L.ph * sc; hot = Math.exp(-q / 3); }
+      let [x, y] = pushP(L.pcx, L.pcy), w = L.pd * push, h = L.pd * push, round = 1, glow = 22, hot = 0;
+      if (q < QW1) { const sc = 1 + .12 * (1 - expoOut(q / 8)); x = 540 + (L.pcx - 540) * sc; y = 960 + (L.pcy - 960) * sc; w = L.pd * sc; h = L.pd * sc; hot = NEG ? 0 : Math.exp(-q / 3); }
       const D = 74;
       if (q >= QG0) {
         const k = eio(seg(q, QG0, QG1));
@@ -328,7 +365,7 @@ export default {
           for (let i = 0; i <= N; i++) P.push(glidePos(lerp(kt, k, i / N)));
           for (let i = 0; i <= N; i++) {
             const a = P[Math.max(0, i - 1)], b = P[Math.min(N, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], dl = Math.hypot(dx, dy) || 1;
-            const hw = lerp(L.pw * 1.035, D, lerp(kt, k, i / N)) * .42 * Math.pow(i / N, 1.4);
+            const hw = lerp(L.pd * PUSH_MAX, D, lerp(kt, k, i / N)) * .42 * Math.pow(i / N, 1.4);
             Lf.push([P[i][0] - dy / dl * hw, P[i][1] + dx / dl * hw]); Rt.push([P[i][0] + dy / dl * hw, P[i][1] - dx / dl * hw]);
           }
           const [ax, ay] = P[0], [bx, by] = P[N];
@@ -343,7 +380,7 @@ export default {
           }
         }
         [x, y] = glidePos(k);
-        w = lerp(L.pw * push, D, k); h = lerp(L.ph * push, D, k); round = lerp(.18, 1, k); glow = lerp(34, 46, k);
+        w = h = lerp(L.pd * push, D, k); glow = lerp(22, 40, k);
       }
       // heartbeat: 1 -> 1.7 -> 1
       let hb = 1;
@@ -440,16 +477,19 @@ export default {
     }
 
     // ---------------- post FX choreography
-    // b16.0 HIT: flash (warm white), punch zoom, heavy rgb, zoom blur, glitch, shake over one beat
+    // b16.0 HIT. Frame 0 = the negative (drawn above, no fx.flash: its linear mix only greys the image).
+    // Frame 1 = a light LIFT on the positive image (bloom + warm haze), frame 2 settles; zoom / rgb / zoomBlur punch kept.
     {
-      if (q < 6) { fx.flash = Math.pow(1 - q / 6, 3.2); fx.flashColor = [.92, .9, .84]; }
-      fx.zoom *= 1 + .12 * (1 - expoOut(clamp(q / 8)));
-      fx.rgb = Math.max(fx.rgb, .0015 + .0285 * Math.max(0, 1 - q / 12));
-      fx.zoomBlur = Math.max(fx.zoomBlur, .6 * Math.max(0, 1 - q / 6));
-      if (q < 3) { fx.glitch = .5; fx.glitchSeed = F + 1; }
+      if (q < .5) { fx.bloom = .25; fx.vignette = .6; }
+      else if (q < 1.5) { fx.bloom = 1.1; fx.bloomThreshold = .66; fx.exposure = 1.3; }
+      else if (q < 2.5) { fx.bloom = .9; fx.exposure = 1.0; }
+      fx.zoom *= 1 + .06 * (1 - expoOut(clamp(q / 8)));
+      fx.rgb = Math.max(fx.rgb, .0015 + (q < .5 ? .01 : .013 * Math.max(0, 1 - q / 12)));
+      fx.zoomBlur = Math.max(fx.zoomBlur, q < .5 ? .15 : .4 * Math.max(0, 1 - q / 6));
+      if (q < 3) { fx.glitch = q < .5 ? .1 : .25; fx.glitchSeed = F + 1; }
       const sh = .012 * Math.max(0, 1 - q / 12);
       fx.shake = [(rnd(F + 11) - .5) * 2 * sh, (rnd(F + 77) - .5) * 2 * sh];
-      fx.displace = .03 * Math.max(0, 1 - q / 7); fx.displaceScale = 2.5;
+      fx.displace = q < .5 ? 0 : .03 * Math.max(0, 1 - q / 7); fx.displaceScale = 2.5;
     }
     // window cuts: 2-frame glitch slices + rgb kick + micro punch
     for (const c of [QW1, QW2, QW3]) {

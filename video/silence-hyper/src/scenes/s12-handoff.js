@@ -1,21 +1,26 @@
 // s12-handoff — HANDOFF: the ring becomes LUMARC (b70-76)
 //
-// b70.0-71.0 CONTRACT: the LUMARC gradient ring (conic #4f6bff -> #6a55ff -> #9a4dff, spinning) collapses from r 1500
-//   (off-frame, where s11 left it) onto the logo's ring block, with a speed smear of ghost rings, and SHEDS 60k particles
-//   along its circumference (hot gold sparks at birth, turning to the brand gradient by screen x over b70.5-71.5) that
-//   swirl in a differential vortex around the logo. Brand flash .15 + liquid displace on the first frames.
+// b70.0-71.0 BOUNCE + CONTRACT: the last ANC ring arrives from s11 still expanding (r 1040 around (540,930) at b70, the
+//   LUMARC gradient already mixed in, its violet wake inside). On the downbeat it turns around with zero velocity and
+//   contracts (fast-in / soft-out) onto the logo's ring block, with a speed smear of ghost rings, and SHEDS 56k particles
+//   along its circumference (hot gold sparks at birth, turning to the brand gradient by screen x over b70.5-71.5) that swirl
+//   in a differential vortex around the logo. No flash: the brand glow fades in from 0 over 12 frames, so f839 -> f840 is
+//   continuous; s11's straight-gradient ring/wake cross-fade into the spinning conic ring over the first 4 frames.
 // b70.7-71.0 the circle TILTS in 3D and splits into the two interlocked ellipses of the LUMARC mark (fitted to the PNG),
 // b71.0 lands on the logo: chime -> shockwave rings, a star glint on the rings' crossing, bloom kick; the drawn ellipses
 //   cross-fade (6 frames) into the PNG's rings.
-// b71.5-73.0 WORDMARK BUILD: the particles converge (bent spiral paths, ease-in-out) onto the 'lumarc' letters sampled from
-//   the PNG's alpha, one letter per 1/4 beat (l u m a r c), each landing with a white heat flash, a micro-burst and a bloom pulse.
+// b71.5-73.0 WORDMARK BUILD: the particles converge (bent spiral paths) onto the 'lumarc' letters sampled from the PNG's
+//   alpha, one letter per 1/4 beat (l u m a r c), each landing with a white heat flash, a micro-burst and a bloom pulse.
 // b73.0-73.5 the particle wordmark cross-fades into the crisp PNG; a white -> violet glint sweeps across the logo; the
 //   leftover particles spiral outward and twinkle out by b74.
-// b73.5-76 the logo floats (breathing 1 %/bar, glow + anamorphic flare on every beat), 24 bokeh discs start drifting up.
-//   The post levels ease into the end card's, so s13 builds around it without a cut.
+// b73.5-75.5 MONUMENTAL HOLD: the logo is built BIG (800 px wide, centred (540,900), not parked in the top third); it floats
+//   (breathing 1 %/bar, glow + anamorphic flare on every beat) inside a ring-halo echo — the film's ANC ring in the brand
+//   gradient at 7-9 %, breathing on the bar and gathering in slightly on the riser — with fine luminous dust rising.
+//   On b75.5 (the riser's last half beat) the logo starts its glide up to the end-card place (settles b76.25 in s13) while
+//   the halo ring (lib ancRing) drops and flattens toward the CTA pill line (shared logoAt()/haloAt() in s13-lumarc.js).
 import * as THREE from 'three';
-import { W, H, BEAT, TAU, clamp, lerp, seg, eout, ein, eio, expoOut, rnd, COL, ADDITIVE } from '../lib.js';
-import { LOGO, LOGO_SPLIT, lp, brandBackdrop, drawBokeh, drawLogo, logoBreath, beatGlow, logoFlare, STAR, END_FX, endZoom } from './s13-lumarc.js';
+import { W, H, BEAT, TAU, clamp, lerp, seg, eout, ein, eio, expoOut, rnd, ancRing, COL, ADDITIVE } from '../lib.js';
+import { LOGO_A as LOGO, LOGO_SPLIT, lp, brandBackdrop, drawDust, drawLogo, logoBreath, beatGlow, logoFlare, STAR_PX, END_FX, endZoom, haloRing, haloAt, logoAt } from './s13-lumarc.js';
 
 const B0 = 70;
 const N_LET = 42000, N_FREE = 14000, N = N_LET + N_FREE;
@@ -25,17 +30,20 @@ const ELL = [
   { c: lp(121, 93), a: 96 * LOGO.s, b: 45 * LOGO.s, rot: 52 * Math.PI / 180 },
   { c: lp(115, 144), a: 104 * LOGO.s, b: 44 * LOGO.s, rot: -27 * Math.PI / 180 },
 ];
-const C0 = [540, 930], R0 = 1500;
+// where s11's last ANC ring is at b70 (s11: RING_C (540,930), RING_END 1040, still expanding)
+const C0 = [540, 930], R0 = 1040;
+const STAR = lp(STAR_PX[0], STAR_PX[1]), U = LOGO.s / .9375;      // U: scale vs the old 600 px layout
 // letters of the wordmark (logo px x-ranges) and their landing beats (one per 1/4 beat)
 const LET = [[246, 266], [272, 338], [342, 444], [446, 518], [524, 564], [564, 628]];
 const LAND = [71.5, 71.75, 72.0, 72.25, 72.5, 72.75];
 
-// ring contraction (closed form) and its inverse
-const EXP = 6, EN = 1 - Math.pow(2, -EXP);
-const ringE = b => (1 - Math.pow(2, -EXP * seg(b, 70, 71))) / EN;
+// ring contraction: e(x) = 1 - (1-x)^P (1 + P x) — zero velocity at b70 (the turnaround of s11's expanding ring) and at
+// b71 (soft landing), fast in between (frame 1: -76 px, frame 2: -220 px). Monotonic, inverted by bisection.
+const P = 5;
+const ringE = b => { const x = seg(b, 70, 71); return 1 - Math.pow(1 - x, P) * (1 + P * x); };
 const ringR = b => lerp(R0, RL, ringE(b));
 const ringC = b => { const e = ringE(b); return [lerp(C0[0], CF[0], e), lerp(C0[1], CF[1], e)]; };
-const beatOfR = r => 70 - Math.log2(1 - (R0 - r) / (R0 - RL) * EN) / EXP;
+const beatOfR = r => { const e = (R0 - r) / (R0 - RL); let lo = 0, hi = 1; for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (ringE(70 + m) < e) lo = m; else hi = m; } return 70 + (lo + hi) / 2; };
 
 const lin = hex => new THREE.Color(hex).convertSRGBToLinear();
 const V3 = c => new THREE.Vector3(c.r, c.g, c.b);
@@ -202,9 +210,19 @@ export default {
   },
   draw(E, lt, t) {
     const b = t / BEAT, fg = E.fg, fx = E.fx, img = E.img.logo;
-    // ---------------- background: #0e0e14 + radial brand glow growing in, bokeh from b73.5
-    const bokehK = eout(seg(b, 73.5, 74.75));
-    brandBackdrop(E, b, { glow: eio(seg(b, 70, 71.5)), bokehK });
+    // ---------------- background: #0e0e14 + the radial brand glow fading in from 0 over 12 frames (no flash on b70)
+    brandBackdrop(E, b, { glow: eio(seg(b, 70, 71)), P: logoAt(b) });
+    // s11's violet wake inside the ring (identical at f840), dissolving as the ring turns around
+    const wakeA = 1 - eout(seg(b, 70, 70.6));
+    if (wakeA > 0) {
+      const r = ringR(b), [cx, cy] = ringC(b), wake = E.bg.createRadialGradient(cx, cy, Math.max(0, r - 340), cx, cy, r);
+      wake.addColorStop(0, 'rgba(106,85,255,0)'); wake.addColorStop(.7, `rgba(106,85,255,${.06 * wakeA})`); wake.addColorStop(1, `rgba(106,85,255,${.26 * wakeA})`);
+      E.bg.fillStyle = wake; E.bg.beginPath(); E.bg.arc(cx, cy, r, 0, TAU); E.bg.fill();
+    }
+    // the hold: fine dust + the ring-halo echo around the big logo (breathing on the bar)
+    const holdK = eout(seg(b, 73.5, 74.5));
+    drawDust(E.bg, b, holdK);
+    if (holdK > 0) { const h = haloAt(b); h.alpha *= holdK; if (holdK < 1) { h.w *= lerp(.9, 1, holdK); h.h = h.w; h.rr = h.w / 2; } haloRing(fg, h); }
 
     // ---------------- particles (3D layer, pixel-exact orthographic mapping)
     if (b < 74.05) {
@@ -213,36 +231,40 @@ export default {
       E.render3D(S.scene, S.cam);
     }
 
-    // ---------------- the gradient ring: contract, smear, tilt/split into the mark's ellipses, land
+    // ---------------- the gradient ring: bounce, contract, smear, tilt/split into the mark's ellipses, land
     const ringA = 1 - eio(seg(b, 71.0, 71.5));
     if (ringA > 0) {
       const shapes = ringShapes(b), m = eio(seg(b, 70.7, 71.0));
       const spin = -Math.PI / 2 + 5.5 * eout(seg(b, 70, 71.2));
+      const s11k = 1 - eio(seg(b, 70, 70.34));          // s11's look (straight diagonal gradient, no core) -> conic + core
       fg.save(); fg.lineCap = 'round';
       // speed smear: ghost rings covering the last frame interval while the radius is collapsing fast
       const dR = ringR(b - 1 / 12) - ringR(b);
       if (dR > 6 && m === 0) {
-        const C = ringC(b);
         for (let i = 1; i <= 10; i++) {
           const rb = b - i / 120, r = ringR(rb), cc = ringC(rb);
-          fg.globalAlpha = .28 * (1 - i / 11) * ringA; fg.lineWidth = 3; fg.strokeStyle = conic(fg, cc[0], cc[1], spin - i * .05);
+          fg.globalAlpha = .28 * (1 - i / 11) * ringA * (1 - s11k); fg.lineWidth = 3; fg.strokeStyle = conic(fg, cc[0], cc[1], spin - i * .05);
           fg.beginPath(); fg.arc(cc[0], cc[1], r, 0, TAU); fg.stroke();
         }
       }
       const lw = lerp(5, 8.5, m) * (1 + .4 * seg(b, 70.95, 71.0));
       shapes.forEach((sh, si) => {
-        fg.globalAlpha = ringA;
+        if (s11k > 0 && m === 0) {
+          // lib ancRing(gradient), called exactly as s11 draws its last ring
+          fg.globalAlpha = 1; ancRing(fg, sh.c[0], sh.c[1], sh.a, { alpha: ringA * s11k, refract: false, gradient: [COL.lm1, COL.lm2, COL.lm3] });
+        }
+        const ck = 1 - s11k;
+        fg.globalAlpha = ringA * ck;
         fg.shadowColor = 'rgba(106,85,255,.85)'; fg.shadowBlur = 24 + 16 * m;
         fg.lineWidth = lw;
-        if (m < 1) { fg.strokeStyle = conic(fg, sh.c[0], sh.c[1], spin + si * 1.3); ellipsePath(fg, sh); fg.stroke(); }
+        if (m < 1 && ck > 0) { fg.strokeStyle = conic(fg, sh.c[0], sh.c[1], spin + si * 1.3); ellipsePath(fg, sh); fg.stroke(); }
         if (m > 0) {
-          // the mark's rings are lit blue (left) -> violet (right): fade into that linear look as they tilt
           const g = fg.createLinearGradient(sh.c[0] - sh.a, 0, sh.c[0] + sh.a, 0);
           g.addColorStop(0, COL.lm1); g.addColorStop(.55, COL.lm2); g.addColorStop(1, COL.lm3);
           fg.globalAlpha = ringA * m; fg.strokeStyle = g; ellipsePath(fg, sh); fg.stroke();
         }
         // hot core line
-        fg.shadowBlur = 0; fg.globalAlpha = ringA * .55; fg.lineWidth = Math.max(1, lw * .28); fg.strokeStyle = '#d9d4ff'; ellipsePath(fg, sh); fg.stroke();
+        fg.shadowBlur = 0; fg.globalAlpha = ringA * .55 * ck; fg.lineWidth = Math.max(1, lw * .28); fg.strokeStyle = '#d9d4ff'; ellipsePath(fg, sh); fg.stroke();
       });
       fg.restore();
     }
@@ -252,7 +274,8 @@ export default {
     const breath = logoBreath(b);
     const glowAmt = 18 * beatGlow(b) * seg(b, 71.5, 73.5);
     const wordA = eio(seg(b, 73.0, 73.5));
-    if (rk > 0) drawLogo(fg, img, { rings: rk, word: wordA, scale: breath * (1 + .05 * (1 - eout(seg(b, 71.0, 71.75)))), glow: glowAmt });
+    const PL = logoAt(b);     // LOGO_A until the glide starts on b75.5 (shared with s13)
+    if (rk > 0) drawLogo(fg, img, { P: PL, rings: rk, word: wordA, scale: breath * (1 + .05 * (1 - eout(seg(b, 71.0, 71.75)))), glow: glowAmt });
     for (const [sb, amp, w0] of [[71.0, .5, 4], [71.125, .3, 2.5], [71.25, .18, 1.5]]) {
       const sk = seg(b, sb, sb + 1.4); if (sk <= 0 || sk >= 1) continue;
       const r = lerp(RL, 1250, eout(sk)), a = amp * Math.pow(1 - sk, 2.2);
@@ -260,34 +283,30 @@ export default {
       fg.shadowColor = 'rgba(106,85,255,.7)'; fg.shadowBlur = 18; fg.beginPath(); fg.arc(CF[0], CF[1], r, 0, TAU); fg.stroke(); fg.restore();
     }
     const sp = b >= 71 ? Math.exp(-(b - 71) * BEAT / .16) : 0;
-    star(fg, STAR[0], STAR[1], sp, 300);
+    star(fg, STAR[0], STAR[1], sp, 300 * U);
     // per-letter landing flashes (small soft bursts on the letters)
     LAND.forEach((lb, li) => {
       const p = b >= lb ? Math.exp(-(b - lb) * BEAT / .08) : 0; if (p < .01) return;
-      const [x0, x1] = LET[li], [cx, cy] = lp((x0 + x1) / 2, 150), r = 70 + (x1 - x0) * .6;
+      const [x0, x1] = LET[li], [cx, cy] = lp((x0 + x1) / 2, 150), r = (70 + (x1 - x0) * .6) * U;
       const g = fg.createRadialGradient(cx, cy, 0, cx, cy, r);
       g.addColorStop(0, `rgba(255,255,255,${.22 * p})`); g.addColorStop(.35, `rgba(150,120,255,${.14 * p})`); g.addColorStop(1, 'rgba(106,85,255,0)');
       fg.save(); fg.globalCompositeOperation = 'lighter'; fg.fillStyle = g; fg.fillRect(cx - r, cy - r, 2 * r, 2 * r); fg.restore();
     });
     // b73.0 glint sweep across rings + wordmark; flare on beats once the logo is complete
     logoGlint(fg, img, seg(b, 73.0, 73.0 + 8 / 12 * 1.1));
-    logoFlare(fg, Math.max(sp * 1.2, (.3 + .7 * beatGlow(b)) * seg(b, 73.25, 73.75)), { scale: breath });
-    drawBokeh(fg, b, bokehK, true);
+    logoFlare(fg, Math.max(sp * 1.2, (.3 + .7 * beatGlow(b)) * seg(b, 73.25, 73.75)), { P: PL, scale: breath });
 
-    // ---------------- post
-    const fr = lt * 30;
-    fx.exposure = .9;
-    fx.flash = .035 * Math.max(0, 1 - fr / 5); fx.flashColor = [.42, .42, 1.0];
-    fx.displace = .02 * Math.exp(-lt / .25); fx.displaceScale = 2;
+    // ---------------- post (starts on s11's last levels: vignette .3, rgb .003, bloom .8 — no flash, no warp on b70)
     const late2 = eio(seg(b, 74, 76));
-    fx.bloom = lerp(.9, lerp(.45, END_FX.bloom, late2), eio(seg(b, 73.25, 73.75)));
+    fx.exposure = .9;
+    fx.bloom = lerp(lerp(.8, .9, seg(b, 70, 70.5)), lerp(.45, END_FX.bloom, late2), eio(seg(b, 73.25, 73.75)));
     fx.bloomThreshold = lerp(.6, END_FX.threshold, eio(seg(b, 73.25, 74.5)));
     fx.bloomKnee = lerp(.25, END_FX.knee, eio(seg(b, 73.25, 74.5)));
     for (const lb of LAND) { const f = (b - lb) * 12; if (f >= 0 && f < 3) fx.bloom += .4 * (1 - f / 3); }
     { const f = (b - 71) * 12; if (f >= 0 && f < 6) fx.bloom += .5 * (1 - f / 6); }
-    fx.vignette = lerp(.42, END_FX.vignette, eio(seg(b, 70, 73.5)));
-    fx.grain = lerp(.04, END_FX.grain, eio(seg(b, 70, 73.5)));
-    fx.rgb = lerp(.004, END_FX.rgb, eio(seg(b, 70, 71.5)));
+    fx.vignette = END_FX.vignette;
+    fx.grain = lerp(.045, END_FX.grain, eio(seg(b, 70, 73.5)));
+    fx.rgb = lerp(.003, END_FX.rgb, eio(seg(b, 70, 71.5)));
     fx.sat = 1;
     fx.zoom *= endZoom(b);
   },

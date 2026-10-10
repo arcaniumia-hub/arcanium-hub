@@ -7,7 +7,7 @@ let SLIDE = null, CHAN = null;                  // offscreen canvases (contents 
 let CRACK = null;                               // crack geometry (seed 1337), built once
 const LINE = '...you presented it like';
 const WORDS = [['...you', 13.0], ['presented', 13.5], ['it', 14.0], ['like', 14.5]];
-let SZ = 76;                                    // narrator line size: fitted at init so the line is ~780 px wide (~900 px after the push-in + tracking)
+let SZ = 76;                                    // narrator line size: fitted at init so the line is 760 px wide (<= ~870 px after the push-in + tracking)
 
 // ------------------------------------------------------------------ where the slide-2 photo's right ear cup lands on screen
 // photo: centre (540,1000), width 900, rot -4 deg, zoom z; cup centre in before.jpg ~ (468,298) of 800x452
@@ -108,7 +108,7 @@ export default {
     const mk = () => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c; };
     SLIDE = mk(); CHAN = [mk(), mk()];
     CRACK = buildCrack();
-    SZ = Math.round(76 * 780 / measure(SLIDE.getContext('2d'), LINE, 76, 400, FONT.serif, 0, true));
+    SZ = Math.round(76 * 760 / measure(SLIDE.getContext('2d'), LINE, 76, 400, FONT.serif, 0, true));
   },
   motionBlur(lt, t) { const b = t / BEAT; return b >= 15.6 && f30(t) < 191 ? 3 : 1; },
   draw(E, lt, t) {
@@ -145,25 +145,27 @@ export default {
       // ---------------- ANC RING ERASE b12-13
       if (beat >= 12) {
         const r = 2200 * ein(seg(beat, 12, 13));
-        // refraction band: the frozen slide + cracks + pill redrawn at 1.035 about the ring centre, clipped to [r, r+36]
-        ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r + 36, 0, TAU); ctx.arc(cx, cy, Math.max(0, r), 0, TAU, true); ctx.clip();
-        ctx.translate(cx, cy); ctx.scale(1.035, 1.035); ctx.translate(-cx, -cy); ctx.drawImage(ctx.canvas, 0, 0); ctx.restore();
-        // the glass of the lens: a faint white sheen across the band so the refraction reads
-        if (r > 2) { const g = ctx.createRadialGradient(cx, cy, r, cx, cy, r + 36); g.addColorStop(0, 'rgba(255,248,232,.16)'); g.addColorStop(.35, 'rgba(255,248,232,.05)'); g.addColorStop(1, 'rgba(255,248,232,0)');
-          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r + 36, 0, TAU); ctx.arc(cx, cy, r, 0, TAU, true); ctx.fill(); }
-        // inside: the cheap world, the cracks and the pill are deleted
-        ctx.fillStyle = COL.ink; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r), 0, TAU); ctx.fill();
-        // two faint echo wavefronts trailing inside the ring (anti-phase ripples of the cancellation)
-        for (const [d, a] of [[.07, .28], [.15, .12]]) {
-          const re = 2200 * ein(seg(beat - d, 12, 13)); if (re < 4 || re > r - 6) continue;
-          ctx.save(); ctx.strokeStyle = `rgba(230,200,150,${a})`; ctx.lineWidth = 2; ctx.shadowColor = 'rgba(230,200,150,.5)'; ctx.shadowBlur = 12;
-          ctx.beginPath(); ctx.arc(cx, cy, re, 0, TAU); ctx.stroke(); ctx.restore();
+        // refraction band: the (not yet erased) slide + cracks + pill magnified 1.05 about the ring centre, clipped to [r, r+36]:
+        // a visible lens step right outside the ring
+        if (r > 2) {
+          ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r + 36, 0, TAU); ctx.arc(cx, cy, r, 0, TAU, true); ctx.clip();
+          ctx.translate(cx, cy); ctx.scale(1.05, 1.05); ctx.translate(-cx, -cy); ctx.drawImage(ctx.canvas, 0, 0); ctx.restore();
+          // the glass of the lens: warm sheen across the band + a 1 px bright outer edge at r+36
+          const g = ctx.createRadialGradient(cx, cy, r, cx, cy, r + 36); g.addColorStop(0, 'rgba(255,248,232,.22)'); g.addColorStop(.4, 'rgba(255,248,232,.07)'); g.addColorStop(1, 'rgba(255,248,232,.02)');
+          ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r + 36, 0, TAU); ctx.arc(cx, cy, r, 0, TAU, true); ctx.fill();
+          ctx.save(); ctx.strokeStyle = 'rgba(255,250,238,.75)'; ctx.lineWidth = 1; ctx.shadowColor = 'rgba(255,250,238,.6)'; ctx.shadowBlur = 4;
+          ctx.beginPath(); ctx.arc(cx, cy, r + 36, 0, TAU); ctx.stroke(); ctx.restore();
         }
-        ancRing(ctx, cx, cy, r, { refract: false });
+        // inside: the cheap world, the cracks and the pill are deleted -> one clean, solid ink disc (opaque: nothing survives inside r)
+        ctx.fillStyle = COL.ink; ctx.beginPath(); ctx.arc(cx, cy, Math.max(0, r), 0, TAU); ctx.fill();
+        // the ring itself: constant 5 px #e6c896, glow 30, full alpha (+ a wide soft halo pass so it holds at full-frame size)
+        if (r > 2) { ctx.save(); ctx.strokeStyle = 'rgba(230,200,150,.22)'; ctx.lineWidth = 14; ctx.shadowColor = 'rgba(230,200,150,.55)'; ctx.shadowBlur = 40;
+          ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke(); ctx.restore(); }
+        ancRing(ctx, cx, cy, r, { refract: false, width: 5, glow: 30, alpha: 1 });
         // HUD label riding the ring top (mono 700, .25em); it fades before it would cross the narrator pill
         const ly = cy - r - 30, la = clamp((ly - 380) / 120) * clamp(r / 60);
         if (la > 0) text(ctx, 'ANC ON \u00b7 \u221242 dB', cx, ly, { size: 30, weight: 700, family: FONT.mono, color: COL.gold, spacing: 7.5, alpha: la, glow: 14, glowColor: 'rgba(5,5,6,.9)' });
-        fx.bloom = .6; fx.bloomThreshold = .75; fx.displace = .006 * (1 - seg(beat, 12.85, 13)); fx.displaceScale = 2; fx.rgb = .0025;
+        { const q = eio(seg(beat, 12, 12.5)); fx.bloom = lerp(.4, .9, q); fx.bloomThreshold = lerp(.75, .6, q); } fx.displace = .006 * (1 - seg(beat, 12.85, 13)); fx.displaceScale = 2; fx.rgb = .0025;
         fx.vignette = .5 * seg(beat, 12, 13); fx.grain = lerp(.02, .05, seg(beat, 12, 13)); fx.sat = lerp(1.08, 1, seg(beat, 12, 13)); fx.contrast = lerp(.96, 1, seg(beat, 12, 13));
       }
       // b11.0-11.75 FX: rgb kick, glitch slices, scanlines
@@ -180,7 +182,7 @@ export default {
     if (beat >= 13 && fr < 191) {
       const track = SZ * .04 * eio(seg(beat, 14.5, 15.5));
       const L = layoutLine(ctx, track);
-      const push = beat < 14.5 ? lerp(.99, 1, seg(beat, 13, 14.5)) : lerp(1, 1.06, eio(seg(beat, 14.5, 15.5)));
+      const push = beat < 14.5 ? lerp(.99, 1, seg(beat, 13, 14.5)) : lerp(1, 1.04, eio(seg(beat, 14.5, 15.5)));
       const ui = clamp((t - b2t(15.5)) / (191 / 30 - b2t(15.5))), e = ui * ui;   // inhale 0..1 (accelerating: 64% of the way on the last frame)
       ctx.save(); ctx.translate(540, 960); ctx.scale(push, push); ctx.translate(-540, -960);
       // inner glow building at the centre as the line is sucked in

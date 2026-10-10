@@ -58,7 +58,7 @@ export function wordTable() {
       o = { word, fam, v, x: fx * 1080, y: 200 + fy * 1520, size, rot };
     }
     o.i = i; o.wave = wv; o.lb = WAVES[wv][1];
-    o.delay = wv >= 5 ? Math.floor(r(10) * 3) : 0;                   // frames: a spray on the beat, not a stamp
+    o.delay = wv >= 5 ? Math.floor(r(10) * 3) : i === 0 ? 3 : 0;     // frames: a spray on the beat, not a stamp (f336 = product alone)
     o.alpha = i < HAND.length ? .55 + .35 * r(9) : .3 + .6 * r(9);
     o.layer = i % 2;                                                   // 0 = bg (behind product), 1 = fg
     o.dof = o.layer === 1 && o.size >= 140;                            // near the lens: defocused
@@ -137,6 +137,55 @@ function buildSea(width, z0, z1, nx, nz) {
   return { mesh, update };
 }
 
+// ------------------------------------------------------------------ product dressing (shared preset: relit, never recoloured)
+// micro-detail for the stone shells (bump + roughness breakup: no flat CG plastic), plush pad faces over the hollow
+// torus cushions (no inner baffle showing), a touch of gold self-light on the sliders so the gold survives the cold grade
+function grainTexture() {
+  const S = 256, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d');
+  const id = x.createImageData(S, S);
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    // tileable: fbm on a torus-wrapped domain + fine speckle
+    const u = i / S * TAU, v = j / S * TAU;
+    const n = vn(Math.cos(u) * 3 + 10, Math.sin(u) * 3 + Math.cos(v) * 3) * .5 + vn(Math.cos(u) * 9 + 4, Math.sin(v) * 9 + Math.sin(u) * 2) * .3;
+    const sp = hash2(i * 1.37, j * 2.11);
+    const g = clamp(.5 + .32 * n + .28 * (sp - .5));
+    const k = (j * S + i) * 4; id.data[k] = id.data[k + 1] = id.data[k + 2] = Math.round(g * 255); id.data[k + 3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(10, 3); t.anisotropy = 8;
+  return t;
+}
+function dressProduct(hp) {
+  const grain = grainTexture(), gold = lin(COL.gold);
+  hp.cups.forEach(c => {
+    const P = c.userData.parts, m = P.shell.material;
+    m.bumpMap = grain; m.bumpScale = .5; m.roughnessMap = grain; m.roughness = .62; m.needsUpdate = true;
+    const pad = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.4, .06, 64), P.cushion.material);
+    pad.position.y = -.5; P.cushion.add(pad);
+  });
+  const sl = hp.band.sleeve.material; if (sl.bumpMap) { sl.bumpScale = 2.6; sl.needsUpdate = true; }
+  hp.sliders.forEach(g => g.children.forEach(o => { if (o.material) { o.material.emissive = gold; o.material.emissiveIntensity = .14; } }));
+}
+
+// ------------------------------------------------------------------ the match sprite (s05's last frame: orbit frame 39)
+// drawn over the first 4 frames at exactly s05's f335 framing (1500 px square centred on (540,960)) and dissolved into
+// the live 3D product, so the cut is a punch-in on the same image and the material hands over instead of swapping
+function matchSprite(E) {
+  const sh = E.img.orbit3, S = 520; if (!sh) return null;
+  const c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d');
+  x.drawImage(sh, 4 * S, S, S, S, 0, 0, S, S);
+  // mild unsharp mask (s05 sharpens its enlarged sprites the same way)
+  const b = document.createElement('canvas'); b.width = b.height = S; const bx = b.getContext('2d');
+  bx.filter = 'blur(1.4px)'; bx.drawImage(c, 0, 0);
+  const A = x.getImageData(0, 0, S, S), Bd = bx.getImageData(0, 0, S, S).data, d = A.data;
+  for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) d[i + k] = clamp(d[i + k] + .7 * (d[i + k] - Bd[i + k]), 0, 255);
+  x.putImageData(A, 0, 0);
+  x.globalCompositeOperation = 'destination-in';
+  const g = x.createRadialGradient(S / 2, S / 2, S * .42, S / 2, S / 2, S * .5);
+  g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S);
+  return c;
+}
+
 // ------------------------------------------------------------------ build
 let R = null;
 function build(E) {
@@ -145,13 +194,16 @@ function build(E) {
   const cam = new THREE.PerspectiveCamera(FOV, W / H, .5, 900);
   const prod = new THREE.Group(); scene.add(prod);
   const hp = createHeadphone(); prod.add(hp.root);
+  dressProduct(hp);
   // cold studio: key top-right, two hard cold rims, a low fill and a front strobe that fires on the kick
-  const key = new THREE.DirectionalLight(0xe4edf7, 2.4); key.position.set(30, 34, 30); scene.add(key);
-  const rimL = new THREE.DirectionalLight(0xd6e4f2, 4.2); rimL.position.set(-34, 14, -30); scene.add(rimL);
-  const rimR = new THREE.DirectionalLight(0xd6e4f2, 3.2); rimR.position.set(36, -6, -26); scene.add(rimR);
+  const key = new THREE.DirectionalLight(0xe4edf7, 1.5); key.position.set(30, 34, 30); scene.add(key);
+  const rimL = new THREE.DirectionalLight(0xd6e4f2, 3.4); rimL.position.set(-34, 14, -30); scene.add(rimL);
+  const rimR = new THREE.DirectionalLight(0xd6e4f2, 2.6); rimR.position.set(36, -6, -26); scene.add(rimR);
   const fill = new THREE.DirectionalLight(0x9fb2c4, .5); fill.position.set(-10, -30, 20); scene.add(fill);
   const strobe = new THREE.DirectionalLight(0xffffff, 0); strobe.position.set(0, 4, 40); scene.add(strobe);
   const sweep = new THREE.PointLight(0xe9f1ff, 0, 60, 1.6); scene.add(sweep);
+  // low warm kicker: keeps the champagne gold (sliders, rings, bezels) reading as gold inside the cold grade
+  const goldK = new THREE.DirectionalLight(0xffc98a, 1.1); goldK.position.set(-22, -16, 24); scene.add(goldK);
   // gold rings: emissive pulse (the ANC fighting back)
   const rings = hp.cups.map(c => c.userData.parts.ring.material);
   rings.forEach(m => { m.emissive = lin(COL.gold); m.emissiveIntensity = 0; });
@@ -207,7 +259,8 @@ function build(E) {
     }
     x.putImageData(id, 0, 0); return c;
   });
-  return { scene, seaScene, rtS, rtAcc, accMat, compMat, accScene, compQ, ortho, cam, prod, hp, key, rimL, rimR, fill, strobe, sweep, rings, sea, seaG, table, vil, haze };
+  const keyWarm = new THREE.Color(0xffdcae), keyCold = key.color.clone(), rimWarm = new THREE.Color(0xf3d2a0), rimCold = rimL.color.clone();
+  return { spr: matchSprite(E), goldK, keyWarm, keyCold, rimWarm, rimCold, scene, seaScene, rtS, rtAcc, accMat, compMat, accScene, compQ, ortho, cam, prod, hp, key, rimL, rimR, fill, strobe, sweep, rings, sea, seaG, table, vil, haze };
 }
 
 // ------------------------------------------------------------------ pose (pure function of local beat lb)
@@ -239,7 +292,8 @@ function spinY(lb) {
 // OPENING MATCH (b28.0 = f336): the projected product equals s05's last Droste frame (f335: ~1010 px wide, headband
 // top y~380, cups y~960-1530, raised 3/4 front with the cushions turned toward the lens), then eases to 760 px by b29.
 const PRB = () => (globalThis.__S06P || {});
-const OPEN = { px: 54, cupY: 1235, yaw: 34 * DEG, elev: 14 * DEG };
+// (the model keeps its own proportions: the sprite -> 3D material/shape difference is carried by a 4-frame dissolve)
+const OPEN = { px: 56, cupY: 1200, yaw: .4, elev: 0 };
 const openK = lb => eout(seg(lb, 0, 1));
 export function camState(lb) {
   const O = { ...OPEN, ...PRB() };
@@ -284,6 +338,13 @@ function drawBg(bg, lb, t, press, kick) {
   let g = bg.createRadialGradient(540, 980, 0, 540, 980, 980);
   g.addColorStop(0, `rgba(120,134,150,${.2 + .1 * press + .08 * kick})`); g.addColorStop(.55, 'rgba(40,46,54,.12)'); g.addColorStop(1, 'rgba(6,7,8,0)');
   bg.fillStyle = g; bg.fillRect(0, 0, W, H);
+  // b34 CHUNK: a cold burst of light behind the stopped product (2 frames, decays fast)
+  const chunk = lb >= LB_STOP ? Math.exp(-(lb - LB_STOP) * BEAT / .05) : 0;
+  if (chunk > .02) {
+    g = bg.createRadialGradient(540, 1000, 0, 540, 1000, 900);
+    g.addColorStop(0, `rgba(215,228,242,${.55 * chunk})`); g.addColorStop(.45, `rgba(120,135,150,${.25 * chunk})`); g.addColorStop(1, 'rgba(6,7,8,0)');
+    bg.fillStyle = g; bg.fillRect(0, 0, W, H);
+  }
   // drifting fog
   bg.save(); bg.globalCompositeOperation = 'lighter'; bg.imageSmoothingQuality = 'high';
   R.haze.slice(0, 1).forEach((c, i) => {
@@ -335,7 +396,8 @@ function pressureStreaks(ctx, lb, t, press) {
 // ------------------------------------------------------------------ 2D: storm words
 function drawWords(ctx, layer, lb, Fr, lf) {
   const suck = expoIn(seg(lb, LB_PUSH1, LB_END));
-  const pushOut = eout(seg(lb, LB_STOP, LB_PUSH1)) * (1 - suck);
+  // the hit frame (f408) keeps the storm where it was (a dead stop); from f409 the villain's burst blasts it outward
+  const pushOut = (lb >= LB_STOP ? eout(seg(lb, LB_STOP + 1 / 12, LB_PUSH1)) : 0) * (1 - suck);
   const jit = lb >= 4 ? 8 : 0, jIdx = Math.floor(Fr / 3);
   ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
   for (const w of R.table) {
@@ -354,6 +416,12 @@ function drawWords(ctx, layer, lb, Fr, lf) {
     if (jit) { x += (rnd(w.i * 3.1 + jIdx * 7.7) - .5) * 2 * jit; y += (rnd(w.i * 5.9 + jIdx * 3.3) - .5) * 2 * jit; }
     let a = w.alpha * (layer ? .85 : w.i < 8 ? .85 : .7) * (1 - .3 * pushOut);
     if (lb >= 5) a *= (jIdx + w.i) % 2 ? .6 : 1;            // strobe 1 <-> .6 every 3 frames
+    // the product stays the subject: front-layer words thin out over its silhouette (and clear further on the stop)
+    if (layer) {
+      const pd = Math.hypot((x - 540) / 1.25, y - 1000);
+      a *= 1 - (lb < LB_STOP ? .55 : .7) * Math.exp(-Math.pow(pd / 400, 2));
+    }
+    a *= lerp(1, .3, eout(seg(lb, LB_PUSH1, LB_PUSH1 + .25)));                                // sucked in: the clamp at the centre reads
     const sp = w.sprite.c;
     if (suck > 0) {
       // sucked into the clamp along a slight spiral, with a 2-step ghost trail (2D layers get no motion blur)
@@ -380,7 +448,7 @@ function drawWords(ctx, layer, lb, Fr, lf) {
 
 // ------------------------------------------------------------------ 2D: villain 'NOISE' (bg, behind the cups)
 function drawVillain(bg, lb, Fr, gap, gap0, gapMax, cx, cy) {
-  if (lb < LB_STOP) return;
+  if (lb < LB_STOP + .05) return;                           // f408 = the clean dead stop; the villain bursts on f409
   const V2 = R.vil;
   const born = expoOut(seg(lb, LB_STOP, LB_STOP + 2 / 12));
   let wW, hH;
@@ -426,7 +494,7 @@ function drawHud(fg, lb, Fr, lf, t) {
   // scrim so the HUD stays legible over the storm
   const g = fg.createLinearGradient(0, 160, 0, 500);
   g.addColorStop(0, 'rgba(5,6,7,.82)'); g.addColorStop(.55, 'rgba(5,6,7,.55)'); g.addColorStop(1, 'rgba(5,6,7,0)');
-  fg.fillStyle = g; fg.fillRect(0, 0, W, 500);
+  fg.fillStyle = g; fg.globalAlpha = clamp(intro * 1.5); fg.fillRect(0, 0, W, 500); fg.globalAlpha = 1;
   const crush = seg(lb, LB_PUSH1, LB_END);
   const tr = lb >= 4 ? 2 * (1 + crush * 2) : 0;
   const jx = (rnd(Fr * 9.1) - .5) * tr, jy = (rnd(Fr * 4.4) - .5) * tr;
@@ -470,9 +538,13 @@ function drawHud(fg, lb, Fr, lf, t) {
 
 // samples of the product-only motion blur (the spin becomes a blur; the slam)
 function blurSamples(lb) {
-  if (lb >= 4 && lb < LB_STOP + .02) return lb < 4.75 ? 3 : 4;
-  if (lb >= LB_PUSH1 + 2.5 / 12 && lb < LB_END + .02) return 3;
-  return 1;
+  if (lb >= 4 && lb < LB_STOP - .01) return lb < 4.75 ? 3 : 4;
+  return 1;                                   // b34 dead stop and the clamp stay razor sharp
+}
+// shutter (in frames) bounded so a sample never smears more than ~20 deg of spin: the silhouette survives
+function shutterAt(lb) {
+  const x = seg(lb, 0, LB_STOP), radPerFrame = 8 * Math.PI * 3 * x * x / (LB_STOP * 12);
+  return clamp(.28 / Math.max(1e-3, radPerFrame), .25, .75);
 }
 
 // ------------------------------------------------------------------ the scene
@@ -516,14 +588,17 @@ export default {
       globalThis.__S06BB = { x0, x1, y0, y1, w: x1 - x0, cups: cy };
     }
 
-    // ---------------- lights
-    R.strobe.intensity = 3.2 * kick * (.4 + .6 * press) + (lb >= LB_STOP ? 4 * Math.exp(-(lb - LB_STOP) * BEAT / .07) : 0);
+    // ---------------- lights (warm gold-lit at the match cut, draining to the cold studio over 6 frames)
+    const coldK = eio(seg(lf, 0, 6));
+    R.key.color.copy(R.keyWarm).lerp(R.keyCold, coldK); R.rimL.color.copy(R.rimWarm).lerp(R.rimCold, coldK); R.rimR.color.copy(R.rimL.color);
+    R.strobe.intensity = 1.8 * kick * (.4 + .6 * press) + (lb >= LB_STOP ? 3 * Math.exp(-(lb - LB_STOP) * BEAT / .07) : 0);
     const swA = t * 2.4 + press * 6;
-    R.sweep.position.set(Math.sin(swA) * 26, 10 + 6 * Math.cos(swA * .7), 18 + 8 * Math.cos(swA)); R.sweep.intensity = 260 * (.3 + .7 * press);
+    R.sweep.position.set(Math.sin(swA) * 26, 10 + 6 * Math.cos(swA * .7), 18 + 8 * Math.cos(swA)); R.sweep.intensity = 80 * (.3 + .7 * press);
     const slam = lb >= LB_PUSH1 ? ein(seg(lb, LB_PUSH1, LB_END)) : 0;
-    R.rimL.intensity = 4.2 + 2 * press + 5 * slam; R.rimR.intensity = 3.2 + 5 * slam; R.key.intensity = 2.3 + .6 * kick + 1.5 * slam;
-    R.strobe.intensity += 3 * slam;
-    const ringI = .15 + 1.4 * kick * (.4 + .6 * press) + (lb >= LB_PUSH1 ? 2.5 * seg(lb, LB_PUSH1, LB_END) : 0);
+    R.rimL.intensity = 2.6 + 1.2 * press + 4 * slam; R.rimR.intensity = 2 + 4 * slam; R.key.intensity = .95 + .35 * kick + 1.2 * slam;
+    R.goldK.intensity = 1.1 + .8 * kick;
+    R.strobe.intensity += 3 * slam; R.strobe.intensity *= coldK;
+    const ringI = .45 + 1.4 * kick * (.4 + .6 * press) + (lb >= LB_PUSH1 ? 2.5 * seg(lb, LB_PUSH1, LB_END) : 0);
     R.rings.forEach(m => { m.emissiveIntensity = ringI; });
 
     // ---------------- sea
@@ -535,6 +610,7 @@ export default {
     // ---------------- bg2d: haze, back half of the storm, villain
     drawBg(bg, lb, t, press, kick);
     pressureStreaks(bg, lb, t, press);
+    if (coldK < 1) { bg.fillStyle = `rgba(5,5,6,${(1 - coldK) * .9})`; bg.fillRect(0, 0, W, H); }   // lands on s05's black
     drawWords(bg, 0, lb, Fr, lf);
     drawVillain(bg, lb, Fr, gap, gap0, gapMax, midX, midY);
 
@@ -542,12 +618,11 @@ export default {
     {
       const N = blurSamples(lb);
       if (N > 1) {
-        const r = E.renderer, shutter = lb >= LB_PUSH1 ? .9 : .75;   // in frames
+        const r = E.renderer, shutter = shutterAt(lb);   // in frames
         // smear width (uv) ~ screen travel between two samples
         const pxu = H / (2 * Math.tan(FOV / 2 * DEG) * camState(lb).d);
-        const travel = lb < LB_STOP + .02 ? 8 * Math.PI * 3 * Math.pow(seg(lb, 0, LB_STOP), 2) / 72 * 8.5 * pxu
-          : Math.abs(spread(lb + .5 / 12) - spread(lb - .5 / 12)) * 7.4 * pxu;
-        R.compMat.uniforms.uBlur.value = Math.min(160, travel * shutter / N * 1.15) / W;
+        const travel = 8 * Math.PI * 3 * Math.pow(seg(lb, 0, LB_STOP), 2) / 72 * 8.5 * pxu;
+        R.compMat.uniforms.uBlur.value = Math.min(70, travel * shutter / N * .8) / W;
         r.setClearColor(0x000000, 0); r.setRenderTarget(R.rtAcc); r.clear(true, true, true);
         R.accMat.uniforms.uW.value = 1 / N;
         for (let i = 0; i < N; i++) {
@@ -561,55 +636,82 @@ export default {
       } else { scene.add(R.seaG); E.render3D(scene, cam); R.seaScene.add(R.seaG); }
     }
 
-    // ---------------- fg2d: front half of the storm (defocused giants), HUD
+    // ---------------- fg2d: the match sprite dissolving into the live product, front half of the storm, HUD
+    if (R.spr && lf < 4) {
+      // a true cross-dissolve of the whole frame: s05's ink ground + the sprite over the live scene
+      fg.save(); fg.globalAlpha = [1, .7, .4, .15][Fr]; fg.imageSmoothingEnabled = true; fg.imageSmoothingQuality = 'high';
+      fg.fillStyle = COL.ink; fg.fillRect(0, 0, W, H);
+      fg.drawImage(R.spr, 540 - 750, 960 - 750, 1500, 1500);
+      if (Fr < 2) {                                         // the downbeat's light pop: added light, not a veil
+        const g = fg.createRadialGradient(540, 1000, 0, 540, 1000, 820);
+        g.addColorStop(0, `rgba(255,236,205,${Fr ? .1 : .26})`); g.addColorStop(.6, `rgba(255,226,180,${Fr ? .03 : .08})`); g.addColorStop(1, 'rgba(255,226,180,0)');
+        fg.globalAlpha = 1; fg.globalCompositeOperation = 'lighter'; fg.fillStyle = g; fg.fillRect(0, 0, W, H);
+      }
+      fg.restore();
+    }
     drawWords(fg, 1, lb, Fr, lf);
-    drawHud(fg, lb, Fr, lf, t);
+    if (lf >= 2) drawHud(fg, lb, Fr, lf - 2, t);            // f336 is the product alone (the match); the HUD decodes on from f338
 
-    // ---------------- post: the cold grade
-    fx.exposure = .88; fx.bloom = .45; fx.bloomThreshold = .84;
-    fx.sat = .3; fx.tint = [.92, .96, 1.04]; fx.contrast = 1.05; fx.vignette = .45;
-    fx.grain = lerp(.05, .15, ein(seg(lb, 2, 6)));
-    fx.rgb = lerp(.003, .02, ein(seg(lb, 2, 6)));
-    fx.scanlines = .3 * ein(seg(lb, 2, 6)) * (lb < LB_END ? 1 : 0);
-    // b28 downbeat punch (match cut from the Droste cell)
-    downbeatPunch(fx, t, b2s(28) - .5 / 30, { flash: .25, flashFrames: 1, zoom: 1.08, rgb: .02, zoomBlur: .22, shake: .008 });
+    // ---------------- post: the cold grade (the match cut lands warm, like s05's gold-lit cell, and drains in 6 frames)
+    const cold = eio(seg(lf, 0, 6));
+    fx.exposure = .8; fx.bloom = .45; fx.bloomThreshold = .84;
+    // sat .5 (not .3): the world is cold, but the champagne gold on the product must still read as gold
+    fx.sat = lerp(1, .5, cold); fx.tint = [lerp(1, .95, cold), lerp(1, .98, cold), lerp(1, 1.03, cold)];
+    fx.contrast = 1.05; fx.vignette = .45;
+    fx.grain = lerp(.05, .14, ein(seg(lb, 2, 6)));
+    fx.rgb = lerp(.003, .014, ein(seg(lb, 2, 6)));
+    fx.scanlines = .2 * ein(seg(lb, 2, 6)) * (lb < LB_STOP ? 1 : 0);
+    // b28 DOWNBEAT: the match cut lands as a punch-in on the same image (the s05 sprite is still on top, the zoom moves
+    // it and the 3D together, so the geometry holds) + an additive warm light pop on the product (no full-frame flash
+    // veil: the blacks stay black) + aberration kick
+    if (lf < 6) {
+      const q = 1 - expoOut(lf / 6);
+      fx.zoom *= 1 + .07 * q; fx.rgb = Math.max(fx.rgb, .0015 + .011 * (1 - lf / 6));
+      const sh = .006 * (1 - lf / 6); fx.shake = [(rnd(Fr * 3.9 + 1) - .5) * 2 * sh, (rnd(Fr * 8.1 + 2) - .5) * 2 * sh];
+    }
     // every beat: zoom 1.03 (4 frames) + rgb kick
     for (let k = 1; k <= 7; k++) {
       const fr = (lb - k) * 12; if (fr < 0 || fr >= 4) continue;
       const kk = 1 - fr / 4; fx.zoom *= 1 + .03 * kk; fx.rgb = Math.max(fx.rgb, .005 + .003 * kk);
     }
-    // doublings: a 2-frame glitch blip (b29, 30, 31, 32, 32.5, 33, 33.5)
+    // doublings: a 2-frame slice-glitch blip (b29, 30, 31, 32, 32.5, 33, 33.5); b33.0 is the hardest (slices, no pixelate)
     for (const d of [1, 2, 3, 4, 4.5, 5, 5.5]) {
-      const fr = (lb - d) * 12; if (fr >= 0 && fr < 1.5) { fx.glitch = Math.max(fx.glitch, .1 + .08 * d / 5.5); fx.glitchSeed = 31 + d * 7; }
+      const fr = (lb - d) * 12; if (fr >= 0 && fr < 1.5) { fx.glitch = Math.max(fx.glitch, d === 5 ? .25 : .08 + .08 * d / 5.5); fx.glitchSeed = 31 + d * 7; }
     }
-    // b32-34 glitch ramp, seed every 3 frames
-    if (lb >= 4 && lb < LB_STOP) { fx.glitch = Math.max(fx.glitch, lerp(.05, .4, ein(seg(lb, 4, 6)))); fx.glitchSeed = Math.floor(Fr / 3) * 7.13 + 1; }
-    // pixelate for 1 frame at b33.0 and b34.0
-    if (Fr === 60 || Fr === 72) fx.pixelate = 24;
-    // b34 dead stop: CHUNK
+    // b32-34 glitch ramp (capped at .25 so the spinning silhouette survives), seed every 3 frames
+    if (lb >= 4 && lb < LB_STOP) { fx.glitch = Math.min(.25, Math.max(fx.glitch, lerp(.04, .22, ein(seg(lb, 4, 6))))); fx.glitchSeed = Math.floor(Fr / 3) * 7.13 + 1; }
+    // b33.0 (f396): one 8 px pixelate frame on the hardest doubling; f407 (the frame before the stop): the image
+    // tears (heavy slice glitch, the silhouette still readable) — then b34 lands clean
+    if (Fr === 60) fx.pixelate = 8;
+    if (Fr === 71) { fx.glitch = .35; fx.glitchSeed = 97; fx.rgb = Math.max(fx.rgb, .02); }
+    // ...b34 (f408) DEAD STOP on the CHUNK: a clean, sharp, front-facing product — no glitch, short white kick, zoom punch
     if (lb >= LB_STOP) {
       const fr = (lb - LB_STOP) * 12;
+      fx.glitch = 0;
+      // no full-frame flash (a linear mix lifts the blacks into a grey veil): the product itself flares — exposure +
+      // bloom kick on the 3D layer and a cold burst of light behind it (drawBg)
+      if (fr < 4) { const q = 1 - fr / 4; fx.exposure = .8 + .5 * q; fx.bloom = .45 + .4 * q; }
       if (fr < 8) {
         const k = 1 - fr / 8;
-        fx.shake = [(rnd(Fr * 3.3) - .5) * 2 * .012 * k, (rnd(Fr * 7.9) - .5) * 2 * .012 * k];
-        fx.zoom *= 1 + .06 * (1 - expoOut(fr / 6));
-        fx.rgb = Math.max(fx.rgb, .03 * k);
+        fx.shake = [(rnd(Fr * 3.3) - .5) * 2 * .012 * k * (fr < 1 ? .35 : 1), (rnd(Fr * 7.9) - .5) * 2 * .012 * k * (fr < 1 ? .35 : 1)];
+        fx.zoom *= 1 + .1 * (1 - expoOut(clamp(fr / 6)));
+        fx.rgb = Math.max(fx.rgb, .0015 + .0185 * Math.max(0, 1 - fr / 8));
       }
-      fx.glitch = Math.max(fx.glitch, .25 * Math.max(0, 1 - fr / 4));
-      fx.glitchSeed = Math.floor(Fr / 2) * 3.7 + 5;
+      if (fr >= 3 && fr < 6) { fx.glitch = .08; fx.glitchSeed = Math.floor(Fr / 2) * 3.7 + 5; }
     }
-    // b34-35.5 push: liquid displace + continuous shake
+    // b34-35.5 push: liquid displace + continuous shake (eased in after the hit frame)
     if (lb >= LB_STOP && lb < LB_END + .1) {
-      const k = lb < LB_PUSH1 ? 1 : 1 - seg(lb, LB_PUSH1, LB_END) * .5;
-      fx.displace = .01 * k; fx.displaceScale = 3.5;
-      fx.shake = [fx.shake[0] + (rnd(Fr * 1.9 + 4) - .5) * .006, fx.shake[1] + (rnd(Fr * 2.7 + 8) - .5) * .006];
+      const k = (lb < LB_PUSH1 ? 1 : 1 - seg(lb, LB_PUSH1, LB_END) * .6) * seg(lb, LB_STOP + 1 / 12, LB_STOP + 4 / 12);
+      fx.displace = .008 * k; fx.displaceScale = 3.5;
+      fx.shake = [fx.shake[0] + (rnd(Fr * 1.9 + 4) - .5) * .006 * k, fx.shake[1] + (rnd(Fr * 2.7 + 8) - .5) * .006 * k];
       fx.rot = .012 * noise1(lb * 6) * k;
     } else fx.rot = .008 * noise1(lb * 3.3) * press;
-    // b35.5-36 clamp: zoom blur into the centre, glitch fades out
+    // b35.5-36 THE CLAMP: kept sharp so the cups and the squashing word read — a light pull toward the centre only;
+    // the big blur + flash belong to s07's detonation on f432
     if (lb >= LB_PUSH1) {
       const k = seg(lb, LB_PUSH1, LB_END);
-      fx.zoomBlur = Math.max(fx.zoomBlur, .3 * ein(k)); fx.zoomCenter = [midX / W, 1 - midY / H];
-      fx.glitch = .15 * (1 - k); fx.rgb = Math.max(fx.rgb, .012 + .02 * ein(k));
+      fx.zoomBlur = .12 * ein(k); fx.zoomCenter = [midX / W, 1 - midY / H];
+      fx.glitch = 0; fx.rgb = Math.max(fx.rgb, .004 + .008 * ein(k));
     }
   },
 };
