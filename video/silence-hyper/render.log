@@ -1,0 +1,24 @@
+frame 0 / 1032 6s
+frame 60 / 1032 46s
+frame 120 / 1032 88s
+frame 180 / 1032 154s
+frame 240 / 1032 258s
+frame 300 / 1032 410s
+frame 360 / 1032 490s
+frame 420 / 1032 616s
+frame 480 / 1032 783s
+frame 540 / 1032 917s
+frame 600 / 1032 1103s
+frame 660 / 1032 1211s
+frame 720 / 1032 1328s
+frame 780 / 1032 1402s
+frame 840 / 1032 1534s
+frame 900 / 1032 1619s
+frame 960 / 1032 1682s
+frame 1020 / 1032 1737s
+render-done
+[video] 1749.6s
+
+real	29m19.668s
+user	5m13.167s
+sys	0m9.864s
