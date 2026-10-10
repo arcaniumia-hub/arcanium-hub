@@ -27,7 +27,7 @@ const LIST = ['TRAFFIC', 'SIRENS', 'HONK', 'DRILLS', 'CHATTER', 'ALARMS', 'NOTIF
 const WAVES = [[0, 0], [1, 1], [2, 2], [4, 3], [8, 4], [16, 4.5], [32, 5], [64, 5.5], [128, 6]];   // [first index, local beat]
 // hand-composed first words (big, legible), the rest on an R2 low-discrepancy scatter
 const HAND = [
-  { word: 'NOISE', fam: 0, v: 0, x: 540, y: 1585, size: 220, rot: 0 },
+  { word: 'NOISE', fam: 0, v: 0, x: 540, y: 1470, size: 190, rot: 0 },          // bottom <= ~1600 (Reels UI safe)
   { word: 'TRAFFIC', fam: 1, v: 0, x: 255, y: 640, size: 74, rot: 0 },
   { word: 'SIRENS', fam: 0, v: 1, x: 905, y: 700, size: 150, rot: -90 * DEG },
   { word: 'HONK', fam: 2, v: 3, x: 205, y: 1330, size: 112, rot: 6 * DEG },
@@ -225,7 +225,7 @@ function spread(lb) {
 }
 // cup yaw: cushions turned toward camera (front match), splayed by the push, jaws shut on the clamp
 function cupYaw(lb) {
-  if (lb < LB_STOP) return 20 * DEG;
+  if (lb < LB_STOP) return lerp({ ...OPEN, ...PRB() }.yaw, 20 * DEG, openK(lb));
   if (lb < LB_PUSH1) return lerp(20, 30, eout(seg(lb, LB_STOP, LB_PUSH1))) * DEG;
   return lerp(30, 0, backIn(seg(lb, LB_PUSH1, LB_END), .8)) * DEG;
 }
@@ -236,14 +236,21 @@ function spinY(lb) {
 }
 // camera: product ~960 px wide at b28 (match of the Droste cell) -> 760 px by b29 -> slow pressure push-in ->
 // eases back on the push so the splayed cups stay in frame -> lunges in on the clamp
+// OPENING MATCH (b28.0 = f336): the projected product equals s05's last Droste frame (f335: ~1010 px wide, headband
+// top y~380, cups y~960-1530, raised 3/4 front with the cushions turned toward the lens), then eases to 760 px by b29.
+const PRB = () => (globalThis.__S06P || {});
+const OPEN = { px: 54, cupY: 1235, yaw: 34 * DEG, elev: 14 * DEG };
+const openK = lb => eout(seg(lb, 0, 1));
 export function camState(lb) {
-  let px = lerp(49.5, 39, eout(seg(lb, 0, 1)));                  // px per world unit at the product
+  const O = { ...OPEN, ...PRB() };
+  let px = lerp(O.px, 39, openK(lb));                            // px per world unit at the product
   px *= 1 + .07 * eio(seg(lb, 1, LB_STOP));
   px *= 1 - .09 * eout(seg(lb, LB_STOP, LB_PUSH1));
   px *= 1 + .16 * expoIn(seg(lb, LB_PUSH1, LB_END));
   const d = H / (2 * Math.tan(FOV / 2 * DEG) * px);
-  const cupY = lerp(1150, 1030, eout(seg(lb, 0, 1))) - 20 * eio(seg(lb, LB_STOP, LB_PUSH1)) + 10 * expoIn(seg(lb, LB_PUSH1, LB_END));
-  return { d, cupY };
+  const cupY = lerp(O.cupY, 1030, openK(lb)) - 20 * eio(seg(lb, LB_STOP, LB_PUSH1)) + 10 * expoIn(seg(lb, LB_PUSH1, LB_END));
+  const elev = lerp(O.elev, Math.atan2(2.5, d), openK(lb));       // raised camera at the match, 2.5 units after b29
+  return { d, cupY, camY: lb >= 1 ? 2.5 : Math.tan(elev) * d };
 }
 
 // b36 hand-off (for s07): the clamped pose — product rotation (TILT, 8pi ≡ 0, 0), cups at base (x ±7.4, y -4.5, yaw 0),
@@ -476,7 +483,10 @@ export default {
 
   draw(E, lt, t) {
     const fx = E.fx, bg = E.bg, fg = E.fg;
-    const lf = lt * 30, Fr = Math.round(lf), lb = lt / BEAT;
+    // snap to the frame grid: b2s(28) = 11.200000000000001, so lt*30 can come out as 71.99999 on the b34 hit frame
+    let lf = lt * 30; if (Math.abs(lf - Math.round(lf)) < 1e-3) lf = Math.round(lf);
+    lf = Math.max(0, lf); lt = lf / 30;
+    const Fr = Math.round(lf), lb = lf / 12;
     const { scene, cam, prod, hp } = R;
     const press = ein(seg(lb, 0, LB_STOP));                 // pressure 0..1
     const beatPh = lb - Math.floor(lb), kick = Math.exp(-beatPh * BEAT / .09);
@@ -484,7 +494,7 @@ export default {
     // ---------------- pose + camera
     pose(lb, Fr);
     const cs = camState(lb);
-    cam.fov = FOV; cam.position.set(0, 2.5, cs.d); cam.up.set(0, 1, 0); cam.lookAt(0, 0, 0);
+    cam.fov = FOV; cam.position.set(0, cs.camY, cs.d); cam.up.set(0, 1, 0); cam.lookAt(0, 0, 0);
     cam.clearViewOffset(); cam.updateProjectionMatrix(); cam.updateMatrixWorld();
     const cupMid = hp.cups[0].getWorldPosition(new THREE.Vector3()).add(hp.cups[1].getWorldPosition(new THREE.Vector3())).multiplyScalar(.5);
     const p0 = project(cam, cupMid);
@@ -496,6 +506,15 @@ export default {
     const gapAt = s => { const save = [hp.cups[0].position.x, hp.cups[1].position.x]; hp.cups.forEach((c, i) => { c.position.x = (i ? 1 : -1) * 7.4 * s; c.updateMatrixWorld(true); });
       const q = hp.cups.map(c => project(cam, c.localToWorld(V(0, -2.95, 0)))); hp.cups.forEach((c, i) => { c.position.x = save[i]; c.updateMatrixWorld(true); }); return Math.abs(q[1][0] - q[0][0]); };
     const gap0 = lb >= LB_PUSH1 ? gapAt(1) : 0, gapMax = lb >= LB_PUSH1 ? gapAt(1.55) : 0;
+    if (PRB().bbox) {                                                // probe (dev only): projected product bbox
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; const v = new THREE.Vector3();
+      prod.traverse(o => { if (!o.isMesh || !o.visible) return; const pa = o.geometry.attributes.position;
+        for (let i = 0; i < pa.count; i += 3) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); const q = project(cam, v);
+          x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]); } });
+      const cy = hp.cups.map(c => { let a = 1e9, b = -1e9; c.traverse(o => { if (!o.isMesh) return; const pa = o.geometry.attributes.position;
+        for (let i = 0; i < pa.count; i += 3) { v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld); const q = project(cam, v); a = Math.min(a, q[1]); b = Math.max(b, q[1]); } }); return [a, b]; });
+      globalThis.__S06BB = { x0, x1, y0, y1, w: x1 - x0, cups: cy };
+    }
 
     // ---------------- lights
     R.strobe.intensity = 3.2 * kick * (.4 + .6 * press) + (lb >= LB_STOP ? 4 * Math.exp(-(lb - LB_STOP) * BEAT / .07) : 0);
