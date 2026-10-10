@@ -99,25 +99,36 @@ PAGES = build_words()
 
 # ---------------------------------------------------------------- edit decisions
 # B-roll: (t0, t1, file, src_t0, opts)  — everything else is the face plate
+BI = os.path.join(V, 'birra-reel/out/birra-reel.mp4')        # 2D animated explainer (another LUMARC job)
 BROLL = [
     (2.70, 4.95, LE, 0.10, dict(paint=(220, 420), z=(1.10, 1.16), anchor=(540, 940))),   # tacky flyer — "like this"
+    (4.95, 6.30, LE, 2.20, dict(paint=(220, 420), z=(1.25, 1.30), anchor=(540, 900))),
     (6.30, 8.15, HY, 0.50, dict(z=(1.42, 1.48), anchor=(540, 1240))),                   # white-background photo
     (8.15, 9.45, HY, 2.15, dict(z=(1.40, 1.46), anchor=(540, 1240))),                   # 50% OFF / "SALE"
-    (9.45, 10.45, HY, 3.55, dict(z=(1.40, 1.45), anchor=(540, 1300))),                                      # BUY NOW — hope for the best
-    (19.15, 20.20, HY, 1.00, dict(z=(1.42, 1.50), anchor=(540, 1240), sat=.55)),        # "like this…"
-    (DROP, 23.05, HY, 6.40, dict()),                                                     # THIS — slam
-    (23.05, 23.62, HY, 7.70, dict(z=(1.0, 1.06))),                                       # particle headphones
+    (9.45, 10.45, HY, 3.55, dict(z=(1.40, 1.45), anchor=(540, 1300))),                  # BUY NOW — hope for the best
+    (10.45, 14.55, 'feed', 0, dict()),                                                   # feed scroll — "disappears"
+    (16.00, 19.15, HY, 0.05, dict(z=(1.0, 1.04))),                                       # "What if instead of presenting…"
+    (19.15, 20.20, HY, 3.30, dict(z=(1.0, 1.06), sat=.6)),                               # "like this…"
+    (DROP, 23.05, HY, 6.40, dict(nopip=1)),                                              # THIS — slam
+    (23.05, 23.62, HY, 7.70, dict(z=(1.0, 1.06), nopip=1)),                              # ring
+    (23.62, 25.20, LE, 6.20, dict(z=(1.0, 1.05), pip='top')),                                       # LUMARC logo reveal
     (25.20, 25.98, SM, 9.55, dict(z=(1.0, 1.05))),                                       # Videos
     (25.98, 26.90, LE, 17.00, dict()),                                                   # editing
     (26.90, 27.82, LE, 15.90, dict()),                                                   # Reels
     (27.82, 28.82, LE, 13.90, dict()),                                                   # carousels
     (28.82, 29.74, LE, 12.90, dict()),                                                   # designs
+    (29.74, 31.08, LE, 10.05, dict()),                                                   # captions — "impossible to scroll past"
+    (31.08, 32.55, HY, 7.90, dict(z=(1.0, 1.05))),                                       # Introducing SILENCE ONE
     (32.55, 33.25, LE, 8.10, dict(z=(1.0, 1.08))),                                       # stop scrolling — post wall
-    (38.00, 38.75, SM, 3.20, dict(z=(1.0, 1.06))),                                       # look good
-    (44.10, 44.75, HY, 23.00, dict(z=(1.0, 1.05))),                                      # could look like
-    (END, DUR, HY, 28.30, dict()),                                                       # LUMARC end card
+    (33.25, 34.67, SM, 4.00, dict(z=(1.0, 1.04))),                                       # look at your brand — hero
+    (34.67, 35.75, HY, 12.10, dict()),                                                   # Because today — NOISE
+    (35.75, 37.60, HY, 18.70, dict()),                                                   # being good isn't enough — 40h/250g
+    (37.60, 38.75, SM, 3.00, dict(z=(1.0, 1.06))),                                       # look good
+    (38.75, 41.04, BI, 15.00, dict(z=(1.0, 1.05))),                                      # be seen — 2D animation job
+    (44.10, 45.70, HY, 22.40, dict(z=(1.0, 1.05))),                                      # could look like
+    (END, DUR, HY, 28.30, dict(nopip=1)),                                                # LUMARC end card
 ]
-NO_CAPTION = [(DROP, 23.62)]
+NO_CAPTION = [(DROP, 25.18)]                               # THIS slam + LUMARC logo reveal speak for themselves
 # face framing: (t0, t1, scale0, scale1, ease) — a scale jump between segments reads as a jump cut
 FACE = [
     (0.00, 0.45, 1.42, 1.12, 'out'), (0.45, 2.00, 1.12, 1.18, 'lin'), (2.00, 2.70, 1.00, 1.03, 'lin'),
@@ -314,13 +325,13 @@ class Edit:
         plate = self.face(t)
         if cur is not None:
             a, z, path, ss, o = BROLL[cur]
-            img = self.broll(cur, t)
+            img = self.feed(t) if path == 'feed' else self.broll(cur, t)
             if 'paint' in o:   # hide the old "What if instead…" banner on the flyer clip
                 img = img.copy(); y0, y1 = o['paint']; c = img.getpixel((30, y0 - 10))
                 ImageDraw.Draw(img).rectangle((0, y0, W, y1), fill=c)
             z0, z1 = o.get('z', (1, 1)); x = (t - a) / (z - a)
             s = z0 + (z1 - z0) * x + .10 * (1 - eout((t - a) / .14))       # incoming punch
-            img = zoom(img, s, o.get('anchor', (W / 2, H / 2)))
+            img = zoom(img, s, o.get('anchor', (W / 2, H / 2)), dy=o.get('dy', 0))
             if 'sat' in o:
                 arr = np.asarray(img).astype(np.float32); g = arr.mean(2, keepdims=True)
                 img = Image.fromarray(np.clip(g + (arr - g) * o['sat'], 0, 255).astype(np.uint8))
@@ -347,8 +358,63 @@ class Edit:
                 k = amt * math.exp(-(t - at) / .07); arr = arr + (255 - arr) * k
         if arr is not None: img = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
         fr = img.convert('RGBA')
+        if cur is not None and not BROLL[cur][4].get('nopip'): self.pip(fr, plate, t, cur)
         draw_captions(fr, t); draw_dm(fr, t)
         return fr.convert('RGB')
+    def pip(self, fr, plate, t, cur):
+        """speaker bubble while the work is on screen; pops in at the start of each B-roll run."""
+        k = cur
+        while k > 0 and abs(BROLL[k - 1][1] - BROLL[k][0]) < 1e-6 and not BROLL[k - 1][4].get('nopip'): k -= 1
+        lt = t - BROLL[k][0]; s = back(lt / .25, 1.8) if lt < .25 else 1.0
+        D = 300; R = 430                                  # bubble diameter / plate crop radius around the face
+        cx, cy = 540, 610
+        face = plate.crop((cx - R, cy - R, cx + R, cy + R)).resize((D, D), Image.BILINEAR)
+        ring = 8; tot = D + 2 * ring + 60
+        b = Image.new('RGBA', (tot, tot), (0, 0, 0, 0)); o = 30
+        sh = Image.new('L', (tot, tot)); ImageDraw.Draw(sh).ellipse((o, o + 8, o + D + 2 * ring, o + D + 2 * ring + 8), fill=200)
+        shi = Image.new('RGBA', (tot, tot), (0, 0, 0, 0)); shi.putalpha(sh.filter(ImageFilter.GaussianBlur(14))); b.alpha_composite(shi)
+        rm = Image.new('L', (tot, tot)); ImageDraw.Draw(rm).ellipse((o, o, o + D + 2 * ring, o + D + 2 * ring), fill=255)
+        g = gradient(tot, tot, GRAD).convert('RGBA'); g.putalpha(rm); b.alpha_composite(g)
+        fm = Image.new('L', (D, D)); ImageDraw.Draw(fm).ellipse((0, 0, D - 1, D - 1), fill=255)
+        fc = face.convert('RGBA'); fc.putalpha(fm); b.alpha_composite(fc, (o + ring, o + ring))
+        if BROLL[cur][1] - t < .08 and (cur + 1 >= len(BROLL) or abs(BROLL[cur + 1][0] - BROLL[cur][1]) > 1e-6 or BROLL[cur + 1][4].get('nopip')):
+            s *= max(0, (BROLL[cur][1] - t) / .08)
+        if s <= .01: return
+        b = b.resize((max(1, int(tot * s)), max(1, int(tot * s))), Image.BILINEAR)
+        py = 150 if BROLL[cur][4].get('pip') == 'top' else 1330
+        fr.alpha_composite(b, (int(70 + tot / 2 - b.width / 2 - o), int(py + tot / 2 - b.height / 2 - o)))
+    _cards = None
+    def feed(self, t):
+        """dark-mode feed of generic posts; flung away on "disappears"."""
+        if Edit._cards is None:
+            def grab(path, at, box):
+                b = subprocess.run(['ffmpeg', '-v', 'error', '-ss', str(at), '-i', path, '-frames:v', '1', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], capture_output=True).stdout
+                im = Image.frombuffer('RGB', (W, H), b, 'raw', 'RGB', 0, 1).copy()
+                if path == LE: ImageDraw.Draw(im).rectangle((0, 220, W, 420), fill=im.getpixel((30, 210)))
+                return im.crop(box)
+            srcs = [grab(LE, 1.0, (40, 470, 1040, 1400)), grab(HY, 1.8, (0, 330, 1080, 1500)), grab(HY, 4.0, (0, 260, 1080, 1460)),
+                    grab(LE, 2.6, (40, 470, 1040, 1400)), grab(HY, 2.6, (0, 330, 1080, 1500))]
+            cards = []
+            for i, im in enumerate(srcs):
+                cw = 900; im = im.resize((cw, int(im.height * cw / im.width)), Image.BILINEAR)
+                c = Image.new('RGB', (cw, im.height + 110), (22, 22, 30)); d = ImageDraw.Draw(c)
+                d.ellipse((24, 24, 86, 86), fill=(70, 70, 86)); d.text((104, 30), ['yourbrand', 'bestdeals.store', 'shop_now'][i % 3], font=font(32, 600), fill=(235, 235, 240))
+                d.text((104, 66), 'Sponsored', font=font(24, 400), fill=(150, 150, 165)); d.text((cw - 60, 40), '···', font=font(36, 700), fill=(200, 200, 210))
+                c.paste(im, (0, 110)); cards.append(c)
+            Edit._cards = cards
+        def at(tt):
+            y = 160 * (tt - 10.45)
+            if tt > 12.38: y += 3600 * eout((tt - 12.38) / .4)
+            return y
+        acc = np.zeros((H, W, 3), np.float32); n = 6 if 12.3 < t < 12.85 else 1
+        for j in range(n):
+            y = at(t + j / n / FPS); c = Image.new('RGB', (W, H), BG); yy = 200 - y; i = 0
+            while yy < H:
+                cd = Edit._cards[i % len(Edit._cards)]
+                if yy + cd.height > 0: c.paste(cd, (90, int(yy)))
+                yy += cd.height + 40; i += 1
+            acc += np.asarray(c, np.float32)
+        return Image.fromarray((acc / n).astype(np.uint8))
     def swipe(self, plate, t):
         a, z = SWIPE; acc = np.zeros((H, W, 3), np.float32); n = 4
         old = zoom(plate, face_scale(a - .001), FACE_ANCHOR); new = zoom(plate, face_scale(z), FACE_ANCHOR)
