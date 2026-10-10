@@ -22,3 +22,7 @@ like THIS? / That's what we do at LUMARC. Videos, editing, Reels, carousels, des
 to make people stop scrolling and look at your brand. / Because today, being good isn't enough. You have to look
 good. You have to be seen. And above all, remembered. / Want to see what your product could look like? Send me the
 word VIDEO in a DM, and I'll show you. LUMARC. Be seen. Be remembered.
+
+## Build
+`plate.mp4` = the HeyGen export (gitignored). `python3 edit.py cues && python3 sound.py && python3 edit.py render && python3 edit.py mux`
+→ `out/lumarc-talkinghead.mp4` (≈28 MB). Phrase timings in `edit.py` were measured from the voice (the HeyGen .srt is off by up to 1.7 s).
