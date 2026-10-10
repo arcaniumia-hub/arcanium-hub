@@ -93,13 +93,20 @@ def pitch_env(f0, f1, n, decay):
     f = f1 + (f0 - f1) * np.exp(-tt(n) / decay); return 2 * np.pi * np.cumsum(f) / SR
 
 # ------------------------------------------------------------------ oscillators
+def _polyblep(ph, dt):
+    """band-limited step correction (PolyBLEP) -> far less aliasing on saw/square leads."""
+    y = np.zeros_like(ph)
+    m = ph < dt; x = ph[m] / dt[m]; y[m] = 2 * x - x * x - 1
+    m = ph > 1 - dt; x = (ph[m] - 1) / dt[m]; y[m] = x * x + 2 * x + 1
+    return y
 def osc(kind, freq, n, phase0=0.0):
     """freq can be scalar or array of length n. kinds: sine, saw, square, tri."""
     f = np.broadcast_to(np.asarray(freq, np.float32), (n,))
     ph = (phase0 + np.cumsum(f) / SR) % 1.0
     if kind == 'sine': return np.sin(2 * np.pi * ph).astype(np.float32)
-    if kind == 'saw': return (2 * ph - 1).astype(np.float32)
-    if kind == 'square': return np.where(ph < .5, 1.0, -1.0).astype(np.float32)
+    dt = np.clip(np.abs(f) / SR, 1e-6, .5)
+    if kind == 'saw': return (2 * ph - 1 - _polyblep(ph, dt)).astype(np.float32)
+    if kind == 'square': return (np.where(ph < .5, 1.0, -1.0) + _polyblep(ph, dt) - _polyblep((ph + .5) % 1.0, dt)).astype(np.float32)
     if kind == 'tri': return (4 * np.abs(ph - .5) - 1).astype(np.float32)
     raise ValueError(kind)
 def supersaw(freq, n, voices=7, detune=.25):
@@ -272,3 +279,248 @@ class Mix:
         pcm = (np.clip(mix, -1, 1) * 32767).astype('<i2').tobytes()
         subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', path], input=pcm, check=True)
         return mix
+
+
+# ====================================================================== additions for score.py (hyper edit)
+from scipy.ndimage import minimum_filter1d, uniform_filter1d
+
+def db(x):                  # dB -> linear gain
+    return 10 ** (x / 20)
+def to_db(x):
+    return 20 * np.log10(np.maximum(x, 1e-12))
+def as_st(x):
+    return stereo(np.asarray(x, np.float32)) if np.ndim(x) == 1 else np.asarray(x, np.float32)
+def pad_to(x, n):
+    if len(x) >= n: return x[:n]
+    z = np.zeros((n - len(x),) + x.shape[1:], np.float32); return np.concatenate([x, z])
+def rev(x):
+    return np.ascontiguousarray(x[::-1])
+def pink(n):
+    """pink noise (Paul Kellet-style 1/f approximation via IIR)."""
+    w = noise(n)
+    bz = [0.049922035, -0.095993537, 0.050612699, -0.004408786]; az = [1, -2.494956002, 2.017265875, -0.522189400]
+    y = signal.lfilter(bz, az, w).astype(np.float32); return y / (np.std(y) + 1e-9) * .3
+
+def tv_lp(x, fc, block=96, order=2, kind='low'):
+    """time-varying Butterworth filter: fc is a scalar or a per-sample array (Hz). State carried block to block."""
+    xs = np.asarray(x, np.float32); n = len(xs); fc = np.broadcast_to(np.asarray(fc, np.float64), (n,))
+    out = np.empty_like(xs); zi = None
+    for i in range(0, n, block):
+        f = float(np.clip(fc[min(n - 1, i + block // 2)], 12, SR * .45))
+        sos = signal.butter(order, f, kind, fs=SR, output='sos')
+        if zi is None: zi = np.zeros((sos.shape[0], 2) + xs.shape[1:], np.float64)
+        seg = xs[i:i + block]
+        y, zi = signal.sosfilt(sos, seg, axis=0, zi=zi); out[i:i + block] = y
+    return out
+def tv_bp(x, fc, q=4.0, block=96):
+    """time-varying resonant band-pass (RBJ biquad, constant peak gain) with per-sample centre fc."""
+    xs = np.asarray(x, np.float32); n = len(xs); fc = np.broadcast_to(np.asarray(fc, np.float64), (n,))
+    out = np.empty_like(xs); zi = np.zeros((1, 2) + xs.shape[1:], np.float64)
+    for i in range(0, n, block):
+        f = float(np.clip(fc[min(n - 1, i + block // 2)], 20, SR * .45)); w0 = 2 * np.pi * f / SR; al = np.sin(w0) / (2 * q)
+        bq = np.array([al, 0, -al]); aq = np.array([1 + al, -2 * np.cos(w0), 1 - al])
+        sos = np.concatenate([bq / aq[0], aq / aq[0]])[None]
+        y, zi = signal.sosfilt(sos, xs[i:i + block], axis=0, zi=zi); out[i:i + block] = y
+    return out
+
+def varispeed(x, rate, n_out=None):
+    """read x at a time-varying playback rate (array per output sample, or scalar). pitch+speed change (tape)."""
+    xs = np.asarray(x, np.float32); n_out = n_out or (len(rate) if np.ndim(rate) else len(xs))
+    r = np.broadcast_to(np.asarray(rate, np.float64), (n_out,)); pos = np.concatenate([[0], np.cumsum(r)[:-1]])
+    pos = np.clip(pos, 0, len(xs) - 1)
+    if xs.ndim == 1: return np.interp(pos, np.arange(len(xs)), xs).astype(np.float32)
+    return np.stack([np.interp(pos, np.arange(len(xs)), xs[:, c]) for c in range(xs.shape[1])], 1).astype(np.float32)
+
+def pan_curve(x, pan):
+    """mono -> stereo with a per-sample constant-power pan (-1..1)."""
+    x = np.asarray(x, np.float32); p = np.broadcast_to(np.asarray(pan, np.float32), x.shape)
+    a = (p + 1) * np.pi / 4; return np.stack([x * np.cos(a), x * np.sin(a)], 1).astype(np.float32)
+def width(x, w):
+    """mid/side width scale (0 = mono, 1 = unchanged)."""
+    x = as_st(x); m = (x[:, 0] + x[:, 1]) / 2; s = (x[:, 0] - x[:, 1]) / 2 * w
+    return np.stack([m + s, m - s], 1).astype(np.float32)
+
+def ks(midi, dur=.8, bright=.6, decay=.996, pluck_pos=.3):
+    """vectorised Karplus-Strong string (IIR comb via lfilter) -> fast ukulele / guitar / pluck."""
+    f = mtof(midi); N = max(2, int(round(SR / f - .5))); n = T(dur)
+    exc = (rng.random(N) * 2 - 1).astype(np.float32)
+    exc = lp(exc, 800 + 9000 * bright, 1)
+    k = int(N * pluck_pos); exc = exc - np.roll(exc, k) * .6              # pluck position comb
+    x = np.zeros(n, np.float32); x[:N] = exc[:n]
+    a = np.zeros(N + 2); a[0] = 1; a[N] = -.5 * decay; a[N + 1] = -.5 * decay
+    y = signal.lfilter([1.0], a, x).astype(np.float32)
+    return fade(y / (np.abs(y).max() + 1e-9) * .5, .0005, .02)
+def strum(midis, dur=.4, spread=.012, down=True, vel=1.0, bright=.6):
+    order = midis if down else midis[::-1]; n = T(dur + spread * len(midis)); out = np.zeros(n, np.float32)
+    for i, m in enumerate(order):
+        s = ks(m, dur, bright) * vel * (1 - .08 * i); j = T(spread * i); out[j:j + len(s)] += s[:n - j]
+    return out / max(1, len(midis)) * 1.6
+
+def bell(midi, dur=3.0, decay=1.4, bright=1.0):
+    """struck bell / ring 'TING': inharmonic partials with individual decays."""
+    n = T(dur); t = tt(n); f = mtof(midi); x = np.zeros(n, np.float32)
+    for r, g, d in ((.5, .35, 1.6), (1, 1, 1), (1.19, .45, .7), (1.5, .3, .5), (2.0, .5 * bright, .45), (2.74, .3 * bright, .25), (3.76, .2 * bright, .15), (5.4, .12 * bright, .08)):
+        if f * r < SR * .4: x += np.sin(2 * np.pi * f * r * t + rng.random() * 6) * g * np.exp(-t / (decay * d))
+    x *= np.minimum(1, t / .002); return x * .25
+def metal(f0=900, dur=.9, decay=.35, ratios=(1, 1.47, 2.09, 2.56, 3.39, 4.17)):
+    """metallic 'shing' / clank partial cluster."""
+    n = T(dur); t = tt(n); x = sum(np.sin(2 * np.pi * f0 * r * t + rng.random() * 6) * np.exp(-t / (decay / (1 + .4 * i))) / (1 + .5 * i) for i, r in enumerate(ratios))
+    return (x * np.minimum(1, t / .001) * .3).astype(np.float32)
+def shing(f0=1400, dur=.9):
+    n = T(dur); t = tt(n); sw = hp(noise(n), 3000) * np.exp(-t / .05) * .35
+    return lp(metal(f0, dur, .4) + sw, 11000)
+def crash(dur=2.2, bright=1.0):
+    n = T(dur); t = tt(n)
+    x = bp(noise(n), 3500, 11000) * np.exp(-t / .7) + hp(noise(n), 6000) * np.exp(-t / .12) * .5
+    x = x * (1 + .3 * metal(3100, dur, .6)[: n] * 3)
+    return lp(stereo(x * .35 * bright, 0, .8, 9), 12000)
+def ride(dur=.9):
+    n = T(dur); t = tt(n); return lp(hp(noise(n), 5000) * np.exp(-t / .25) * .18 + metal(2400, dur, .5, (1, 1.33, 1.71, 2.21)) * .45, 11000)
+def tom(midi=note('A2'), dur=.45):
+    n = T(dur); t = tt(n); f = mtof(midi)
+    x = np.sin(pitch_env(f * 1.6, f, n, .03)) * np.exp(-t / .16) + bp(noise(n), 200, 2500) * np.exp(-t / .02) * .4
+    return sat(x, 1.5) * .7
+def shaker(dur=.08, accent=1.0):
+    n = T(dur); t = tt(n); e = np.minimum(1, t / .008) * np.exp(-t / .02)
+    return bp(noise(n), 4500, 10000) * e * .4 * accent
+def click(f=3000, dur=.04, g=.6):
+    n = T(dur); t = tt(n); return (hp(noise(n), f) * np.exp(-t / .0015) + np.sin(2 * np.pi * f * t) * np.exp(-t / .004) * .5) * g
+def shutter(dur=.12):
+    n = T(dur); out = np.zeros(n, np.float32)
+    for off, g in ((0, 1), (.028, .7)):
+        i = T(off); c = click(2500, .03, .55 * g) + np.sin(2 * np.pi * 180 * tt(T(.03))) * exp_env(T(.03), .006) * .3 * g
+        out[i:i + len(c)] += c[:n - i]
+    return bp(out, 300, 9000)
+def heartbeat(dur=.5, f=55, g=1.0):
+    n = T(dur); t = tt(n); x = np.sin(pitch_env(f * 1.7, f, n, .03)) * np.exp(-t / .12) * np.minimum(1, t / .004)
+    return sat(x * g, 1.3)
+def sub_boom(dur=2.0, f0=70, f1=30, g=1.0):
+    n = T(dur); t = tt(n); return (np.sin(pitch_env(f0, f1, n, .4)) * np.exp(-t / .7) * np.minimum(1, t / .003) * g).astype(np.float32)
+def zap(dur=.4, f0=5000, f1=150):
+    n = T(dur); t = tt(n); fr = f1 + (f0 - f1) * np.exp(-t / (dur / 4)); x = osc('saw', fr, n) * .5 + osc('sine', fr * .5, n)
+    return lp(x * np.exp(-t / (dur / 2.5)), 9000) * .35
+def boing(f0=220, dur=.45):
+    n = T(dur); t = tt(n); fr = f0 * (1 + .45 * np.exp(-t / .16) * np.sin(2 * np.pi * 12 * t)) * (1 + .5 * np.exp(-t / .05))
+    return lp(osc('sine', fr, n) + .3 * osc('tri', fr * 2, n), 3000) * np.exp(-t / .22) * np.minimum(1, t / .003) * .45
+def bubble(f0=400, f1=1500, dur=.07):
+    n = T(dur); t = tt(n); fr = f0 + (f1 - f0) * (t / dur) ** .6
+    return osc('sine', fr, n) * np.sin(np.pi * t / dur) ** .5 * np.exp(-t / .03) * .5
+def whistle_line(events, total, vib=.006, breath=.05):
+    """continuous whistle melody: events = [(start_s, dur_s, midi)], gliding between notes."""
+    n = T(total); f = np.zeros(n, np.float32); a = np.zeros(n, np.float32); last = None
+    for st, d, m in events:
+        i, j = T(st), min(n, T(st + d)); fr = mtof(m)
+        g = np.full(j - i, fr, np.float32)
+        if last is not None: k = min(len(g), T(.035)); g[:k] = np.linspace(last, fr, k)
+        f[i:j] = g; a[i:j] = env_adsr(j - i, .02, .05, .85, min(.06, d * .4)); last = fr
+    f[f == 0] = 1000; tt_ = tt(n); f = f * (1 + vib * np.sin(2 * np.pi * 5.6 * tt_) * np.minimum(1, tt_ / .3))
+    x = osc('sine', f, n) + .04 * osc('sine', f * 2, n); x = x * a + bp(noise(n), 1500, 4000) * a * breath
+    return x * .35
+def rhodes(midi, dur=1.6, vel=.8):
+    """FM electric piano."""
+    n = T(dur); t = tt(n); f = mtof(midi); idx = (1.5 * vel) * np.exp(-t / .35) + .2
+    x = np.sin(2 * np.pi * f * t + idx * np.sin(2 * np.pi * f * t)) + .15 * np.sin(2 * np.pi * f * 14 * t) * np.exp(-t / .03) * vel
+    return x * env_adsr(n, .002, 1.2, .35, .3) * np.exp(-t / 1.8) * .3
+def sawpluck(midi, dur=.2, cut0=5000, cut1=500, decay=.09, voices=5, det=.18):
+    """supersaw pluck with a decaying filter envelope (crossfade bright/dark)."""
+    n = T(dur); x = supersaw(mtof(midi), n, voices, det); e = exp_env(n, decay)
+    return (lp(x, cut0) * e + lp(x, cut1) * (1 - e) * .4) * env_adsr(n, .002, .05, .9, .03) * .6
+def granular_glass(dur=.9, density=220, seed=3, lo=2500, hi=9000):
+    """granular glass shatter: many tiny resonant shards scattered in stereo with decaying density."""
+    r = np.random.default_rng(seed); n = T(dur); out = np.zeros((n, 2), np.float32)
+    count = int(density * dur)
+    for k in range(count):
+        st = (r.random() ** 2.2) * dur * .9; L = T(r.uniform(.006, .05)); fr = r.uniform(lo, hi)
+        g = np.sin(2 * np.pi * fr * tt(L) + r.random() * 6) * np.exp(-tt(L) / r.uniform(.004, .02)) * (1 - st / dur) ** 1.5 * r.uniform(.2, 1)
+        i = T(st); j = min(n, i + L); pan = r.uniform(-1, 1)
+        out[i:j] += stereo(g[:j - i].astype(np.float32), pan)
+    out += stereo(hp(noise(n), 4000) * np.exp(-tt(n) / .04) * .5, 0, .8)
+    return lp(out * .4, 11500)
+def sparkle(dur=3.0, density=18, seed=5, notes=(86, 89, 93, 98), pan_rate=.35):
+    """granular high sparkle swirling in stereo (pan rotates)."""
+    r = np.random.default_rng(seed); n = T(dur); out = np.zeros((n, 2), np.float32)
+    for k in range(int(density * dur)):
+        st = r.random() * dur * .95; m = r.choice(notes) + r.choice((0, 12)); L = T(.25)
+        g = np.sin(2 * np.pi * mtof(m) * tt(L)) * np.exp(-tt(L) / .06) * r.uniform(.15, .5) * np.minimum(1, tt(L) / .002)
+        i = T(st); j = min(n, i + L); pan = math.sin(2 * math.pi * pan_rate * st + r.random() * .5)
+        out[i:j] += stereo(g[:j - i].astype(np.float32), pan)
+    return lp(out * .5, 12000)
+def creak(dur=1.5, seed=7):
+    """rubber-stretch creak: irregular stick-slip impulse train through body resonances, pitch sagging."""
+    r = np.random.default_rng(seed); n = T(dur); x = np.zeros(n, np.float32); pos = 0.0
+    while pos < dur:
+        rate = 70 - 40 * pos / dur + r.normal(0, 8); pos += 1 / max(rate, 15); i = T(pos)
+        if i < n: x[i] = r.uniform(.5, 1)
+    y = sum(bp(x, f * .85, f * 1.18) * g for f, g in ((380, 1), (820, .7), (1650, .45), (2900, .2)))
+    return sat(y * 3 * env_adsr(n, .08, .2, .9, .3), 1.5) * .5
+def tape_flick(dur=.15):
+    n = T(dur); t = tt(n); fr = 300 * (1 + 12 * (t / dur) ** 2); x = osc('saw', fr, n) * .3 + bp(noise(n), 1500, 7000) * .5
+    return lp(x * np.sin(np.pi * t / dur), 8000) * .6
+def tuned_whoosh(midi, dur=.5, peak=.85, q=7):
+    """whoosh whose resonance is tuned to a note (the 'staircase')."""
+    n = T(dur); u = tt(n) / dur; e = np.where(u < peak, (u / peak) ** 2.5, ((1 - u) / (1 - peak)) ** 1.2)
+    fr = mtof(midi) * (1 + .5 * (1 - np.minimum(1, u / peak))) * 2   # glides down onto 2x the note
+    x = tv_bp(noise(n), fr, q) * 2.2 + osc('sine', mtof(midi) * 2, n) * .25 + bp(noise(n), 500, 6000) * .25
+    return (x * e).astype(np.float32) * .6
+def world_noise(dur, seed=11, density=1.0, murmur=1.0):
+    """synthesised city: traffic rumble, sirens (crossing sine sweeps), horns, jackhammer 16ths, pings, crowd babble."""
+    r = np.random.default_rng(seed); n = T(dur); t = tt(n); out = np.zeros((n, 2), np.float32)
+    out += stereo(lp(pink(n), 260) * 1.4 + lp(osc('saw', 46 + 3 * np.sin(2 * np.pi * .3 * t), n), 180) * .2, 0, .6)
+    # crowd babble: formant-modulated noise streams
+    for k in range(6):
+        f1 = 500 + 300 * np.sin(2 * np.pi * r.uniform(3, 6) * t + r.random() * 6); src = bp(noise(n), 250, 3500)
+        v = tv_bp(src, f1, 3, 192) * (.5 + .5 * np.sin(2 * np.pi * r.uniform(2, 5) * t + r.random() * 6)) ** 2
+        out += stereo(v * .5 * murmur, r.uniform(-.8, .8))
+    if density > 0:
+        for k, (lo, hi, rate) in enumerate(((600, 1200, .55), (700, 1150, .8))):          # sirens
+            fr = (lo + hi) / 2 + (hi - lo) / 2 * np.sin(2 * np.pi * rate * t + k * 2)
+            s = osc('sine', fr, n) * .14 + osc('tri', fr, n) * .05; pan = np.sin(2 * np.pi * .2 * t + k * 3) * .7
+            out += pan_curve(s * density, pan)
+        hits = int(6 * dur * density)
+        for k in range(hits):                                                                     # horns
+            st = r.random() * dur; L = T(r.uniform(.12, .35)); f0 = r.choice([370, 415, 466, 523])
+            h = lp(osc('square', f0, L) + osc('square', f0 * 1.26, L), 2500) * env_adsr(L, .005, .02, .9, .03) * .06
+            i = T(st); j = min(n, i + L); out[i:j] += stereo(h[:j - i], r.uniform(-.9, .9))
+        for k in range(int(dur / (BEAT / 4))):                                                    # jackhammer 16ths
+            i = T(k * BEAT / 4); L = T(.05); jh = bp(noise(L), 300, 2200) * exp_env(L, .012) * .35 * density
+            j = min(n, i + L); out[i:j] += stereo(jh[:j - i], -.5)
+        for k in range(int(5 * dur * density)):                                                   # notification pings
+            st = r.random() * dur; L = T(.18); p = tick(r.choice([1760, 2093, 2349, 2637]), .18, .12)
+            i = T(st); j = min(n, i + L); out[i:j] += stereo(p[:j - i], r.uniform(-1, 1))
+    return lp(out, 7000)
+
+def compress(x, thr_db=-18, ratio=2.5, att=.01, rel=.15, makeup_db=0.0, block=64):
+    """feed-forward RMS-ish bus compressor (block envelope, one-pole attack/release)."""
+    xs = as_st(x); n = len(xs); nb = (n + block - 1) // block
+    pk = np.abs(xs).max(1); pad = np.zeros(nb * block, np.float32); pad[:n] = pk ** 2
+    lvl = np.sqrt(pad.reshape(nb, block).mean(1)) * 1.414
+    aA, aR = math.exp(-block / (att * SR)), math.exp(-block / (rel * SR)); env = np.empty(nb); e = 0.0
+    for i in range(nb):
+        v = lvl[i]; c = aA if v > e else aR; e = c * e + (1 - c) * v; env[i] = e
+    over = np.maximum(to_db(env) - thr_db, 0); gr = -over * (1 - 1 / ratio)
+    g = np.interp(np.arange(n), np.arange(nb) * block + block / 2, db(gr + makeup_db)).astype(np.float32)
+    return xs * g[:, None]
+def limit(x, ceil_db=-1.3, look=.003, rel=.06, block=32):
+    """look-ahead brickwall limiter. returns (y, gain-reduction-db array)."""
+    xs = as_st(x); n = len(xs); c = db(ceil_db); pk = np.abs(xs).max(1)
+    need = np.minimum(1, c / np.maximum(pk, 1e-9))
+    L = T(look); g = minimum_filter1d(need, 2 * L + 1, mode='nearest')
+    nb = (n + block - 1) // block; pad = np.ones(nb * block); pad[:n] = g; gb = pad.reshape(nb, block).min(1)
+    aR = math.exp(-block / (rel * SR)); out = np.empty(nb); e = 1.0
+    for i in range(nb):
+        v = gb[i]; e = v if v < e else aR * e + (1 - aR) * v; out[i] = e
+    gs = np.repeat(out, block)[:n]; gs = np.minimum(gs, g)
+    gs = uniform_filter1d(minimum_filter1d(gs, L + 1, mode='nearest'), L + 1, mode='nearest')
+    y = xs * gs[:, None]; y = np.clip(y, -c, c)
+    return y.astype(np.float32), to_db(gs)
+def true_peak_db(x, os=4):
+    return to_db(np.abs(signal.resample_poly(x, os, 1, axis=0)).max())
+def write_audio(mix, wav_path, mp3_path=None):
+    pcm = (np.clip(mix, -1, 1) * 32767).round().astype('<i2').tobytes()
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 's16le', '-ar', str(SR), '-ac', '2', '-i', '-', '-c:a', 'pcm_s16le', wav_path], input=pcm, check=True)
+    if mp3_path:
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', wav_path, '-c:a', 'libmp3lame', '-b:a', '192k', mp3_path], check=True)
+def tv_lp_at(buf, i0, i1, fc, order=2, pre=.05):
+    """tv_lp on buf[i0:i1] with a pre-roll (filter state warmed up on the preceding audio at fc[0]) -> no step at i0."""
+    p = min(i0, T(pre)); fc = np.broadcast_to(np.asarray(fc, np.float64), (i1 - i0,))
+    y = tv_lp(buf[i0 - p:i1], np.concatenate([np.full(p, fc[0]), fc]), order=order); return y[p:]
