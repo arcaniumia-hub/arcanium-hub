@@ -79,6 +79,10 @@ for t in CUES['ticks']:  A('fx', tick(2400, .06, .5), t, -24)
 for t in CUES['pops']:   A('fx', glock(note('E6'), .6), t, -14)
 for t in CUES['swipe']:  A('fx', whoosh(.5, .3, up=True), t, -10)
 
+# the cinematic ad brings its own score between DROP and its end -> our bed steps out
+c0, c1 = CUES['cine']
+mix.silence(c0 + .45, c1, ['kick', 'drB', 'bass', 'pad', 'arp', 'bdpad'], fade_ms=120)
+mix.silence(c0 + 2.6, c1 - .05, ['fx'], fade_ms=200)
 mix.sidechain('pad', [t for t in beats(DROP, END)], .45, .16)
 mix.sidechain('bass', [t for t in beats(DROP, END)], .5, .14)
 mix.render(os.path.join(HERE, 'music.wav'), gains=dict(drA=3.2, padA=3.2, bdpad=4.0, kick=.75, drB=.75, bass=.75, pad=.75, arp=.75), keep_silence=[(20.2, DROP - 1.45)])

@@ -20,6 +20,8 @@ HY = os.path.join(V, 'silence-hyper/master.mp4')          # BEFORE (cheap) 0-4.8
 SM = os.path.join(V, 'silence-motion/silence-motion.mp4')
 LE = os.path.join(V, 'lumarc-motion-en/lumarc-3d-en.mp4')  # tacky flyer 0-3.5 s, service cards 12-18 s, post wall 8 s
 DROP, END = 22.55, 48.90
+CINE = os.path.join(HERE, 'cine/silence-ad.mp4')            # cinematic SILENCE ad (16:9, narration removed)
+CINE_IN, CINE_END = 4.0, 45.70                              # ad 4.0 s (glass crack) → 27.15 s ("Same product. Different story.")
 DUR = END + (34.4 - 28.3)                                   # end card runs to the end of the hyper master
 OUT = os.path.join(HERE, 'out'); os.makedirs(OUT, exist_ok=True)
 
@@ -109,26 +111,10 @@ BROLL = [
     (10.45, 14.55, 'feed', 0, dict()),                                                   # feed scroll — "disappears"
     (16.00, 19.15, HY, 0.05, dict(z=(1.0, 1.04))),                                       # "What if instead of presenting…"
     (19.15, 20.20, HY, 3.30, dict(z=(1.0, 1.06), sat=.6)),                               # "like this…"
-    (DROP, 23.05, HY, 6.40, dict(nopip=1)),                                              # THIS — slam
-    (23.05, 23.62, HY, 7.70, dict(z=(1.0, 1.06), nopip=1)),                              # ring
-    (23.62, 25.20, LE, 6.20, dict(z=(1.0, 1.05), pip='top')),                                       # LUMARC logo reveal
-    (25.20, 25.98, SM, 9.55, dict(z=(1.0, 1.05))),                                       # Videos
-    (25.98, 26.90, LE, 17.00, dict()),                                                   # editing
-    (26.90, 27.82, LE, 15.90, dict()),                                                   # Reels
-    (27.82, 28.82, LE, 13.90, dict()),                                                   # carousels
-    (28.82, 29.74, LE, 12.90, dict()),                                                   # designs
-    (29.74, 31.08, LE, 10.05, dict()),                                                   # captions — "impossible to scroll past"
-    (31.08, 32.55, HY, 7.90, dict(z=(1.0, 1.05))),                                       # Introducing SILENCE ONE
-    (32.55, 33.25, LE, 8.10, dict(z=(1.0, 1.08))),                                       # stop scrolling — post wall
-    (33.25, 34.67, SM, 4.00, dict(z=(1.0, 1.04))),                                       # look at your brand — hero
-    (34.67, 35.75, HY, 12.10, dict()),                                                   # Because today — NOISE
-    (35.75, 37.60, HY, 18.70, dict()),                                                   # being good isn't enough — 40h/250g
-    (37.60, 38.75, SM, 3.00, dict(z=(1.0, 1.06))),                                       # look good
-    (38.75, 41.04, BI, 15.00, dict(z=(1.0, 1.05))),                                      # be seen — 2D animation job
-    (44.10, 45.70, HY, 22.40, dict(z=(1.0, 1.05))),                                      # could look like
+    (DROP, CINE_END, CINE, CINE_IN, dict(cine=1)),                                      # the AFTER: whole cinematic ad
     (END, DUR, HY, 28.30, dict(nopip=1)),                                                # LUMARC end card
 ]
-NO_CAPTION = [(DROP, 25.18)]                               # THIS slam + LUMARC logo reveal speak for themselves
+NO_CAPTION = []
 # face framing: (t0, t1, scale0, scale1, ease) — a scale jump between segments reads as a jump cut
 FACE = [
     (0.00, 0.45, 1.42, 1.12, 'out'), (0.45, 2.00, 1.12, 1.18, 'lin'), (2.00, 2.70, 1.00, 1.03, 'lin'),
@@ -151,7 +137,8 @@ def cues():
     hits = [DROP, END]
     c = dict(dur=DUR, drop=DROP, endcard=END, breakdown=[34.55, 42.03],
              whoosh=[t for t in cuts if all(abs(t - h) > .05 for h in hits)],
-             hits=[25.20, 42.03], ticks=[w['t0'] for p in PAGES for w in p['words'] if w['emph'] and p['flag'] != 'hide'],
+             hits=[CINE_END], ticks=[w['t0'] for p in PAGES for w in p['words'] if w['emph'] and p['flag'] != 'hide' and not DROP <= w['t0'] < CINE_END],
+             cine=[DROP, CINE_END],
              pops=[DM[0]], swipe=[SWIPE[0] - .2])
     json.dump(c, open(os.path.join(HERE, 'cues.json'), 'w'), indent=1)
 
@@ -161,10 +148,15 @@ def eout(x): x = clamp(x); return 1 - (1 - x) ** 3
 def ein(x): x = clamp(x); return x ** 2.2
 def back(x, s=2.2): x = clamp(x) - 1; return 1 + x * x * ((s + 1) * x + s)
 
+# 16:9 film in a 9:16 frame: big centred band (1300 px tall) over a blurred, darkened fill of the same shot
+BAND_Y, BAND_H = 150, 1300
+CINE_VF = (f'fps={FPS},split=2[a][b];[a]scale=-2:{H},crop={W}:{H},boxblur=40:2,eq=brightness=-0.2:saturation=0.75[bg];'
+           f'[b]scale=-2:{BAND_H},crop={W}:{BAND_H}[fg];[bg][fg]overlay=0:{BAND_Y}')
+
 class Reader:
-    def __init__(self, path, ss, dur, fps_in=None):
+    def __init__(self, path, ss, dur, vf=None):
         self.p = subprocess.Popen(['ffmpeg', '-v', 'error', '-ss', f'{ss:.3f}', '-i', path, '-t', f'{dur + .3:.3f}',
-                                   '-vf', f'fps={FPS},scale={W}:{H}', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
+                                   '-vf', vf or f'fps={FPS},scale={W}:{H}', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'],
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.n = 0; self.last = None
     def get(self, idx):
@@ -315,7 +307,8 @@ class Edit:
     def broll(self, k, t):
         a, z, path, ss, o = BROLL[k]
         if k not in self.br:
-            st = ss + max(0., t - a); self.br[k] = (Reader(path, st, z - max(a, t)), max(a, t))
+            st = ss + max(0., t - a)
+            self.br[k] = (Reader(path, st, z - max(a, t), CINE_VF if o.get('cine') else None), max(a, t))
         r, rt0 = self.br[k]
         return r.get(int(round((t - rt0) * FPS)))
     def frame(self, t):
@@ -446,9 +439,11 @@ def mux():
     vid = os.path.join(OUT, 'video.mp4'); mus = os.path.join(HERE, 'music.wav'); fin = os.path.join(OUT, 'lumarc-talkinghead.mp4')
     af = ('[0:a]aresample=48000,highpass=f=85,equalizer=f=3200:t=q:w=1.2:g=2.5,acompressor=threshold=-22dB:ratio=3:attack=6:release=90:makeup=3,'
           'apad=whole_dur=%.2f,asplit=2[v][key];' % DUR +
-          '[1:a]volume=0.5[m];[m][key]sidechaincompress=threshold=0.05:ratio=4:attack=25:release=320[md];'
+          '[2:a]atrim=%.3f:%.3f,asetpts=PTS-STARTPTS,aresample=48000,afade=t=in:d=0.08,afade=t=out:st=%.3f:d=0.25,'
+          'adelay=%d|%d,volume=0.42[ad];' % (CINE_IN, CINE_IN + CINE_END - DROP, CINE_END - DROP - .25, DROP * 1000, DROP * 1000) +
+          '[1:a]volume=0.5[m0];[m0][ad]amix=inputs=2:normalize=0:duration=first[m];[m][key]sidechaincompress=threshold=0.05:ratio=4:attack=25:release=320[md];'
           '[v][md]amix=inputs=2:normalize=0,loudnorm=I=-14:TP=-1.2:LRA=11[a]')
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', PLATE, '-i', mus, '-filter_complex', af, '-map', '[a]',
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', PLATE, '-i', mus, '-i', CINE, '-filter_complex', af, '-map', '[a]',
                     '-c:a', 'pcm_s16le', '-ar', '48000', os.path.join(OUT, 'mix.wav')], check=True)
     # 2-pass to land just under 30 MB
     kb = int((27.5 * 8 * 1000) / DUR) - 192
