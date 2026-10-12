@@ -1,0 +1,6 @@
+src/*.mp4
+src/*.raw
+work/
+out/
+music.wav
+__pycache__/
