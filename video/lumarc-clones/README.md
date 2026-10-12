@@ -17,3 +17,12 @@ gitignored): #1 home studio, #2 coffee shop, #3 rooftop; Paris / boardroom / "TA
 chair for the punchline. No group shots — the conversation cuts between locations. Natural-look compositing: DOF blur on
 the plate, clone graded toward the plate light, light wrap, handheld drift, jump-cut punch-ins, grain + vignette.
 Build: `python3 edit.py tracks && python3 edit.py cues && python3 sound.py && python3 edit_real.py render && python3 edit.py mux`
+
+## v3 — tighter, hook, sound of the places, light
+- Hook: 1.1 s flash of the three clones in their three places — "ONLY ONE OF THEM IS REAL." — then straight into "I'm not real." ("Hi." cut).
+- Gaps tightened, end card shortened: 34 s → 32 s.
+- `audio_real.py`: each line gets the acoustics of its place (room size / EQ), plus synthesized location ambience
+  (café babble + cup clinks, rooftop wind + city, Paris street, boardroom HVAC, fluorescent buzz) under the mix.
+- Directional key + rim light per location on the keyed clone (warm back-rim at sunset, window side in the café,
+  purple LED rim in the studio). Darker backing behind captions on the white tee.
+Build: `python3 edit.py tracks && python3 edit.py cues && python3 sound.py && python3 edit_real.py prender 4 && python3 audio_real.py`

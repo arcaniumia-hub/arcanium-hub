@@ -36,21 +36,22 @@ def snap(x): return round(round(x / G) * G, 2)
 NAME = {'b': 'CLONE #1', 'c': 'CLONE #2', 'a': 'CLONE #3'}
 
 # ---------------------------------------------------------------- script: (clone, src_in, src_out, caption, gap before)
+HOOK = 1.2                                                  # v3: "Only one of them is real." 3-location flash before line 1
 LINES = [
-    ('b', 0.24, 3.60, "Hi. | I'm not *real. | I'm a *digital *clone.", 0.20),
-    ('c', 3.24, 4.08, "*Me *too.", 0.28),
-    ('a', 2.92, 4.48, "Yeah... | *same.", 0.28),
-    ('b', 6.32, 8.88, "The real one | *hates being | on camera...", 0.36),
-    ('c', 6.76, 8.00, "So he | *made *us.", 0.24),
-    ('a', 7.16, 10.40, "Now he posts | *every *single *day... | without | recording *anything.", 0.24),
-    ('b', 11.64, 13.92, "*Monday, | I launched a product | in *Paris.", 0.40),
-    ('c', 10.76, 13.04, "*Tuesday, | I presented | to *investors.", 0.28),
-    ('a', 13.04, 16.36, "*Wednesday... | I explained *taxes. | Nobody watched. | *Fair.", 0.28),
-    ('b', 16.68, 17.60, "Want a *clone | of *you?", 0.40),
-    ('c', 15.80, 17.24, "*LUMARC | builds yours.", 0.20),
-    ('a', 18.84, 20.12, "Comment | *“CLONE”.", 0.20),
-    ('b', 20.32, 21.24, "And the | *real one?", 0.40),
-    ('c', 20.04, 20.88, "On *vacation.", 0.80),
+    ('b', 1.02, 3.60, "I'm not *real. | I'm a *digital *clone.", HOOK + .05),
+    ('c', 3.24, 4.08, "*Me *too.", 0.14),
+    ('a', 2.92, 4.48, "Yeah... | *same.", 0.18),
+    ('b', 6.32, 8.88, "The real one | *hates being | on camera...", 0.20),
+    ('c', 6.76, 8.00, "So he | *made *us.", 0.14),
+    ('a', 7.16, 10.40, "Now he posts | *every *single *day... | without | recording *anything.", 0.14),
+    ('b', 11.64, 13.92, "*Monday, | I launched a product | in *Paris.", 0.26),
+    ('c', 10.76, 13.04, "*Tuesday, | I presented | to *investors.", 0.18),
+    ('a', 13.04, 16.36, "*Wednesday... | I explained *taxes. | Nobody watched. | *Fair.", 0.18),
+    ('b', 16.68, 17.60, "Want a *clone | of *you?", 0.26),
+    ('c', 15.80, 17.24, "*LUMARC | builds yours.", 0.12),
+    ('a', 18.84, 20.12, "Comment | *“CLONE”.", 0.12),
+    ('b', 20.32, 21.24, "And the | *real one?", 0.30),
+    ('c', 20.04, 20.88, "On *vacation.", 0.62),
 ]
 def timeline():
     t = 0.0; out = []
@@ -59,7 +60,7 @@ def timeline():
     return out
 TL = timeline()
 L = {i: ln for i, ln in enumerate(TL)}
-END = snap(TL[-1]['t1'] + .36); DUR = END + 3.0
+END = snap(TL[-1]['t1'] + .32); DUR = END + 2.4
 IDLE = {'b': [(3.80, 6.16), (9.04, 11.44), (14.08, 16.48), (17.80, 20.08), (21.44, 24.28)],
         'c': [(0.20, 3.04), (4.24, 6.56), (8.20, 10.56), (13.24, 15.60), (17.44, 19.84), (21.04, 23.88)],
         'a': [(0.20, 2.76), (4.64, 7.00), (10.60, 12.84), (16.56, 18.64), (20.28, 22.80)]}
@@ -71,7 +72,7 @@ S_BACK, S_BEACH = L[9]['t0'] - .2, L[12]['t1'] + .28
 SCENES = [(0, S_PARIS, 'studio'), (S_PARIS, S_BOARD, 'paris'), (S_BOARD, S_TAX, 'board'), (S_TAX, S_BACK, 'taxes'),
           (S_BACK, S_BEACH, 'studio'), (S_BEACH, END, 'beach'), (END, DUR, 'end')]
 WHIPS = [S_PARIS, S_BOARD, S_TAX, S_BACK, S_BEACH]
-GLITCH = [(L[0]['t0'] + .9, .28), (L[0]['t0'] + 2.25, .18)]
+GLITCH = [(L[0]['t0'] + .45, .28), (L[0]['t0'] + 1.4, .18), (HOOK - .02, .2)]
 
 def scene_at(t):
     for a, z, n in SCENES:
@@ -410,9 +411,9 @@ def comment(fr, t):
 def endcard(fr, t):
     if t < END: return
     lt = t - END
-    if lt >= .9: put(fr, cached('cta', lambda: pill('Comment “CLONE”', 56, 800, grad=True, padx=56, pady=26)), W / 2, 1250, popin(lt - .9, .3))
-    if lt >= 1.2:
-        a = clamp((lt - 1.2) / .3)
+    if lt >= .35: put(fr, cached('cta', lambda: pill('Comment “CLONE”', 56, 800, grad=True, padx=56, pady=26)), W / 2, 1250, popin(lt - .35, .3))
+    if lt >= .6:
+        a = clamp((lt - .6) / .3)
         put(fr, cached('tag', lambda: text_im('Your clone. Your content. Zero camera.', 40, 500, (225, 225, 235))), W / 2, 1395, 1, a)
         put(fr, cached('hdl', lambda: text_im('@lumarc_studio  ·  slumarc.com', 32, 500, MUTED)), W / 2, 1455, 1, a)
 
@@ -521,7 +522,7 @@ def stills(ts):
         E = Edit(t); E.frame(t).save(os.path.join(OUT, f'still_{t:05.2f}.jpg'), quality=88)
 
 def cues():
-    c = dict(dur=DUR, end=END, lines=[[ln['k'], ln['t0'], ln['t1']] for ln in TL], whips=WHIPS, glitch=[g[0] for g in GLITCH],
+    c = dict(dur=DUR, end=END, hook=HOOK, lines=[[ln['k'], ln['t0'], ln['t1']] for ln in TL], whips=WHIPS, glitch=[g[0] for g in GLITCH],
              duo=S_DUO, trio=S_TRIO, paris=S_PARIS, board=S_BOARD, tax=S_TAX, back=S_BACK, beach=S_BEACH,
              crickets=L[8]['t0'] + (15.10 - 13.04), logo=L[10]['t0'], comment=L[11]['t0'] + .25, realone=L[12]['t0'],
              counter=[L[5]['t0'] + .5, L[5]['t0'] + 2.0])

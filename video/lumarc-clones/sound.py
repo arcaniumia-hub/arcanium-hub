@@ -39,6 +39,9 @@ def groove(a, z, g=0.0, sfx='', light=False):
                 for j, n in enumerate(PROG[k][2:] * 2):
                     A('arp' + sfx, pluck(note(n) + 12, .3, .12, .8), t + j * BT / 2 + BT * 2, -21 + g, pan=(-.4 if j % 2 else .4))
 
+# hook: three hits on the location flash, riser into "I'm not real"
+for t in (0.0, .38, .76): A('fx', kick(punch=1.1, decay=.2, click=.5), t, -10); A('fx', tick(2600, .05, .6), t, -18)
+A('fx', riser(C['hook'] - .1, 400, 5000, .8, .3), .1, -16, p=.8)
 # intro: dark pad + digital blips + glitches
 A('pad', pad([note('D2'), note('A2'), note('F3')], C['duo'] + .3, att=.6, rel=.4, bright=900), 0, -12)
 A('fx', impact(1.6, .7, .8, .3), 0, -7, p=.9)
@@ -47,8 +50,8 @@ for k, t in enumerate(C['glitch']): A('fx', glitch_burst(.28, k), t, -8, p=.8)
 # clone #2 enters: light groove; clone #3: full
 A('fx', glock(note('A5'), .6), C['duo'], -12); A('fx', whoosh(.4, .7), C['duo'] - .28, -12)
 T3 = C['lines'][2][2]                                  # end of "Yeah... same."
-groove(C['duo'], T3, light=True)
-A('fx', glock(note('D6'), .6), C['trio'], -18); A('fx', kick(punch=1.2, decay=.3, click=.5), C['trio'], -13)
+groove(C['duo'], T3, -5, light=True)
+# (v3: no group entrance hit — clone #3 arrives on a cut)
 groove(T3, C['tax'])
 # taxes: muzak, then crickets
 groove(C['tax'], C['crickets'] - .05, -6, sfx='_mz', light=True)

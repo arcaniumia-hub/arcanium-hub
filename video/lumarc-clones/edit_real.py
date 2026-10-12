@@ -11,6 +11,7 @@ plate's light, light-wrap on the key edge, handheld camera drift, jump-cut punch
 """
 import os, sys, math
 import numpy as np
+from scipy.ndimage import minimum_filter
 from PIL import Image, ImageDraw, ImageFilter
 HERE = os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0, HERE)
 import edit as base
@@ -32,16 +33,28 @@ PLACE = {
 LOC = ['studio', 'cafe', 'rooftop', 'studio', 'cafe', 'rooftop', 'paris', 'board', 'taxes', 'studio', 'cafe', 'rooftop', 'studio']
 TIGHT = {3: 1.16, 4: 1.12, 5: 1.12, 9: 1.0, 10: 1.14, 11: 1.12, 12: 1.2}          # jump-cut punch-ins on repeat visits
 S_BEACH = L[12]['t1'] + .28
-SHOTS = []
+HOOK = base.HOOK
+SHOTS = [dict(a=0.0, z=.38, loc='studio', k='b', line=-1, zoom=1.06, hook=1),
+         dict(a=.38, z=.76, loc='cafe', k='c', line=-2, zoom=1.06, hook=1),
+         dict(a=.76, z=TL[0]['t0'] - .10, loc='rooftop', k='a', line=-3, zoom=1.06, hook=1)]
 for i in range(13):
-    a = 0.0 if i == 0 else TL[i]['t0'] - .10
+    a = TL[i]['t0'] - .10
     z = TL[i + 1]['t0'] - .10 if i < 12 else S_BEACH
     SHOTS.append(dict(a=a, z=z, loc=LOC[i], k=TL[i]['k'], line=i, zoom=TIGHT.get(i, 1.0)))
 SHOTS.append(dict(a=S_BEACH, z=END, loc='beach', k=None, line=13, zoom=1.0))
-WHIP_IN = {6, 7, 8, 9, 13}                                                            # shots entered with a whip pan
+WHIP_IN = {3 + i for i in (6, 7, 8, 9, 13)}                                         # shot indexes entered with a whip pan
 FIRST = {}
-for s in SHOTS:
-    FIRST.setdefault(s['loc'], s['a'])
+for s_ in SHOTS:
+    if not s_.get('hook'): FIRST.setdefault(s_['loc'], s_['a'])
+# light direction per location: key side (-1 left / +1 right), key colour, strength; rim colour / side / strength
+LIGHT = {
+    'studio':  dict(side=-1, key=(255, 190, 130), amt=.10, rim=(150, 120, 255), rside=1, ramt=.55),
+    'cafe':    dict(side=-1, key=(255, 236, 210), amt=.12, rim=(255, 242, 225), rside=-1, ramt=.35),
+    'rooftop': dict(side=1, key=(255, 170, 90), amt=.14, rim=(255, 176, 92), rside=1, ramt=.75),
+    'paris':   dict(side=1, key=(255, 240, 215), amt=.10, rim=(255, 246, 228), rside=1, ramt=.40),
+    'board':   dict(side=-1, key=(222, 236, 255), amt=.08, rim=(222, 236, 255), rside=-1, ramt=.35),
+    'taxes':   dict(side=0, key=(240, 250, 255), amt=0., rim=(240, 250, 255), rside=0, ramt=.15),
+}
 
 _plates = {}
 def plate(loc):
@@ -64,6 +77,18 @@ _grain = [np.random.default_rng(i).normal(0, 7, (H // 2, W // 2, 1)).astype(np.f
 _yy, _xx = np.mgrid[0:H, 0:W].astype(np.float32)
 VIG = (1 - .30 * np.clip((((_xx - W / 2) / (W * .7)) ** 2 + ((_yy - H * .45) / (H * .7)) ** 2) - .2, 0, 1))[..., None]
 del _yy, _xx
+
+def hook_title():
+    from edit import word_img
+    l1, _ = word_img('ONLY ONE OF THEM', 92, 'white'); l2, _ = word_img('IS REAL.', 132, 'grad')
+    im = Image.new('RGBA', (max(l1.width, l2.width), l1.height + l2.height - 70), (0, 0, 0, 0))
+    im.alpha_composite(l1, ((im.width - l1.width) // 2, 0)); im.alpha_composite(l2, ((im.width - l2.width) // 2, l1.height - 70))
+    return im
+
+def cap_backing():
+    m = Image.new('L', (W, 420)); ImageDraw.Draw(m).rounded_rectangle((40, 110, W - 40, 310), 90, fill=255)
+    im = Image.new('RGBA', m.size, (8, 8, 14, 0)); im.putalpha(m.filter(ImageFilter.GaussianBlur(50)).point(lambda v: int(v * .45)))
+    return im
 
 class Edit:
     def __init__(self, t0):
@@ -89,18 +114,26 @@ class Edit:
             cm = rgb[al > .5].mean(0) if (al > .5).any() else rgb.reshape(-1, 3).mean(0)
             rgb = rgb * (1 + .18 * (mean / (cm + 1e-3) - 1))
             if P['desat']: g = rgb.mean(2, keepdims=True); rgb = g + (rgb - g) * (1 - P['desat'])
+            Lt = LIGHT[loc]; gx = np.linspace(-1, 1, im.width, dtype=np.float32)[None, :, None]
+            lit = np.clip(.5 + .5 * Lt['side'] * gx, 0, 1)
+            rgb = rgb * (1 - Lt['amt'] * .6 + Lt['amt'] * 1.2 * lit) + np.array(Lt['key'], np.float32) * Lt['amt'] * .22 * lit
+            a8 = Image.fromarray((al * 255).astype(np.uint8))
+            band = np.clip(al - minimum_filter(al, size=15), 0, 1)[..., None]
+            side = np.clip(.5 + Lt['rside'] * gx * 1.5, 0, 1) if Lt['rside'] else .5
+            e = band * side * Lt['ramt'] * .8
+            rgb = rgb * (1 - e) + np.array(Lt['rim'], np.float32) * e
             x = int(P['cx'] - im.width / 2); y = int(H - im.height + P['yo'])
             # light wrap: plate light bleeding over the edge band
             a_img = Image.fromarray((al * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.0))
             al = np.asarray(a_img, np.float32) / 255
-            edge = np.clip(al - np.asarray(a_img.filter(ImageFilter.MinFilter(9)), np.float32) / 255, 0, 1)[..., None]
+            edge = np.clip(al - minimum_filter(al, size=9), 0, 1)[..., None]
             wcrop = np.asarray(wrap.crop((x, y, x + im.width, y + im.height)).resize(im.size), np.float32)
             rgb = rgb * (1 - .45 * edge) + wcrop * .45 * edge
             out = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8)); out.putalpha(Image.fromarray((al * 255).astype(np.uint8)))
             img = img.convert('RGBA'); img.paste(out, (x, y), out)
             hx = P['cx']; hy = H - im.height + P['yo'] + sc * (HEAD[k] + 230)
-            if s['line'] in (0, 1, 2) and t >= max(s['a'], TL[s['line']]['t0'] + (2.2 if s['line'] == 0 else 0)):
-                first = TL[s['line']]['t0'] + (2.2 if s['line'] == 0 else 0)
+            if s['line'] in (0, 1, 2) and t >= max(s['a'], TL[s['line']]['t0'] + (1.4 if s['line'] == 0 else 0)):
+                first = TL[s['line']]['t0'] + (1.4 if s['line'] == 0 else 0)
                 tx = hx + (300 if hx < 600 else -300)
                 put(img, cached('tagr' + k, lambda k=k: pill(NAME[k], 40, 800, grad=True)), tx, hy - 60, popin(t - first))
             img = img.convert('RGB')
@@ -109,7 +142,7 @@ class Edit:
         # camera: slow push, jump-cut punch, handheld drift
         z = s['zoom'] * (1.03 + .012 * lt)
         if s['line'] == 0:                       # punch-ins on "I'm not real" / "digital clone"
-            for at, amt in ((TL[0]['t0'] + .9, .10), (TL[0]['t0'] + 2.25, .08)):
+            for at, amt in ((TL[0]['t0'] + .45, .10), (TL[0]['t0'] + 1.4, .08)):
                 if t >= at: z += amt * eout((t - at) / .12)
         dx = wobble(t, s['line'] * 3.1, 7); dy = wobble(t, s['line'] * 5.3 + 2, 6); rot = wobble(t, s['line'] + 9, .0035)
         ax, ay = (hx, hy) if s['k'] else (540, 1100)
@@ -121,9 +154,9 @@ class Edit:
             import subprocess
             b = subprocess.run(['ffmpeg', '-v', 'error', '-ss', '29.9', '-i', HY, '-frames:v', '1', '-vf', f'scale={W}:{H}',
                                 '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], capture_output=True).stdout
-            self.end = Image.frombuffer('RGB', (W, H), b, 'raw', 'RGB', 0, 1).copy(); self.endr = Reader(HY, 28.3, 1.6)
+            self.end = Image.frombuffer('RGB', (W, H), b, 'raw', 'RGB', 0, 1).copy(); self.endr = Reader(HY, 29.0, 1.0)
         lt = t - END
-        return zoom(self.endr.get(int(round(lt * FPS))) if lt < 1.55 else self.end, 1 + .02 * lt)
+        return zoom(self.endr.get(int(round(lt * FPS))) if lt < .85 else self.end, 1 + .02 * lt)
 
     def frame(self, t):
         for k in 'abc': self.src(k, t)
@@ -147,7 +180,9 @@ class Edit:
             if at <= t < at + .3:
                 a = np.asarray(img).astype(np.float32); img = Image.fromarray(np.clip(a + (255 - a) * amt * math.exp(-(t - at) / .07), 0, 255).astype(np.uint8))
         fr = img.convert('RGBA')
-        if s is not None:
+        if s is not None and s.get('hook'):
+            put(fr, cached('hook', hook_title), W / 2, 1290, popin(t - .02, .25))
+        elif s is not None:
             loc = s['loc']; ch = {'studio': 'HOME STUDIO', 'cafe': 'COFFEE SHOP', 'rooftop': 'ROOFTOP', 'paris': 'MONDAY · PARIS',
                                   'board': 'TUESDAY · INVESTORS', 'taxes': 'WEDNESDAY · TAXES', 'beach': 'OUT OF OFFICE'}[loc]
             first = FIRST[loc]; show = loc in ('paris', 'board', 'taxes', 'beach') or t < first + 1.6
@@ -155,15 +190,16 @@ class Edit:
                 a = 1 - clamp((t - first - 1.4) / .25) if loc in ('studio', 'cafe', 'rooftop') else 1
                 put(fr, cached('chip' + loc, lambda ch=ch: chip(ch)), W / 2, 170, popin(t - s['a'] - .1), a)
             counters(fr, t); views0(fr, t); logo_pop(fr, t); comment(fr, t)
+            if s['k'] == 'a': put(fr, cached('capbg', cap_backing), W / 2, 1310)
             draw_captions(fr, t, 700 if loc == 'beach' else 1310)
         endcard(fr, t)
         return fr.convert('RGB')
 
-def render(t0=0., t1=None):
+def render(t0=0., t1=None, path=None):
     import subprocess
-    t1 = DUR if t1 is None else t1
+    t1 = DUR if t1 is None else t1; path = path or os.path.join(OUT, 'video.mp4')
     enc = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-                            '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p', os.path.join(OUT, 'video.mp4')], stdin=subprocess.PIPE)
+                            '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p', path], stdin=subprocess.PIPE)
     E = Edit(t0)
     for i in range(int(round((t1 - t0) * FPS))):
         enc.stdin.write(E.frame(t0 + i / FPS).tobytes())
@@ -175,5 +211,13 @@ def stills(ts):
 
 if __name__ == '__main__':
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'render'
-    if cmd == 'render': render(*[float(x) for x in sys.argv[2:4]])
+    if cmd == 'render': render(*[float(x) for x in sys.argv[2:4]], *(sys.argv[4:5]))
+    elif cmd == 'prender':                 # parallel chunks on the frame grid, then concat
+        import subprocess
+        n = int(sys.argv[2]) if len(sys.argv) > 2 else 4; F = int(round(DUR * FPS)); cuts = [round(F * i / n) for i in range(n + 1)]
+        ps = [subprocess.Popen([sys.executable, __file__, 'render', str(cuts[i] / FPS), str(cuts[i + 1] / FPS), os.path.join(OUT, f'part{i}.mp4')])
+              for i in range(n)]
+        for p in ps: p.wait()
+        lst = os.path.join(OUT, 'parts.txt'); open(lst, 'w').write(''.join(f"file 'part{i}.mp4'\n" for i in range(n)))
+        subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lst, '-c', 'copy', os.path.join(OUT, 'video.mp4')], check=True)
     elif cmd == 'stills': stills([float(x) for x in sys.argv[2:]])
