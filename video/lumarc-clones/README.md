@@ -10,3 +10,10 @@ Sets are drawn in code (`art_*` in edit.py). Each clone's take is re-timed onto 
 at their slots, its own silent pause footage (ping-pong) elsewhere, snapped to the 25 fps grid to keep lip sync.
 
 Build: `python3 edit.py tracks && python3 edit.py cues && python3 sound.py && python3 edit.py render && python3 edit.py mux`
+
+## v2 — real locations (`edit_real.py`)
+Each clone talks from its own photographic location (plates generated as empty eye-level photos, `src/bg/bg1..7.png`,
+gitignored): #1 home studio, #2 coffee shop, #3 rooftop; Paris / boardroom / "TAXES 101" room for the week; empty beach
+chair for the punchline. No group shots — the conversation cuts between locations. Natural-look compositing: DOF blur on
+the plate, clone graded toward the plate light, light wrap, handheld drift, jump-cut punch-ins, grain + vignette.
+Build: `python3 edit.py tracks && python3 edit.py cues && python3 sound.py && python3 edit_real.py render && python3 edit.py mux`
