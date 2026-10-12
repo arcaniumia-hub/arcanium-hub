@@ -4,3 +4,4 @@ music.wav
 out/
 src/
 cine/
+__pycache__/
