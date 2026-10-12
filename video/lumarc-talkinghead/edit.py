@@ -20,8 +20,9 @@ HY = os.path.join(V, 'silence-hyper/master.mp4')          # BEFORE (cheap) 0-4.8
 SM = os.path.join(V, 'silence-motion/silence-motion.mp4')
 LE = os.path.join(V, 'lumarc-motion-en/lumarc-3d-en.mp4')  # tacky flyer 0-3.5 s, service cards 12-18 s, post wall 8 s
 DROP, END = 22.55, 48.90
-CINE = os.path.join(HERE, 'cine/silence-ad.mp4')            # cinematic SILENCE ad (16:9, narration removed)
-CINE_IN, CINE_END = 4.0, 45.70                              # ad 4.0 s (glass crack) → 27.15 s ("Same product. Different story.")
+CINE = SM                                                   # the SILENCE ONE teardown film (vertical, own score)
+CINE_IN, CINE_OUT, CINE_END = 0.9, 29.35, END               # "INTRODUCING SILENCE" title → "SILENCE ONE · $349" product card
+CINE_SPEED = (CINE_OUT - CINE_IN) / (CINE_END - DROP)       # ≈1.08×: the whole film fits the voice from "THIS" to the end card
 DUR = END + (34.4 - 28.3)                                   # end card runs to the end of the hyper master
 OUT = os.path.join(HERE, 'out'); os.makedirs(OUT, exist_ok=True)
 
@@ -137,7 +138,7 @@ def cues():
     hits = [DROP, END]
     c = dict(dur=DUR, drop=DROP, endcard=END, breakdown=[34.55, 42.03],
              whoosh=[t for t in cuts if all(abs(t - h) > .05 for h in hits)],
-             hits=[CINE_END], ticks=[w['t0'] for p in PAGES for w in p['words'] if w['emph'] and p['flag'] != 'hide' and not DROP <= w['t0'] < CINE_END],
+             hits=[], ticks=[w['t0'] for p in PAGES for w in p['words'] if w['emph'] and p['flag'] != 'hide' and not DROP <= w['t0'] < CINE_END],
              cine=[DROP, CINE_END],
              pops=[DM[0]], swipe=[SWIPE[0] - .2])
     json.dump(c, open(os.path.join(HERE, 'cues.json'), 'w'), indent=1)
@@ -150,8 +151,7 @@ def back(x, s=2.2): x = clamp(x) - 1; return 1 + x * x * ((s + 1) * x + s)
 
 # 16:9 film in a 9:16 frame: big centred band (1300 px tall) over a blurred, darkened fill of the same shot
 BAND_Y, BAND_H = 150, 1300
-CINE_VF = (f'fps={FPS},split=2[a][b];[a]scale=-2:{H},crop={W}:{H},boxblur=40:2,eq=brightness=-0.2:saturation=0.75[bg];'
-           f'[b]scale=-2:{BAND_H},crop={W}:{BAND_H}[fg];[bg][fg]overlay=0:{BAND_Y}')
+CINE_VF = f'setpts=(PTS-STARTPTS)/{CINE_SPEED:.5f},fps={FPS},scale={W}:{H}'
 
 class Reader:
     def __init__(self, path, ss, dur, vf=None):
@@ -285,7 +285,7 @@ def draw_dm(fr, t):
     # fade out at the cut to the end card
     if z - t < .1: card.putalpha(card.getchannel('A').point(lambda v, k=(z - t) / .1: int(v * k)))
     card = card.resize((int(card.width * s), int(card.height * s)), Image.BILINEAR)
-    fr.alpha_composite(card, (int(W / 2 - card.width / 2), int(1500 - card.height / 2)))
+    fr.alpha_composite(card, (int(650 - card.width / 2), int(1500 - card.height / 2)))
 
 # ---------------------------------------------------------------- frame
 def face_scale(t):
@@ -307,7 +307,7 @@ class Edit:
     def broll(self, k, t):
         a, z, path, ss, o = BROLL[k]
         if k not in self.br:
-            st = ss + max(0., t - a)
+            st = ss + max(0., t - a) * (CINE_SPEED if o.get('cine') else 1)
             self.br[k] = (Reader(path, st, z - max(a, t), CINE_VF if o.get('cine') else None), max(a, t))
         r, rt0 = self.br[k]
         return r.get(int(round((t - rt0) * FPS)))
@@ -439,8 +439,9 @@ def mux():
     vid = os.path.join(OUT, 'video.mp4'); mus = os.path.join(HERE, 'music.wav'); fin = os.path.join(OUT, 'lumarc-talkinghead.mp4')
     af = ('[0:a]aresample=48000,highpass=f=85,equalizer=f=3200:t=q:w=1.2:g=2.5,acompressor=threshold=-22dB:ratio=3:attack=6:release=90:makeup=3,'
           'apad=whole_dur=%.2f,asplit=2[v][key];' % DUR +
-          '[2:a]atrim=%.3f:%.3f,asetpts=PTS-STARTPTS,aresample=48000,afade=t=in:d=0.08,afade=t=out:st=%.3f:d=0.25,'
-          'adelay=%d|%d,volume=0.42[ad];' % (CINE_IN, CINE_IN + CINE_END - DROP, CINE_END - DROP - .25, DROP * 1000, DROP * 1000) +
+          '[2:a]atrim=%.3f:%.3f,asetpts=PTS-STARTPTS,aresample=48000,atempo=%.5f,afade=t=in:d=0.08,afade=t=out:st=%.3f:d=0.25,'
+          "volume='0.42*if(between(t,%.2f,%.2f),0.55,1)':eval=frame,adelay=%d|%d[ad];" % (CINE_IN, CINE_OUT, CINE_SPEED, CINE_END - DROP - .25,
+          46.5 - DROP, 48.4 - DROP, DROP * 1000, DROP * 1000) +      # dip the film's 'Silence it' hit under the CTA
           '[1:a]volume=0.5[m0];[m0][ad]amix=inputs=2:normalize=0:duration=first[m];[m][key]sidechaincompress=threshold=0.05:ratio=4:attack=25:release=320[md];'
           '[v][md]amix=inputs=2:normalize=0,loudnorm=I=-14:TP=-1.2:LRA=11[a]')
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', PLATE, '-i', mus, '-i', CINE, '-filter_complex', af, '-map', '[a]',
