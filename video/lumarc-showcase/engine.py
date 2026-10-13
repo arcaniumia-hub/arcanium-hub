@@ -72,6 +72,17 @@ def _voice_islands():
         return out
     return _cache('islands', mk)
 
+# onsets measured by hand on the voice (spectrogram + 10 ms envelope) where the automatic alignment is off
+WORD_FIX = {(0, 'NEXT'): .45, (0, 'TWO'): .68, (0, 'SECONDS,'): .89, (0, "YOU'LL"): 1.65, (0, 'IF'): 2.20, (0, 'THIS'): 2.33,
+            (0, 'VIDEO'): 2.54, (0, 'IS'): 2.93, (0, 'WORTH'): 3.09, (0, 'TIME.'): 3.59, (3, 'PAGE.'): 9.92, (5, 'SHAKY'): 11.62,
+            (11, 'MIGHT'): 19.51, (11, 'BE'): 19.79, (11, 'AMAZING.'): 19.96, (13, 'CAN'): 21.96, (13, 'TASTE'): 22.16,
+            (14, 'FEEL'): 23.15, (15, 'SEE'): 24.41, (15, 'SKILL.'): 24.76, (16, 'SEE'): 25.80, (17, 'FIRST'): 27.84,
+            (18, 'GREAT'): 29.22, (18, "DOESN'T"): 30.55, (18, 'GOOD.'): 31.42, (19, 'BUILDS'): 31.95, (19, 'TRUST.'): 32.28,
+            (20, 'MAKES'): 33.83, (20, 'PEOPLE'): 34.25, (22, 'PHOTOS'): 37.93, (22, 'ALREADY'): 39.14, (22, 'REELS'): 40.27,
+            (23, 'CAROUSELS'): 41.82, (24, 'DESIGNS'): 43.15, (25, 'WEBSITE'): 45.67, (25, 'CUSTOMERS.'): 47.53,
+            (26, 'RUN'): 48.40, (26, 'THE'): 48.60, (26, 'BUSINESS.'): 48.72, (27, 'WE'): 49.30, (27, 'MAKE'): 49.49,
+            (27, 'IT'): 49.65, (27, 'TO'): 50.50}
+
 def _snap_words(pages):
     """refine word onsets onto the energy dip that precedes each word (syllable estimates run late)."""
     raw = os.path.join(SRC, 'tight16k.raw'); x = np.fromfile(raw, np.float32); h = 160
@@ -115,6 +126,15 @@ def _pages():
                 ws.append(dict(text=w.strip('*').upper(), emph=w.startswith('*'), t0=t0, t1=t1, seg=i))
             pages.append(dict(words=ws, seg=i))
     _snap_words(pages)
+    words = [w for p in pages for w in p['words']]
+    for w in words:
+        k = (w['seg'], w['text'])
+        if k in WORD_FIX: w['t0'] = WORD_FIX[k]
+    for k in range(len(words) - 2, -1, -1):          # keep order: pull earlier words back before a corrected one
+        a, b = words[k], words[k + 1]
+        if a['seg'] == b['seg'] and a['t0'] > b['t0'] - .08: a['t0'] = b['t0'] - .08
+    for k, w in enumerate(words[:-1]):
+        if words[k + 1]['seg'] == w['seg']: w['t1'] = max(w['t0'] + .06, words[k + 1]['t0'])
     for j, p in enumerate(pages):
         nxt = pages[j + 1]['words'][0]['t0'] if j + 1 < len(pages) else DUR; last = p['words'][-1]['t1']
         p['a'] = p['words'][0]['t0'] - .04; p['z'] = nxt - .02 if nxt - last < .5 else last + .35

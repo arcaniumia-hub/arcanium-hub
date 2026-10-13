@@ -21,11 +21,18 @@ import engine as E
 
 START, END = E.span(18, 20)                       # 28.92 – 35.04
 T19, T20 = E.TL[19]['t0'], E.TL[20]['t0']         # 31.72, 32.84 (jump cuts)
-# word onsets measured on the voice track (src/voice16k.raw, low/high band envelopes)
-W_GREAT, W_FIRST, W_IMPR = 29.34, 29.63, 29.87
-W_LOOK, W_GOOD = 31.03, 31.20
-W_BUILDS, W_TRUST = 31.98, 32.31
-W_TRUST2, W_MAKES, W_PEOPLE, W_BUY = 33.02, 33.71, 34.18, 34.63
+# word onsets measured on the voice track (src/tight16k.raw, 10 ms low/high band envelopes: closures, bursts, fricatives)
+W_GREAT, W_FIRST, W_IMPR = 29.22, 29.64, 29.85            # 'great' g-burst 29.22 (closure 29.19-29.21)
+W_LOOK, W_GOOD = 31.05, 31.42                             # 'good' after the 31.33-31.41 silence
+W_BUILDS, W_TRUST = 31.95, 32.30                          # 'trust' tr-burst 32.28, vowel 32.42
+W_TRUST2, W_MAKES, W_PEOPLE, W_BUY = 33.01, 33.83, 34.25, 34.62   # 'makes' m-murmur 33.83, 'people' p-burst 34.25
+
+# own caption track, engine look (same pages / words / layout as engine.draw_captions) on the measured onsets: the
+# engine's syllable estimate has 'BUILDS' at 32.28 (10 frames after the voice and the trust card) and 'GREAT' 6 frames
+# late. Engine captions are off for the whole section, which also removes the 1-frame ghost of s06's last page.
+CAP_T0 = {18: [29.01, 29.12, W_GREAT, W_FIRST, W_IMPR, 30.55, 30.82, W_LOOK, W_GOOD],
+          19: [31.78, W_BUILDS, 32.28],
+          20: [32.90, W_TRUST2, 33.59, 33.70, W_MAKES, W_PEOPLE, W_BUY]}
 
 CUES = [
     (W_GREAT - .02, 'glass', {'gain': -4}),          # profile card rises behind him
@@ -537,12 +544,49 @@ def bob(t, ph, amp=7, per=3.2):
 def rise_k(t, t0, d=.5): return expo((t - t0) / d)
 
 
+# ================================================================ captions (own track)
+def _cap_pages():
+    pages = [dict(p, words=[dict(w) for w in p['words']]) for p in E.PAGES if p['seg'] in CAP_T0]
+    for sg, ts in CAP_T0.items():
+        ws = [w for p in pages if p['seg'] == sg for w in p['words']]
+        assert len(ws) == len(ts), (sg, len(ws))
+        for w, t0 in zip(ws, ts): w['t0'] = t0
+        for a, b in zip(ws, ws[1:]): a['t1'] = b['t0']
+        ws[-1]['t1'] = max(ws[-1]['t0'] + .2, min(ws[-1]['t1'], E.TL[sg]['t1']))
+    for j, p in enumerate(pages):
+        p['a'] = p['words'][0]['t0'] - .04
+        if j + 1 < len(pages):
+            nxt = pages[j + 1]['words'][0]['t0']; last = p['words'][-1]['t1']
+            p['z'] = nxt - .02 if nxt - last < .5 else last + .35
+            if pages[j + 1]['seg'] != p['seg']:      # a page never survives a multicam cut: it leaves ON the cut
+                p['z'] = E.TL[p['seg'] + 1]['t0']; p['hard'] = True
+        else: p['z'] = END; p['hard'] = True        # hard cut into s08
+    return pages
+CAP_PAGES = _cap_pages()
+
+
+def draw_caps(ctx, t, cy0=1420, base=92):
+    """same look/animation as engine.draw_captions (screen layers; engine captions off)."""
+    ctx.captions = False
+    for p in CAP_PAGES:
+        if not (p['a'] <= t < p['z']): continue
+        for w, sz, cx, cy in E._layout(p, base):
+            if t < w['t0'] - .02: continue
+            lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16)
+            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            img, _ = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')
+            if lt < .05: img = E.fade(img, lt / .05)
+            if p['z'] - t < .06 and not p.get('hard'): img = E.fade(img, (p['z'] - t) / .06)
+            if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
+            ctx.add('screen', img, int(W / 2 + cx - img.width / 2), int(cy0 + cy - img.height / 2), center=False)
+
+
 # ================================================================ draw
 def draw(ctx, lt, t):
+    draw_caps(ctx, t)
     if t < T19:
         # ---------------- TL18: wide & airy; profile card behind his shoulder, hero post far back, chip in front
         u = (t - START) / (T19 - START)
-        ctx.captions = t >= START + .03            # no 1-frame ghost of s06's last caption page
         z = 1.02 + .07 * smooth(u)
         ctx.cam = dict(z=z, x=540., y=860., dx=(z - 1) * 260 * (u - .5), dy=0., rot=0.)
         ctx.avatar.update(s=1.0, x=0.)
@@ -558,7 +602,7 @@ def draw(ctx, lt, t):
         if k > 0:
             bx, by = bob(t, 0, 7)
             im = profile_card(t)
-            sk = (t - (W_GOOD + .02)) / .5
+            sk = (t - (W_GOOD + .02)) / .28          # sweep completes before the 31.72 cut
             if 0 < sk < 1: im = sheen(im, sk, .22, .5)
             put_card(ctx, 'behind', im, 262 + bx + 18 * u, 660 + by + 140 * (1 - k), s=.9 + .1 * k, alpha=clamp(k * 1.8),
                      blur=7 * (1 - k) ** 2)

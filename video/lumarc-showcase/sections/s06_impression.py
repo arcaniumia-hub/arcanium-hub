@@ -21,7 +21,7 @@ from sections import s05_problem as P5
 START, END = E.span(16, 17)                   # 25.24 – 28.92
 T16, T17 = E.TL[16]['t0'], E.TL[17]['t0']
 # onsets measured on the voice track
-W_THEY, W_CONTENT, W_FIRST, W_IMPRESSION = 25.31, 26.38, 27.86, 28.30
+W_THEY, W_CONTENT, W_FIRST, W_IMPRESSION = 25.30, 26.41, 27.86, 28.29
 TS = 25.30                                    # shards start flying (two frames of spreading cracks first)
 
 CUES = [
@@ -201,15 +201,22 @@ def shift(a, dx, dy):
 LIGHT = (-.55, -.83)                          # light from the top-left (screen space)
 
 
-def shard_sprite(src, s, ang, tiltc, thick, spec):
-    """RGBA sprite of one shard in its LOCAL frame: refracted content, thickness bevel, one-side-lit edges, specular."""
+def shard_sprite(src, s, ang, tiltc, thick, spec, q=1):
+    """RGBA sprite of one shard in its LOCAL frame: refracted content, thickness bevel, one-side-lit edges, specular.
+    q = 2 builds it at half resolution (flying shards: they move 30-90 px/frame, so the half-res layer reads as the
+    same glass, and costs a quarter)."""
     x0, y0, x1, y1 = s['box']; dx, dy = s['refr']
-    if 'piece' not in s:   # static (the pane layer never changes): cache content, mask, grids
-        s['piece'] = np.asarray(src.crop((int(x0 - dx), int(y0 - dy), int(x1 - dx), int(y1 - dy))).convert('RGB'), np.float32)
-        s['m'] = s['mask'].astype(np.float32) / 255
-        hh, ww = s['m'].shape; yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32); s['u'] = (xx * .7 + yy * .7) / max(1, (ww + hh) * .7)
+    R = s.setdefault('r%d' % q, {})
+    if 'piece' not in R:   # static (the pane layer never changes): cache content, mask, grids
+        pc = src.crop((int(x0 - dx), int(y0 - dy), int(x1 - dx), int(y1 - dy))).convert('RGB'); mk = Image.fromarray(s['mask'])
+        if q > 1:
+            sz = (max(2, round(pc.width / q)), max(2, round(pc.height / q)))
+            pc, mk = pc.resize(sz, Image.BOX), mk.resize(sz, Image.BOX)
+        R['piece'] = np.asarray(pc, np.float32); R['m'] = np.asarray(mk, np.float32) / 255
+        hh, ww = R['m'].shape; yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32); R['u'] = (xx * .7 + yy * .7) / max(1, (ww + hh) * .7)
+    s = dict(s, **R)
     piece, m, u = s['piece'], s['m'], s['u']
-    h, w = m.shape; pad = 10; ls = 2.2
+    h, w = m.shape; pad = 10 // q; ls = 2.2 if q == 1 else 1.4
     # light direction in the shard's local frame (inverse rotation)
     r = math.radians(ang); c, si = math.cos(r), math.sin(r)
     lx, ly = c * LIGHT[0] + si * LIGHT[1], -si * LIGHT[0] + c * LIGHT[1]
@@ -219,13 +226,13 @@ def shard_sprite(src, s, ang, tiltc, thick, spec):
     band = np.exp(-((u - (.5 + .35 * math.sin(ang * .05 + s['ph']))) / .18) ** 2) * spec
     rgb = piece * (1 - .1 * (1 - tiltc)); rgb += band[..., None] * 105
     rgb *= (1 - shd * .55)[..., None]; rgb += (lit * 229.5)[..., None]
-    if 'a8' not in s:      # static: alpha + the dark glass body (tinted by what it carries)
-        s['a8'] = (m * 255 + .5).astype(np.uint8)
+    if 'a8' not in R:      # static: alpha + the dark glass body (tinted by what it carries)
+        R['a8'] = s['a8'] = (m * 255 + .5).astype(np.uint8)
         body = np.empty((h, w, 4), np.uint8); body[..., :3] = np.clip(piece * .28 + np.array([18, 18, 40], np.float32), 0, 255)
-        body[..., 3] = (m * 225 + .5).astype(np.uint8); s['body'] = Image.fromarray(body, 'RGBA')
+        body[..., 3] = (m * 225 + .5).astype(np.uint8); R['body'] = s['body'] = Image.fromarray(body, 'RGBA')
     top = np.empty((h, w, 4), np.uint8); top[..., :3] = np.clip(rgb, 0, 255); top[..., 3] = s['a8']
     # canvas with thickness (dark glass body offset along the fall direction, in local coords), lit face on top
-    tx, ty = c * thick[0] + si * thick[1], -si * thick[0] + c * thick[1]
+    tx, ty = (c * thick[0] + si * thick[1]) / q, (-si * thick[0] + c * thick[1]) / q
     Cw, Ch = w + 2 * pad, h + 2 * pad
     out = Image.new('RGBA', (Cw, Ch), (0, 0, 0, 0))
     ox, oy = pad + int(round(tx)), pad + int(round(ty))
@@ -250,7 +257,7 @@ def shatter(fr, t):
     if t < TS: return cracked(triptych_frame(fr), t)
     src = pane_layer()
     u = t - TS
-    out = fr.copy()
+    out = fr.copy(); half = None
     for s in sorted(shards(), key=lambda s: s['zs']):
         uu = max(0., u - s['delay'])
         k = 1 - math.exp(-uu * 3.0)
@@ -273,10 +280,15 @@ def shatter(fr, t):
         th = 3 + 3 * min(1, uu / .12) * zsc
         fall = (s['dir'][0] * .6, s['dir'][1] * .6 + .8); fn = math.hypot(*fall) or 1
         spec = .25 + .75 * max(0, math.cos(math.radians(ang) * 2 + s['ph'])) ** 6
-        spr, pad = shard_sprite(src, s, ang, tiltc, (fall[0] / fn * th, fall[1] / fn * th), spec)
+        q = 2 if uu > .04 else 1                                           # in flight -> half-res layer
+        spr, pad = shard_sprite(src, s, ang, tiltc, (fall[0] / fn * th, fall[1] / fn * th), spec, q)
         spr = affine2(spr, zsc * tiltc, zsc, ang)
         if a < 1: spr = E.fade(spr, a)
-        E._paste(out, dict(img=spr, xy=(int(cx - spr.width / 2), int(cy - spr.height / 2)), glass=0))
+        if q == 1:
+            E._paste(out, dict(img=spr, xy=(int(cx - spr.width / 2), int(cy - spr.height / 2)), glass=0)); continue
+        if half is None: half = Image.new('RGBA', (W // 2, H // 2), (0, 0, 0, 0))
+        E._paste(half, dict(img=spr, xy=(int(cx / 2 - spr.width / 2), int(cy / 2 - spr.height / 2)), glass=0))
+    if half is not None: out.alpha_composite(half.resize((W, H), Image.BILINEAR))
     return out
 
 
@@ -470,6 +482,10 @@ AY = 90
 
 
 def draw(ctx, lt, t):
+    _draw(ctx, lt, t); P5.voice_captions(ctx, t)          # captions re-timed to the voice, current segment only
+
+
+def _draw(ctx, lt, t):
     P = ctx.post
     if t < T17:
         # ------------------------------------------ TL16 "They only see your content."
@@ -485,7 +501,7 @@ def draw(ctx, lt, t):
             ctx.cam['dx'] += 16 * k * math.sin(u * 90); ctx.cam['dy'] += 9 * k * math.cos(u * 70)
             P['bright'] = 1 + .3 * clamp(1 - u / .12) ** 2
         ctx.captions = t >= TS + .25                        # THEY ONLY appears once the burst has cleared the centre
-        if t >= 26.11: ctx.cap_y = 1546                     # 'YOUR CONTENT.' page sits under the post card (glyphs ≈1506–1590)
+        if t >= P5.page_end(16, 0): ctx.cap_y = 1546        # 'YOUR CONTENT.' page sits under the post card (glyphs ≈1506–1590)
         def wrap(fr):
             fr = graded(fr, sat, br, tint).convert('RGBA')
             if t < TS + .75: fr = shatter(fr, t)
@@ -498,7 +514,6 @@ def draw(ctx, lt, t):
     # ------------------------------------------ TL17 dolly zoom + FIRST IMPRESSION
     ctx.cam = dict(z=ZD, x=540., y=820., dx=0., dy=0., rot=0.)
     ctx.avatar['y'] = AY                                               # sits a little lower: the title owns the top
-    if t < T17 + .034: ctx.captions = False                             # no 1-frame ghost of the previous caption page
     z = bgz(t); speed = (bgz(t) - bgz(t - 1 / 30)) * 30                # bg zoom speed (per s)
     ctx.bg_img = dolly_bg(z, speed)
     ctx.bg_dim = .1 + .18 * smooth((t - T17) / (W_FIRST - T17))

@@ -203,6 +203,21 @@ def rail(alpha_slide, t):
 
 def fmt_k(v): return f'{v / 1000:.1f}K'
 
+PB_Y, PB_X = SH - 100, 34              # 4 px bar centred on PB_Y: above the 118 px screen-corner curve (no 'smile')
+def progress_bar(pg):
+    """Reels scrub bar on a transparent strip: 28 % white track + 95 % white fill with rounded caps + playhead dot."""
+    def base():
+        im = Image.new('RGBA', (SW, 12), (0, 0, 0, 0)); ss = 4
+        m = Image.new('L', (SW * ss, 12 * ss)); ImageDraw.Draw(m).rounded_rectangle((PB_X * ss, 4 * ss, (SW - PB_X) * ss, 8 * ss), 2 * ss, fill=72)
+        im.putalpha(m.resize((SW, 12), Image.LANCZOS)); w = Image.new('RGBA', (SW, 12), WHITE + (0,)); w.putalpha(im.getchannel('A')); return w
+    out = E.cached('b_pb_track', base).copy()
+    x1 = PB_X + (SW - 2 * PB_X) * clamp(pg)
+    ss = 4; m = Image.new('L', (SW * ss, 12 * ss)); d = ImageDraw.Draw(m)
+    d.rounded_rectangle((PB_X * ss, 4 * ss, x1 * ss, 8 * ss), 2 * ss, fill=242)
+    d.ellipse(((x1 - 5) * ss, 1 * ss, (x1 + 5) * ss, 11 * ss), fill=255)
+    f = Image.new('RGBA', (SW, 12), WHITE + (0,)); f.putalpha(m.resize((SW, 12), Image.LANCZOS)); out.alpha_composite(f)
+    return out
+
 # ---------------------------------------------------------------- background space
 def space_bg():
     def mk():
@@ -362,16 +377,13 @@ def _wrap(fr, t, st):
     ui_a = clamp((t - T_UI_BOT) / .3)
     if ui_a > 0:
         ub = ui_bottom(); rise = (1 - eout((t - T_UI_BOT) / .4)) * 40
-        scr.alpha_composite(_fade(ub, ui_a) if ui_a < 1 else ub, (0, int(rise)))
+        scr.alpha_composite(_fade(ub, ui_a) if ui_a < 1 else ub, (0, int(rise) - 34))      # lifted: room for the scrub bar
         # rail slides in from the right edge
         sl = (1 - eout((t - T_UI_BOT) / .45)) * 160
         rl = rail(1, t); scr.alpha_composite(_fade(rl, ui_a) if ui_a < 1 else rl, (int(RAIL_X - 90 + sl), 0))
         _heart_ui(scr, t, ui_a, sl)
-        # progress bar
-        pg = clamp((t - 6.2) / 9.0) * .9 + .06
-        d = ImageDraw.Draw(scr)
-        d.rectangle((0, SH - 8, SW, SH), fill=(255, 255, 255, int(70 * ui_a)))
-        d.rectangle((0, SH - 8, int(SW * pg), SH), fill=(255, 255, 255, int(235 * ui_a)))
+        # progress bar: this film IS the Reel -> real playhead (t / DUR), straight, above the corner radius
+        scr.alpha_composite(_fade(progress_bar(t / E.DUR), ui_a) if ui_a < 1 else progress_bar(t / E.DUR), (0, PB_Y - 6))
     _double_tap(scr, t)
     _touch(scr, t, off)
     # ---- assemble the canonical phone
@@ -486,13 +498,16 @@ def _heart_ui(scr, t, a, sl):
         h = heart_img(64, fill=(255, 48, 80), outline=(255, 48, 80))
         hs = h.resize((int(h.width * s), int(h.height * s)), Image.BILINEAR)
         scr.alpha_composite(hs, (int(x - hs.width / 2), int(Y_HEART - hs.height / 2)))
-        # spark burst
+        # spark burst (own transparent overlay, alpha-composited -> the lines really fade)
         if e < .45:
-            d = ImageDraw.Draw(scr); k = eout(e / .45)
+            k = eout(e / .45); S = 320; ss = 2
+            ov = Image.new('RGBA', (S * ss, S * ss), (0, 0, 0, 0)); d = ImageDraw.Draw(ov); c = S * ss / 2
             for i in range(8):
-                ang = i * math.pi / 4 + .2; r0, r1 = 50 + 40 * k, 62 + 66 * k
-                col = [(255, 80, 120), (170, 120, 255)][i % 2] + (int(255 * (1 - k)),)
-                d.line((x + r0 * math.cos(ang), Y_HEART + r0 * math.sin(ang), x + r1 * math.cos(ang), Y_HEART + r1 * math.sin(ang)), fill=col, width=6)
+                ang = i * math.pi / 4 + .2; r0, r1 = (50 + 40 * k) * ss, (62 + 66 * k * (1 - .25 * k)) * ss
+                col = [(255, 80, 120), (170, 120, 255)][i % 2] + (int(255 * (1 - k) ** 1.3),)
+                d.line((c + r0 * math.cos(ang), c + r0 * math.sin(ang), c + r1 * math.cos(ang), c + r1 * math.sin(ang)), fill=col, width=int(6 * (1 - .5 * k)) * ss)
+            ov = ov.resize((S, S), Image.LANCZOS)
+            scr.alpha_composite(ov, (int(x - S / 2), int(Y_HEART - S / 2)))
         likes = 48200 + int(100 + 4700 * eout((t - T_INSTA) / .62)) if t > T_INSTA else 48200
     l = label(fmt_k(likes), 28, 600)
     scr.alpha_composite(_fade(l, a), (int(x - l.width / 2), Y_HEART + 36))

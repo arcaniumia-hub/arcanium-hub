@@ -1,19 +1,21 @@
 """s08 — "That's why we created LUMARC." (35.04–37.28)  SIGNATURE: GLASS SLATS -> LOGO DOWNBEAT
 
 35.04  cut to a centred, clean close shot (the UI clears); 7 seams start to glint in the silence.
-35.38  "That's why": the frame splits into 8 vertical prisms of glass. Each one turns on its vertical axis (alternating
+35.39  "That's why": the frame splits into 8 vertical prisms of glass. Each one turns on its vertical axis (alternating
        directions, different angles), its image slides up/down at its own speed and is refracted (magnified 1.06–1.12x,
        shifted proportional to the angle, mild fluted-lens curvature). Every prism has a sliding vertical specular,
-       a bright leading edge, a lit lilac side face (thickness) and a shadowed trailing edge. Between them: the deep
-       LUMARC brand space (night gradient, violet core, soft depth-of-field particles).
-36.00  "we created": the glass frosts over, the prisms turn edge-on and become blades of light; particles stretch
-       into speed streaks (riser). 36.40 the blades rush to the centre.
-36.60  "LUMARC" (measured onset 36.58): the blades meet -> a white-violet light burst centred on the logo (additive,
-       ~3-frame decay; frame edges stay deep night), anamorphic streak, shockwave ring, bloom; the logo pops in
-       whole where the 8 blades met (scale 1.14 -> 1). THE downbeat.  36.70 a sheen sweeps the logo.
-37.00  resolve: the prisms flip back in from edge-on (centre outward) — their edges fade out as they reach 0° — onto
-       a tighter close-up (z 1.30) while the logo shrinks to 300 px at y 252 for the s09 handoff (s09 opens wider,
-       z 1.12, so the 37.28 jump reads as a cut).
+       a bright leading edge, a narrow translucent lilac side face (<= 12 px, top-lit gradient, 1 px outer specular)
+       and a shadowed trailing edge. Between them: the deep LUMARC brand space with a contact shadow down each slot.
+35.90  "we" / 36.01 "created": the glass frosts over, the prisms turn edge-on and become blades of light; particles
+       stretch into speed streaks (riser). 36.40 the blades rush to the centre.
+36.567 "LUMARC" (voice onset 36.575–36.58 = E.word_time): the blades meet -> white-violet light burst on the frame
+       that contains the onset (picture leads the voice by ~10 ms), anamorphic streak, shockwave ring, bloom; the logo
+       pops in whole (1.14 -> 1). THE downbeat (boom / impact cues on the word).  36.67 a sheen sweeps the logo.
+36.90  resolve: the prisms return as blades of light over the logo (ramp 36.933 / 36.967 / 37.000) while the logo
+       travels to 300 px @ y 252 (36.89–37.22, sine in-out, continuous vertical motion blur); 37.00 the prisms flip
+       back from edge-on (centre outward, cubic out); refraction / slide / side faces / edges all gate to zero together,
+       the slots close onto the clean shot and each settling prism dissolves into the clean frame (no seams on his
+       face) onto a tighter close-up (z 1.36) for the s09 handoff (s09 opens wider, so the 37.28 jump reads as a cut).
 """
 import math
 import numpy as np
@@ -21,21 +23,32 @@ from PIL import Image, ImageDraw, ImageFilter
 import engine as E
 
 START, END = E.span(21, 21)            # 35.04 – 37.28
-# measured on the voice track
-W_THATS, W_WHY, W_WE, W_CREATED = 35.38, 35.57, 36.00, 36.10
-HIT = 36.60                             # "LUMARC" onset (E.word_time = 36.645, voice onset 36.58)
+# word onsets = the engine's voice-aligned caption timings (checked on the voice envelope: 'that's' 35.38,
+# 'why' w-onset 35.71, 'we' ~35.86-35.90, 'created' k-burst 36.01, 'LUMARC' 36.575-36.58)
+W_THATS = E.word_time("THAT'S", 21)     # 35.39
+W_WHY = E.word_time('WHY', 21)          # 35.72
+W_WE = E.word_time('WE', 21)            # 35.90
+W_CREATED = E.word_time('CREATED', 21)  # 36.01
+W_LUMARC = E.word_time('LUMARC', 21)    # 36.58
+# THE downbeat frame: the frame whose display interval contains the spoken onset (1097 = 36.5667 shows 36.567-36.600;
+# the voice starts at 36.575-36.58) -> picture leads the voice by ~10 ms, never trails it. Boom/impact cues sit on the word.
+HIT = math.floor(W_LUMARC * E.FPS + 1e-6) / E.FPS - .0017      # 36.565 (robust to float frame times)
 CONV0 = 36.40                           # blades converge
-RES0, RES1 = 37.00, 37.24               # resolve back to the studio
+BL0 = 36.90                             # resolve: blades of light ramp in over the logo (36.933 / 36.967 / 37.000)
+LT0, LT1 = 36.89, 37.22                 # logo travel to the s09 handoff (300 px @ y 252), sine in-out, 0.33 s
+RES0, RES1 = 37.00, 37.24               # prisms flip back in (centre outward) onto the close-up
+RES_D, RES_STAG = .20, .05              # flip duration per prism, centre->edge stagger (all settled by 37.25)
 
 CUES = [
     (35.18, 'tick', {'gain': -12}),                 # seams glint
     (W_THATS - .02, 'glass', {}),                   # prisms split
     (W_WHY, 'whoosh', {'gain': -8}),
-    (W_WE - .1, 'riser', {'to': HIT}),              # build to the logo
+    (W_WE - .1, 'riser', {'to': W_LUMARC}),              # build to the logo
     (CONV0, 'swoosh_up', {'gain': -4}),             # blades rush in
-    (HIT, 'boom', {}),                              # THE downbeat
-    (HIT, 'impact', {'gain': -4}),
-    (HIT + .03, 'shimmer', {}),
+    (W_LUMARC, 'boom', {}),                         # THE downbeat (on the spoken word)
+    (W_LUMARC, 'impact', {'gain': -4}),
+    (W_LUMARC + .03, 'shimmer', {}),
+    (LT0, 'swoosh_up', {'gain': -10}),              # logo lifts to the top
     (RES0 - .02, 'glass', {'gain': -6}),            # prisms flip back
 ]
 
@@ -165,39 +178,54 @@ def slat_state(i, t):
         mag = 1.06 + .06 * math.sin(th)
         frost = smooth((t - W_WE) / .5)
         return dict(th=th, sgn=sgn, dy=dy, xc=xc, sc=sc, refr=refr, mag=mag, frost=frost, op=op)
-    # resolve: flip back in from edge-on, centre outward; everything converges to identity at 0 deg
-    k = expo((t - (RES0 + dc * .06)) / .2)
+    # resolve: flip back in from edge-on, centre outward; everything converges to identity at 0 deg.
+    # refraction / slide / side face are gated by `edge` (as are the specular edges), and the settling prism is
+    # crossfaded to the clean frame (`clean`), so nothing leaves a seam on his face.
+    x = clamp((t - (RES0 + dc * RES_STAG)) / RES_D)
+    k = 1 - (1 - x) ** 3
     th = math.radians(90) * (1 - k)
-    st = math.sin(th)
-    return dict(th=th, sgn=sgn, dy=sgn * 90 * (1 - k) ** 2, xc=c, sc=1 - .03 * st, refr=sgn * st * 50, mag=1 + .08 * st,
-                frost=.6 * st, op=st)
+    st = math.sin(th); edge = clamp(st * 2.4) ** 2
+    return dict(th=th, sgn=sgn, dy=sgn * 90 * (1 - k) ** 2 * edge, xc=c, sc=1 - .03 * st, refr=sgn * st * 50 * edge,
+                mag=1 + .08 * st, frost=.6 * st, op=st, clean=smooth((k - .6) / .4), res=True)
 
 
 _U = {}
-def render_slats(fr, t, bg, blades=True):
-    """composite the 8 prisms (sampling `fr`) over `bg` (RGBA brand space)."""
+SIDE_V = None
+def side_vgrad():
+    """side-face light falloff: bright near the top light, ~40% at the bottom."""
+    return C('side_v', lambda: (.4 + .6 * np.clip(1 - np.arange(H, dtype=np.float32) / (H * .92), 0, 1) ** 1.3)[:, None, None])
+
+
+def render_slats(fr, t, bg, blades=True, blade_gain=1.0, edge_on=False, ao=1.0):
+    """composite the 8 prisms (sampling `fr`) over `bg` (RGBA brand space). edge_on: all prisms at 90 deg (blades only)."""
+    if not edge_on and all(slat_state(i, t).get('clean', 0) >= .999 for i in range(N)):
+        return fr                                    # every prism has settled: the clean frame
     A = np.asarray(fr.convert('RGB'))
     out = np.asarray(bg.convert('RGB'), np.float32).copy()
     fz = None
     lines = Image.new('L', (W // 2, H // 2)); ld = ImageDraw.Draw(lines)
     yy = np.arange(H, dtype=np.float32)
     vgrad = (np.clip(1 - yy / H, 0, 1) ** 2 * 14)[:, None, None]           # glass catches light from above
+    cleans = []
+    cover = np.zeros(W, bool)                     # columns covered by glass (for the contact shadow in the gaps)
     for i in range(N):
         S = slat_state(i, t)
+        if edge_on: S = dict(S, th=math.pi / 2, op=1.0, xc=(i + .5) * SW, sc=1.0)
         th, sgn = S['th'], S['sgn']; cth, sth = math.cos(th), math.sin(th)
         edge = clamp(sth * 2.4) ** 2                                         # edges fade out as the prism reaches 0 deg
         w_f = SW * cth * S['sc']
-        x0 = int(round(S['xc'] - w_f / 2)); x1 = int(round(S['xc'] + w_f / 2)); w = x1 - x0
+        x0 = int(math.floor(S['xc'] - w_f / 2)); x1 = int(math.ceil(S['xc'] + w_f / 2)); w = x1 - x0   # 1 px overlap
+        if w_f < .5: w = 0
         src_c = (i + .5) * SW
         if w >= 1:
             u = (np.arange(w, dtype=np.float32) + .5) / w - .5
             u2 = u * (1 - .22 * sth * (2 * np.abs(u)) ** 2)                  # fluted-lens curvature
             sx = np.clip(np.floor(src_c + u2 * SW / S['mag'] + S['refr']).astype(np.int32), 0, W - 1)
             sy = np.clip(np.floor((yy - H * .42) / S['mag'] + H * .42 - S['dy'] + .5).astype(np.int32), 0, H - 1)
-            face = A[:, sx][sy].astype(np.float32)
+            face = A[sy[:, None], sx[None, :]].astype(np.float32)
             if S['frost'] > .02:
                 if fz is None: fz = frosted(A)
-                face = face * (1 - min(.92, S['frost'])) + fz[:, sx][sy].astype(np.float32) * min(.92, S['frost'])
+                face = face * (1 - min(.92, S['frost'])) + fz[sy[:, None], sx[None, :]].astype(np.float32) * min(.92, S['frost'])
             # glass tint + fresnel falloff toward the far edge
             ff = (u + .5) if sgn > 0 else (.5 - u)                           # 0 near leading edge .. 1 far edge
             shade = 1 - .42 * sth * ff ** 1.4
@@ -220,24 +248,46 @@ def render_slats(fr, t, bg, blades=True):
                 if sgn > 0: face[:, :tr] *= (1 - ramp)[None, :, None]
                 else: face[:, w - tr:] *= (1 - ramp[::-1])[None, :, None]
             a0, a1 = max(0, x0), min(W, x1)
-            if a1 > a0: out[:, a0:a1] = face[:, a0 - x0:a1 - x0]
-        # side face (glass thickness), lit lilac, on the leading side
-        ws = int(round(SW * .15 * sth * S['sc']))
-        if ws >= 1:
+            if a1 > a0: out[:, a0:a1] = face[:, a0 - x0:a1 - x0]; cover[a0:a1] = True
+        # side face (glass thickness) on the leading side: a narrow (<= 12 px) translucent lilac sliver, lit from
+        # the top (100% -> 40%), brighter at the face edge, with a 1 px specular on its outer edge
+        ws = int(round(min(12.0, SW * .15 * sth) * S['sc'] * min(1.0, edge * 1.5)))
+        sa = .5 * edge
+        if ws >= 2 and sa > .03 and w >= 1:
             sx0 = x1 if sgn > 0 else x0 - ws
             if fz is None: fz = frosted(A)
             cols = np.clip(np.arange(sx0, sx0 + ws) + int(S['refr'] * 1.5), 0, W - 1)
-            sd = fz[:, cols].astype(np.float32) * .7 + np.array([120, 100, 235], np.float32) * (.18 + .3 * sth ** 4)
-            gr = np.linspace(1.15, .6, ws, dtype=np.float32) if sgn > 0 else np.linspace(.6, 1.15, ws, dtype=np.float32)
-            sd = sd * gr[None, :, None] + vgrad * 1.5
+            sd = fz[:, cols].astype(np.float32) * .55 + np.array([168, 150, 255], np.float32) * (.45 + .2 * sth ** 2)
+            hz = np.linspace(1.0, .62, ws, dtype=np.float32)
+            if sgn < 0: hz = hz[::-1]
+            vg = side_vgrad()
+            sd = sd * vg * hz[None, :, None]
+            al = (sa * (.55 + .45 * vg))                                             # more glass where it is lit
             b0, b1 = max(0, sx0), min(W, sx0 + ws)
             if b1 > b0:
-                out[:, b0:b1] = out[:, b0:b1] * .2 + sd[:, b0 - sx0:b1 - sx0] * .8
+                seg_ = sd[:, b0 - sx0:b1 - sx0]
+                out[:, b0:b1] = out[:, b0:b1] * (1 - al) + seg_ * al; cover[b0:b1] = True
+                xo = sx0 + ws - 1 if sgn > 0 else sx0                                # outer edge specular
+                if 0 <= xo < W: out[:, xo] += (np.array([250, 246, 255], np.float32) - out[:, xo]) * (.55 * edge * vg[:, 0])
+        if S.get('res') and S['clean'] > .002: cleans.append((i, S['clean']))
         if blades:   # blade of light along the leading edge (strong when edge-on)
-            li = clamp((sth - .82) / .18) ** 1.5 * edge
+            li = clamp((sth - .82) / .18) ** 1.5 * edge * blade_gain
             if li > .02:
                 xe = x1 if sgn > 0 else x0
                 ld.line(((xe / 2, 0), (xe / 2, H / 2)), fill=int(255 * li), width=2)
+    if ao > .02 and cover.any() and not cover.all():
+        # the gaps read as depth, not flat violet strips: contact shadow falling off from both prism edges, and a
+        # cool top-light / dark-floor gradient down the slot
+        from scipy.ndimage import distance_transform_edt
+        d = distance_transform_edt(~cover).astype(np.float32)
+        g = ~cover
+        sh = 1 - .62 * ao * np.exp(-d[g] / 9.0)
+        slot = (.72 + .4 * np.clip(1 - yy / (H * .75), 0, 1) ** 1.5)[:, None, None]
+        slot = 1 + (slot - 1) * ao
+        out[:, g] = out[:, g] * sh[None, :, None] * slot
+    for i, cw in cleans:      # settling prisms dissolve into the clean frame (after all faces / side faces)
+        c0, c1 = int(math.floor(i * SW)), int(math.ceil((i + 1) * SW))
+        out[:, c0:c1] = out[:, c0:c1] * (1 - cw) + A[:, c0:c1].astype(np.float32) * cw
     if blades and lines.getbbox():
         glow = np.asarray(lines.filter(ImageFilter.GaussianBlur(9)), np.float32) * 2.6
         core = np.asarray(lines.filter(ImageFilter.GaussianBlur(.7)), np.float32)
@@ -279,6 +329,20 @@ def sheen(img, k, width=.16, strength=.8):
     a = np.asarray(img.getchannel('A'), np.float32) / 255
     m = Image.fromarray((band * a * 255).astype(np.uint8))
     out = img.copy(); out.alpha_composite(Image.merge('RGBA', [Image.new('L', (w, h), 255)] * 3 + [m])); return out
+
+
+def smear(img, d):
+    """vertical motion blur of an RGBA sprite over a travel of d px (premultiplied box average); returns (img, y offset of
+    its centre) — the blur trails behind the motion (below the logo when it moves up)."""
+    L = int(abs(d)) + 1                                   # continuous box (cumulative sum): no stepping, O(1)/px
+    a = np.asarray(img, np.float32); al = a[..., 3:] / 255; pm = np.concatenate([a[..., :3] * al, al], 2)
+    h = a.shape[0]; c = np.zeros((h + 2 * L + 1, a.shape[1], 4), np.float32)
+    c[L + 1:L + 1 + h] = pm; np.cumsum(c, 0, out=c)
+    acc = (c[L:L + h + L] - c[0:h + L]) / L               # rows 0..h+L-1: each = mean of pm rows (j-L, j]
+    rgb = acc[..., :3] / np.maximum(acc[..., 3:], 1e-4); out = np.dstack([rgb, acc[..., 3:] * 255])
+    im = Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), 'RGBA')
+    # trail: moving up (d < 0) -> the extra L rows sit below; the sharp leading edge stays where the logo is
+    return im, (L / 2 if d < 0 else -L / 2)
 
 
 def burst_maps():
@@ -337,25 +401,28 @@ def sparks(img, t, cx, cy):
 
 
 # ================================================================ captions (own, voice-synced)
-PAGES = [([('THAT\'S', W_THATS), ('WHY', W_WHY)], W_THATS - .04, W_WE - .04),
-         ([('WE', W_WE), ('CREATED', W_CREATED)], W_WE - .04, CONV0 + .1)]
+def _own_pages():
+    """the engine's first two seg-21 caption pages (same words, timings, layout and look), ending at the blade rush
+    instead of overlapping the logo; the 'LUMARC.' page is replaced by the logo itself."""
+    pg = [dict(p, words=[dict(w) for w in p['words']]) for p in E.PAGES if p['seg'] == 21][:2]
+    pg[-1]['z'] = CONV0 + .1
+    return pg
+OWN_PAGES = _own_pages()
 
 
 def captions(ctx, t, y=1420, base=92):
-    for words, a, z in PAGES:
-        if not a <= t < z: continue
-        ims = [E.word_img(w, base, 'white')[0] for w, _ in words]
-        gap = base * .36; widths = []
-        for w, _ in words:
-            l, tp, r, b = E.font(base).getbbox(w); widths.append(r - l)
-        x = W / 2 - (sum(widths) + gap * (len(words) - 1)) / 2
-        for (w, t0), im, ww in zip(words, ims, widths):
-            if t >= t0 - .02:
-                lt = t - t0 + .02; s = .72 + .28 * back(lt / .16)
-                al = clamp(lt / .05) * clamp((z - t) / .06)
-                ctx.add('screen', im if abs(s - 1) < .01 else im.resize((int(im.width * s), int(im.height * s)), Image.BILINEAR),
-                        x + ww / 2, y, alpha=al)
-            x += ww + gap
+    """same look/animation as engine.draw_captions (drawn as screen layers; engine captions are off in s08)."""
+    for p in OWN_PAGES:
+        if not (p['a'] <= t < p['z']): continue
+        for w, sz, cx, cy in E._layout(p, base):
+            if t < w['t0'] - .02: continue
+            lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16)
+            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            img, _ = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')
+            if lt < .05: img = E.fade(img, lt / .05)
+            if p['z'] - t < .06: img = E.fade(img, (p['z'] - t) / .06)
+            if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
+            ctx.add('screen', img, int(W / 2 + cx - img.width / 2), int(y + cy - img.height / 2), center=False)
 
 
 # ================================================================ draw
@@ -403,20 +470,32 @@ def draw(ctx, lt, t):
         return
 
     # ---- logo moment
-    k_res = expo((t - RES0) / (RES1 - RES0 - .02))
-    lx, ly = LCX, lerp(LCY, 252, k_res)
-    lsc = lerp(1.0 + .14 * (1 - expo((t - HIT) / .35)) + .03 * smooth((t - HIT) / .4), 300 / LOGO_W, k_res)
+    k_res = smooth((t - RES0) / (RES1 - RES0))                          # studio light-up (dim / vignette)
+    def logo_at(tt):
+        k = (1 - math.cos(math.pi * clamp((tt - LT0) / (LT1 - LT0)))) / 2   # sine in-out
+        y_ = lerp(LCY, 252, k)
+        s_ = lerp(1.0 + .14 * (1 - expo((tt - HIT) / .35)) + .03 * smooth((tt - HIT) / .4), 300 / LOGO_W, k)
+        return y_, s_, k
+    ly, lsc, k_lg = logo_at(t)
+    lx = LCX
+    vy = (ly - logo_at(t - 1 / 30)[0])                                  # px per frame (for the smear)
 
     def wrap(fr):
         if t < RES0:
             out = space_frame(t, burst=.9 * eout((t - HIT) / .7))
-        else:
-            out = render_slats(fr, t, space_frame(t, burst=.9))
+            if t >= BL0:   # the prisms come back as blades of light (edge-on) before they flip: ramp over 3 frames
+                out = render_slats(fr, t, out, blade_gain=smooth((t - BL0) / (RES0 - BL0 + .01)), edge_on=True)
+        else:   # the gaps between the turning prisms close onto the clean shot (no dark seams on his face)
+            gk = smooth((t - (RES0 + .035)) / .09)
+            if gk >= 1: bg_ = fr
+            else:
+                sp = space_frame(t, burst=.9); bg_ = Image.blend(sp, fr.convert('RGBA'), gk) if gk > 0 else sp
+            out = render_slats(fr, t, bg_, ao=1 - gk)
         sparks(out, t, LCX, LCY)
         out = shock(out, t, LCX, LCY)
         # bloom + logo
         bl = logo_bloom(); bs = lsc
-        ba = (1.0 + 2.0 * (1 - eout((t - HIT) / .45))) * (1 - .6 * k_res)
+        ba = (1.0 + 2.0 * (1 - eout((t - HIT) / .45))) * (1 - .6 * k_lg)
         bim = bl if abs(bs - 1) < .01 else bl.resize((int(bl.width * bs), int(bl.height * bs)), Image.BILINEAR)
         for _ in range(int(ba)): out.alpha_composite(bim, (int(lx - bim.width / 2), int(ly - bim.height / 2)))
         fr_ = ba - int(ba)
@@ -425,7 +504,9 @@ def draw(ctx, lt, t):
         sk = (t - (HIT + .1)) / .32
         if 0 < sk < 1: lg = sheen(lg, sk)
         if abs(lsc - 1) > .01: lg = lg.resize((int(lg.width * lsc), int(lg.height * lsc)), Image.LANCZOS)
-        out.alpha_composite(lg, (int(lx - lg.width / 2), int(ly - lg.height / 2)))
+        oy = 0
+        if abs(vy) > 12: lg, oy = smear(lg, vy * .3)      # directional motion blur (180 deg shutter) trailing the travel
+        out.alpha_composite(lg, (int(lx - lg.width / 2), int(ly - lg.height / 2 + oy)))
         return light_burst(out, t)
 
     if t < RES0:

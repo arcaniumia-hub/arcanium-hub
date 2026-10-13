@@ -5,14 +5,14 @@
        an elegant sentence-case line "You run the business." fades up word by word (a different, quieter typographic
        voice than the rest of the Reel) with a hairline that draws out under "business".
 49.24  CUT (jump) to an extreme close-up (z 1.58, face high in frame). "WE MAKE IT" word-pop captions.
-49.64  SIGNATURE — "IMPOSSIBLE": punch-out (the frame pulls back, he shrinks into depth) while the founder SPLITS into
+49.95  SIGNATURE — "IMPOSSIBLE" (on the stressed "POSS"; "WE MAKE IT" rides the punch-out): punch-out (the frame pulls back, he shrinks into depth) while the founder SPLITS into
        four holographic copies — additive light, luminance-only, #4f6bff left / #9a4dff right, scanlines, edge glow,
        fading out towards the torso — that slide out with ghost trails. The founder and the copies are drawn by this
        section with feathered plate edges (no cardboard-cutout borders).
        Behind them a wall of outlined IMPOSSIBLE rows slams in from alternating sides; the centre row fills with the
        LUMARC gradient — huge type BEHIND him (his head overlaps the letters).
-50.21  "TO" pops in FRONT of him.  50.28 the copies get sucked back into him (accelerating trails)...
-50.52  "IGNORE" slams in front (scale 2.5 -> 1) — additive violet light bloom (not a grey flash), screen shake, short
+50.50  "TO" pops in FRONT of him.  50.45 the copies get sucked back into him (accelerating trails)...
+50.65  "IGNORE" slams in front (on "ig-NORE") (scale 2.5 -> 1) — additive violet light bloom (not a grey flash), screen shake, short
        chromatic burst, echo outlines, punch-in.
        Final poster frame: IMPOSSIBLE (behind) + founder + TO IGNORE (front) = layered depth.
 50.96  whip exit: accelerating push-in + zoom blur into the s11 cut.
@@ -24,13 +24,14 @@ import engine as E
 
 START, END = E.span(26, 27)            # 48.16 – 51.08
 T27 = E.TL[27]['t0']                    # 49.24 jump cut
-# word onsets measured on the voice track (src/voice16k.raw, low/high band envelopes)
-W_YOU, W_RUN, W_THE, W_BUS = 48.22, 48.33, 48.46, 48.51
-W_WE, W_MAKE, W_IT = 49.29, 49.40, 49.52
-W_IMP = 49.62                           # "im-POS" (p-burst 49.67)
-W_TO = 50.21
-W_IGN = 50.52                           # "ignore" onset — THE hit
-COLLAPSE = W_IGN - .24                  # copies start rushing back in
+# word onsets re-measured on the mixed voice (src/tight16k.raw = tight.mov audio, edit timeline; spectrogram +
+# low/high band envelopes — see out/F/polish/spec_s10b.png). The older values (voice16k) ran 0.1–0.3 s early.
+W_YOU, W_RUN, W_THE, W_BUS = 48.22, 48.40, 48.60, 48.72
+W_WE, W_MAKE, W_IT = 49.30, 49.49, 49.65     # "make" k-burst 49.63 -> "it"
+W_IMP = 49.95                           # "im-POSS": p-burst (word onset "im" 49.78)
+W_TO = 50.50                            # t-burst
+W_IGN = 50.65                           # "ig-NORE": stressed syllable (engine word_time 50.66) — THE hit
+COLLAPSE = W_IGN - .20                  # copies start rushing back in (on "-ble to")
 EXIT = END - .12                        # whip out into s11
 
 CUES = [
@@ -134,6 +135,9 @@ def pop_words(ctx, t, words, a, z, y=1450, base=92):
             al = clamp(lt / .05) * clamp((z - t) / .06)
             ctx.add('screen', scale_im(im, s), x + ww / 2, y, alpha=al)
         x += ww + gap
+
+
+WE_MAKE_IT = [('WE', W_WE, 'white'), ('MAKE', W_MAKE, 'white'), ('IT', W_IT, 'white')]
 
 
 # ================================================================ IMPOSSIBLE wall (behind)
@@ -342,7 +346,7 @@ def holo_falloff():
 def clone_offset(t, j):
     """horizontal offset (px) of clone ring j (1 = near, 2 = far) at time t."""
     D = {1: 320, 2: 590}[j]
-    k = expo((t - (W_IMP + .04 * (j - 1))) / .34)
+    k = expo((t - (W_IMP + .04 * (j - 1))) / .30)
     d = D * k + (14 * j) * max(0.0, t - W_IMP - .3)
     if t > COLLAPSE:
         d *= 1 - clamp((t - COLLAPSE) / (W_IGN - COLLAPSE)) ** 1.8
@@ -494,7 +498,7 @@ def draw(ctx, lt, t):
         ctx.cam = dict(z=1.58 + .05 * k, x=540., y=640., dx=0., dy=0., rot=0.)
         ctx.bg_dim = .3; ctx.bg_img = C('bg4', lambda: bg_plate(4))
         ctx.post['vignette'] = .42
-        pop_words(ctx, t, [('WE', W_WE, 'white'), ('MAKE', W_MAKE, 'white'), ('IT', W_IT, 'white')], T27, W_IMP - .05, y=1470)
+        pop_words(ctx, t, WE_MAKE_IT, T27, W_IMP + .01, y=1470)
         return
 
     # ---------------- IMPOSSIBLE: pull back, split, wall
@@ -513,6 +517,8 @@ def draw(ctx, lt, t):
     draw_clones(ctx, t, s_av)
     add_founder(ctx, t, s_av)
     draw_front(ctx, t)
+    if t < W_IMP + .01:                                        # "WE MAKE IT" rides the punch-out, fades into the slam
+        pop_words(ctx, t, WE_MAKE_IT, T27, W_IMP + .01, y=1470)
 
     P = ctx.post
     P['vignette'] = .5

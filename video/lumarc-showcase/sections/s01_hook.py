@@ -5,11 +5,17 @@ Beats (timeline seconds, measured on the voice track, not the syllable estimate)
         a diagonal light sweep crosses the studio wall.
   0.70  "TWO": cut wide (avatar lowered/scaled = new camera), a giant extruded gradient "2" slams in BEHIND him (impact).
   1.66  "YOU'LL DECIDE": cut tight on the face; the "2" recedes behind him.
-  2.38  "THIS VIDEO": a LUMARC framing reticle (gradient hairline corners, live FRAME 01 timecode, logo) snaps on.
+  2.20  "IF THIS VIDEO": a LUMARC framing reticle (gradient hairline corners, live FRAME 01 timecode, logo) snaps on.
   3.47  "YOUR TIME": whip to a left-weighted framing; a frosted stopwatch card pops in on the right (lands on "TIME").
   4.04  TL[1] silent hold = COUNTDOWN: studio dims, camera creeps in on his eyes, a dial ring around his face depletes,
         precise tabular 2.00 -> 0.00 in a glass panel, accelerating clock ticks, pressure builds (rgb/zoom-blur) into 6.04.
 Handoff: s02 owns the 6.04 hit (flash + glitch + RGB) and starts tight on the face.
+
+Captions: the engine's syllable/island alignment runs .1-.3 s off in this take (the /t/ closure in "next two" is read
+as a pause), so s01 draws the SAME caption pages with the SAME look (engine word_img / _layout / pop) on onsets measured
+by hand from the voice spectrum (10 ms hops: plosive bursts, sibilance, vowel onsets), with every page break on a cut.
+Bottom notch: the keyed plate has no alpha below row ~1665 outside x 182-900, so each framing lowers the avatar just
+enough that row 1665 sits below the frame (constant per beat = part of the multicam framing, never drifts).
 """
 import math
 import numpy as np
@@ -17,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFilter
 import engine as E
 
 START, END = E.span(0, 1)
-T_TWO, T_SEC, T_YOU, T_THIS, T_IS, T_YOUR, T_TIME = 0.70, 0.91, 1.66, 2.38, 2.99, 3.47, 3.62
+T_TWO, T_SEC, T_YOU, T_THIS, T_IS, T_YOUR, T_TIME = 0.70, 0.89, 1.66, 2.20, 2.93, 3.47, 3.60
 T_CD = E.TL[1]['t0']            # 4.04
 T_HIT = END                      # 6.04
 TICKS = [4.04, 4.54, 5.00, 5.40, 5.70, 5.90]
@@ -249,12 +255,52 @@ def draw(ctx, lt, t):
     P = ctx.post
     ctx.light = 0.0
     if t < T_CD:
-        _speech(ctx, t, P)
+        _speech(ctx, t, P); _captions(ctx, t)
     else:
         _countdown(ctx, t, P)
     P['flash'] = 0.0                       # every flash in this section is real light (light_hit), never a grey mix
-    if ctx.light > .01:
+    if ctx.light > .035 and ctx.wrap is None:     # below ~.035 the lift is invisible; skip the full-frame pass
         k = min(.5, ctx.light); ctx.wrap = lambda fr: light_hit(fr, k)
+
+# measured word onsets (s) for the hook captions; pages switch exactly on the cuts
+CAP = [(0.06, T_TWO, [('IN', .08, 0), ('THE', .24, 0), ('NEXT', .45, 0)]),
+       (T_TWO, T_YOU, [('TWO', T_TWO, 1), ('SECONDS,', .89, 1)]),
+       (T_YOU, T_THIS, [("YOU'LL", T_YOU, 0), ('DECIDE', 1.82, 0)]),
+       (T_THIS, T_IS, [('IF', T_THIS, 0), ('THIS', 2.33, 0), ('VIDEO', 2.54, 0)]),
+       (T_IS, T_YOUR, [('IS', T_IS, 0), ('WORTH', 3.09, 0)]),
+       (T_YOUR, T_CD, [('YOUR', T_YOUR, 0), ('TIME.', T_TIME, 1)])]
+def _pages():
+    def mk():
+        out = []
+        for a, z, ws in CAP:
+            words = [dict(text=w, emph=bool(e), t0=t0) for w, t0, e in ws]
+            for i, w in enumerate(words): w['t1'] = words[i + 1]['t0'] if i + 1 < len(words) else min(z, w['t0'] + .45)
+            out.append(dict(a=a, z=z, words=words, layout=E._layout(dict(words=words), 92)))
+        return out
+    return E.cached('a_cap_pages', mk)
+
+def _captions(ctx, t):
+    """engine-identical word-pop captions on the measured onsets (drawn as the last screen layers = same z-order)."""
+    ctx.captions = False
+    for p in _pages():
+        if not (p['a'] <= t < p['z']): continue
+        last = p['z'] >= T_CD - .001
+        for w, sz, cx, cy in p['layout']:
+            if t < w['t0'] - .02: continue
+            lt = t - w['t0'] + .02; s = .72 + .28 * E.back(lt / .16)
+            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            img = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')[0]
+            a = clamp(lt / .05)
+            if last: a *= clamp((T_CD - .02 - t) / .08)          # the final page dissolves into the countdown cut
+            if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
+            ctx.add('screen', img, W / 2 + cx, ctx.cap_y + cy, alpha=a)
+
+PLATE_FLOOR = 1665          # last plate row with full-width alpha
+def _floor(ctx, zmin):
+    """lower the avatar so plate row PLATE_FLOOR lands below the frame at the beat's widest zoom (zmin)."""
+    c = ctx.cam; Y = c['y'] + c['dy']
+    need = c['y'] + (H - Y) / zmin - PLATE_FLOOR + 4
+    ctx.avatar['y'] = max(ctx.avatar['y'], need)
 
 def _speech(ctx, t, P):
     cam = ctx.cam
@@ -273,11 +319,12 @@ def _speech(ctx, t, P):
         k = 1 - (1 - clamp(t / .42)) ** 4
         z = lerp(1.70, 1.20, k) + .03 * clamp((t - .42) / .28)
         cam.update(z=z, x=518, y=760, dx=22, dy=0, rot=lerp(-.035, 0, k))
+        _floor(ctx, 1.20)
     elif t < T_YOU:                             # B: wide + the giant 2 behind him
         lt = t - T_TWO
         z = 1.0 + .05 * lt / (T_YOU - T_TWO) + .06 * math.exp(-lt / .09)
         cam.update(z=z, x=540, y=820, dx=0, dy=0, rot=0)
-        ctx.avatar.update(s=1.0, y=150)
+        ctx.avatar.update(s=1.0, y=0); _floor(ctx, 1.0)
         ctx.bg_dim = .45 * eout(lt / .15)
         _two(ctx, lt, 1.0, (540, 610))
         ctx.light = max(ctx.light, .38 * math.exp(-lt / .06))
@@ -293,9 +340,9 @@ def _speech(ctx, t, P):
     elif t < T_YOUR:                            # D: "this video" — viewfinder
         lt = t - T_THIS
         z = 1.12 + .05 * lt / (T_YOUR - T_THIS)
-        cam.update(z=z, x=540, y=820, dx=0, dy=0, rot=0)
+        cam.update(z=z, x=540, y=820, dx=0, dy=0, rot=0); _floor(ctx, 1.12)
         if lt < T_IS - T_THIS + .25:
-            k = eout(lt / .22); out = clamp((lt - (T_IS - T_THIS)) / .2)
+            k = eout((lt + .034) / .22); out = clamp((lt - (T_IS - T_THIS)) / .2)
             b = reticle(); s = lerp(1.07, 1.0, k) + .04 * E.ein(out)
             bi = b if abs(s - 1) < .002 else b.resize((int(b.width * s), int(b.height * s)), Image.BILINEAR)
             cy = (RY0 + RY1) / 2; ctx.add('screen', bi, W / 2, H / 2 + (cy - H / 2) * s, alpha=k * (1 - out))
@@ -307,7 +354,7 @@ def _speech(ctx, t, P):
         lt = t - T_YOUR
         k = expo(lt / .16)
         z = lerp(1.12 + .05, 1.24, k) + .03 * clamp(lt / .57)
-        cam.update(z=z, x=540, y=820, dx=lerp(0, -112, k), dy=0, rot=0)
+        cam.update(z=z, x=540, y=820, dx=lerp(0, -112, k), dy=0, rot=0); _floor(ctx, 1.17)
         if lt < .16: P['zoom_blur'] = max(P['zoom_blur'], .7 * (1 - lt / .16))
         lc = t - (T_TIME - .14)
         if lc > 0:
@@ -324,8 +371,6 @@ def _speech(ctx, t, P):
             shi = sh if abs(s * s2 - 1) < .01 else sh.resize((int(sh.width * s * s2), int(sh.height * s * s2)), Image.BILINEAR)
             ctx.add('screen', shi, cx, cy + 16 * s * s2, alpha=clamp(lc / .08) * .9)
             ctx.add('screen', ci, cx, cy, glass=14, alpha=clamp(lc / .08))
-        # caption fades out into the cut
-        if t > T_CD - .05: ctx.captions = False
 
 def _two(ctx, lt, alpha, pos, extra_s=0.0):
     im, m = big_two()
@@ -342,15 +387,37 @@ def _two(ctx, lt, alpha, pos, extra_s=0.0):
         band = np.asarray(Image.fromarray((band * 255).astype(np.uint8)).resize(sz, Image.BILINEAR), np.float32) / 255.
         a = (band * mm * .55 * 255).astype(np.uint8)
         hl = Image.new('RGBA', sz, (255, 255, 255, 0)); hl.putalpha(Image.fromarray(a)); img = img.copy(); img.alpha_composite(hl)
-    ctx.add('behind', img, pos[0] + 6, pos[1] + lerp(-60, 0, k), alpha=alpha * clamp(lt / .05))
+    ctx.add('behind', img, pos[0] + 6, pos[1] + lerp(-60, 0, k), alpha=alpha * clamp((lt + .034) / .06))       # already there on the cut frame
+
+def _hit_frame(ctx, t, P):
+    """the last frame before 6.04 (6.033) already carries TL[2]'s plate pose -> it IS the hit: render s02's opening
+    frame (same framing, phone-screen wrap, peak light + glitch + RGB) with '0.00' slammed in the brand gradient on top.
+    s02 decays from here on 6.067, so jump + framing change + flash + impact cue all land on one frame."""
+    from sections import s02_instagram as S2
+    S2.draw(ctx, t - S2.START, t)
+    ctx.captions = False
+    P['glitch'] = 1.0; P['rgb'] = 20
+    pw, ph = 760, 330
+    panel = cd_panel_base(pw, ph).copy()
+    dg = grad_fill(digits('0.00', 214, 600, track=-2))
+    panel.alpha_composite(dg, (pw // 2 - dg.width // 2, 4))
+    sec = E.cached('a_seclab', lambda: text_tracked('SECONDS', 34, 600, (200, 198, 222), 8))
+    panel.alpha_composite(sec, (pw // 2 - sec.width // 2, ph - 76))
+    sc = 1.10; pi = panel.resize((int(pw * sc), int(ph * sc)), Image.BILINEAR)
+    ctx.add('screen', pi, W / 2, 1462, glass=18, alpha=.85)
 
 def _countdown(ctx, t, P):
+    if t > T_HIT - 1 / E.FPS + 1e-4:
+        return _hit_frame(ctx, t, P)
     lt = t - T_CD; dur = T_HIT - T_CD; p = clamp(lt / dur)
     rem = max(0.0, T_HIT - t)
     ctx.captions = False
     # studio dims, he is lit a touch lower, tension vignette
-    ctx.bg_dim = .30 + .32 * eout(lt / .5)
-    ctx.bg_blur = 3 * eout(lt / .6)
+    if lt < .6:
+        ctx.bg_dim = .30 + .32 * eout(lt / .5)
+        ctx.bg_blur = 3 * eout(lt / .6)
+    else:                                    # settled: the dimmed, softened studio is static -> bake it once
+        ctx.bg_img = E.cached('a_cd_bg', lambda: Image.blend(E.studio().filter(ImageFilter.GaussianBlur(3)), Image.new('RGB', (W, H)), .62))
     ctx.avatar['bright'] = .9
     P['vignette'] = .5 + .2 * p; P['sat'] = .9
     # tick pulses

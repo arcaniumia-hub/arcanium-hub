@@ -304,6 +304,17 @@ def cam6(t):    # low, founder bottom-right — headroom for the flyer
     lt = t - T6; z = 1.33 + .05 * smooth(lt / 1.84); return dict(z=z, x=540., y=820., dx=(z - 1) * 540 * .98, dy=(z - 1) * 820 * .55, rot=0.)
 
 
+def seg_of(t):
+    return max(i for i in (3, 4, 5, 6) if t >= E.TL[i]['t0'])
+
+
+def stale_caption(t):
+    """True while an engine caption page of an EARLIER segment is still on screen (pages outlive the cut by a few
+    frames): showing it would be a ghost of the last shot's words inside the new framing."""
+    sg = seg_of(t)
+    return any(p['a'] <= t < p['z'] and p['seg'] < sg for p in E.PAGES)
+
+
 def grade(t):
     """(sat, bright) — every bad card drains the world."""
     sat = 1.0; br = 1.0
@@ -313,11 +324,14 @@ def grade(t):
 
 
 def wrap_grade(sat, br, tint=(.97, .99, 1.04)):
-    m = np.array(tint, np.float32) * br
+    """desaturate towards the channel mean, then cool tint x brightness — in PIL C (blend + LUT), ~20 ms instead of
+    ~200 ms of float numpy; matches the numpy version within 1–2 levels."""
+    lut = [min(255, int(v * m * br)) for m in tint for v in range(256)]
     def f(fr):
-        a = np.asarray(fr.convert('RGB'), np.float32)
-        g = a.mean(2, keepdims=True); a = (g + (a - g) * sat) * m
-        return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).convert('RGBA')
+        rgb = fr.convert('RGB')
+        if abs(sat - 1) > 1e-3:
+            rgb = Image.blend(rgb.convert('L', matrix=(1 / 3, 1 / 3, 1 / 3, 0)).convert('RGB'), rgb, sat)
+        return rgb.point(lut).convert('RGBA')
     return f
 
 
@@ -370,10 +384,12 @@ def draw(ctx, lt, t):
         return
 
     # TL4..6: the page wall stays behind him, out of focus (multicam = camera framings, see cam4..6)
+    if stale_caption(t): ctx.captions = False
     holes = tuple(i for i, tt in ((0, T4 + .04), (2, T5 + .03)) if t >= tt)
     if t < T5:
         ctx.cam = cam4(t)
-        ctx.bg_img = page_view(holes, 7 * eout((t - T4 - .05) / .45)); ctx.bg_dim = .25 * eout((t - T4) / .4)
+        # the new angle is already defocused on the cut frame (no sharp, enlarged header peeking around his head)
+        ctx.bg_img = page_view(holes, 5.5 + 1.5 * eout((t - T4) / .35)); ctx.bg_dim = .16 + .09 * eout((t - T4) / .4)
     elif t < T6:
         ctx.cam = cam5(t)
         ctx.bg_img = page_view(holes, 7); ctx.bg_dim = .3

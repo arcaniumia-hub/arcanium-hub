@@ -16,7 +16,8 @@ import engine as E
 START, END = E.span(7, 9)                     # 14.44 – 18.00
 T7, T8, T9 = (E.TL[i]['t0'] for i in (7, 8, 9))
 # onsets measured on the voice track
-W_GREAT, W_BUSINESS, W_THINK_END, W_NEXT = 15.30, 15.66, 16.70, 17.51
+W_GREAT, W_BUSINESS, W_THINK_END, W_NEXT = 15.34, 15.66, 16.70, 17.51   # 'think' runs to ~15.33 (k merges into g)
+TYPE_ON = W_GREAT - .06                       # big type takes over from the engine caption on the 15.30 frame
 STRIKE0, STRIKE1 = 15.80, 15.98
 SW0, SW1 = 17.49, 17.84                       # swipe
 
@@ -41,14 +42,22 @@ CLEAN_CAM = dict(z=1.12, x=540., y=820., dx=0., dy=0., rot=0.)
 CLEAN_AV = dict(show=True, s=1.0, x=0., y=0., alpha=1.0, copies=[], bright=1.0)
 
 
+def stale_caption(t):
+    """True while an engine caption page of an EARLIER segment outlives the cut (would ghost into the new framing)."""
+    sg = max(i for i in (7, 8, 9) if t >= E.TL[i]['t0'])
+    return any(p['a'] <= t < p['z'] and p['seg'] < sg for p in E.PAGES)
+
+
 def o2w(cam, ox, oy):
     return cam['x'] + (ox - cam['x'] - cam['dx']) / cam['z'], cam['y'] + (oy - cam['y'] - cam['dy']) / cam['z']
 
 
 def graded(fr, sat, br, tint=(.97, .99, 1.04)):
-    a = np.asarray(fr.convert('RGB'), np.float32); g = a.mean(2, keepdims=True)
-    a = (g + (a - g) * sat) * (np.array(tint, np.float32) * br)
-    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    """desaturate towards the channel mean, then tint x brightness (PIL blend + LUT: ~20 ms vs ~200 ms in numpy)."""
+    rgb = fr.convert('RGB')
+    if abs(sat - 1) > 1e-3:
+        rgb = Image.blend(rgb.convert('L', matrix=(1 / 3, 1 / 3, 1 / 3, 0)).convert('RGB'), rgb, sat)
+    return rgb.point([min(255, int(v * m * br)) for m in tint for v in range(256)])
 
 
 # ---------------------------------------------------------------- type art
@@ -191,6 +200,30 @@ def card_of(fr, sc, radius, vblur):
     return fr
 
 
+# ---------------------------------------------------------------- TL8 tension state + frozen outgoing post
+def tense(t):
+    """(cam, bg_dim, sat, br) of the TL8 close-up at t."""
+    u = (t - T8) / (T9 - T8 + .1)
+    cam = dict(z=1.42 + .2 * clamp(u) ** 1.3, x=540., y=700., dx=0., dy=0., rot=0.)
+    return cam, .35 + .4 * smooth((t - T8) / .9), .5, .84 - .06 * smooth((t - T8) / 1.0)
+
+
+TF = (math.ceil(T9 * E.FPS - 1e-6) - 1) / E.FPS     # last TL8 frame (17.4333)
+
+
+def frozen_out():
+    """the graded TL8 world at TF, rebuilt exactly like the engine composes it (studio dimmed -> avatar -> camera),
+    with its own one-frame avatar read (deterministic, cached)."""
+    def mk():
+        cam, dim, sat, br = tense(TF)
+        av = E.Avatar(TF); a = av.frame(TF); av.r.close()
+        world = Image.blend(E.studio(), Image.new('RGB', (W, H), (0, 0, 0)), dim).convert('RGBA')
+        world.alpha_composite(a)
+        fr = E.zoom(world.convert('RGB'), cam['z'], (cam['x'], cam['y']))
+        return graded(fr, sat, br)
+    return E.cached('s04_frozen', mk)
+
+
 # ---------------------------------------------------------------- draw
 def draw(ctx, lt, t):
     if t < T8:
@@ -206,7 +239,7 @@ def draw(ctx, lt, t):
             cam['dx'] += 10 * k * math.sin((t - STRIKE1) * 90); cam['dy'] += 5 * k
         G = type_img('GREAT', 190, 300, 22, 'white'); Gg = type_img('GREAT', 190, 300, 22, 'grey')
         B = type_img('BUSINESS.', 124, 900, 4, 'grad'); Bg = type_img('BUSINESS.', 124, 900, 4, 'grey')
-        for img, img_g, oy, t0 in ((G, Gg, GY, W_GREAT - .04), (B, Bg, BY, W_BUSINESS - .04)):
+        for img, img_g, oy, t0 in ((G, Gg, GY, TYPE_ON), (B, Bg, BY, W_BUSINESS - .04)):
             k = (t - t0) / .32
             if k <= 0: continue
             if struck > 0: img = Image.blend(img, img_g, struck) if struck < 1 else img_g
@@ -218,17 +251,15 @@ def draw(ctx, lt, t):
             sk = 1 - (1 - clamp((t - STRIKE0) / (STRIKE1 - STRIKE0))) ** 2      # pen hits fast, eases into the end
             sink = 10 * eout((t - STRIKE1) / .3) if t > STRIKE1 else 0
             ctx.add('screen', scribble(sk), 540, 450 + sink)
-        if 15.21 <= t: ctx.captions = False          # the big type IS the caption for "great business"
+        if t >= TYPE_ON or stale_caption(t): ctx.captions = False   # the big type IS the caption for "great business"
         ctx.wrap = lambda fr: graded(fr, sat, br).convert('RGBA')
         ctx.post['vignette'] = .5
         return
 
     # ---------------- TL8 / TL9: tension close-up
-    u = (t - T8) / (T9 - T8 + .1)
-    cam = dict(z=1.42 + .2 * E._th.clamp(u) ** 1.3, x=540., y=700., dx=0., dy=0., rot=0.)
+    cam, ctx.bg_dim, sat, br = tense(t)
     ctx.cam = cam
-    ctx.bg_dim = .35 + .4 * smooth((t - T8) / .9)
-    sat, br = .5, .84 - .06 * smooth((t - T8) / 1.0)
+    if stale_caption(t): ctx.captions = False       # TL7's 'GREAT BUSINESS.' page outlives the cut by 2 frames
     ctx.post['vignette'] = .55 + .15 * smooth((t - T8) / 1.0)
     bl = None
     if t >= W_THINK_END:   # typing bubble during the silence
@@ -248,8 +279,12 @@ def draw(ctx, lt, t):
     bump = math.sin(math.pi * clamp((t - SW0 + .04) / (SW1 - SW0 + .08)))
     sc = 1 - .075 * bump; rad = 64 * bump; gap = 46
 
+    # the outgoing post HOLDS the last TL8 frame: the plate's jump cut at T9 (17.44) would otherwise pop inside the
+    # unchanged close-up for the frames before the flick. The world is not composed at all (ctx.full).
+    ctx.full = frozen_out()
+
     def wrap(fr):
-        out_fr = graded(fr, sat, br)
+        out_fr = fr.convert('RGB')
         if bl is not None:      # the typing bubble rides away with the outgoing post
             out_fr = out_fr.convert('RGBA'); E._paste(out_fr, dict(img=bl, xy=(BUB[0] - bl.width // 2, BUB[1] - bl.height // 2), glass=14))
         if t < SW0 - .001:

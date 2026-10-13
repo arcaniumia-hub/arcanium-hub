@@ -1,7 +1,8 @@
 """s12 — "LUMARC. Be seen. Be remembered." + end card (54.36–58.84)
 
 54.36  CUT (punch-in, z 1.03 -> 1.14) on the founder in front of his finished page (the s11 world rebuilt, frozen grid,
-       feathered plate). Within 0.2 s the frame goes behind brand glass: a heavy (~45 px) blur graded into a
+       feathered plate) — one clean frame, then the frame goes behind brand glass (blur radius ramps with k: 54.40 is
+       already a heavy blur, 54.43 full): a heavy (~45 px) blur graded into a
        deep-violet duotone with crushed blacks and a strong vignette — no stray food colours, just LUMARC light.
 54.38  The 8 logo slices fly in from above/below on light trails with a bright glow edge, converging exactly on
 54.58  "LUMARC" (measured stress): slam with a scale punch, additive violet bloom centred on the logo (no grey flash),
@@ -27,7 +28,7 @@ T31, T32 = E.TL[31]['t0'], E.TL[32]['t0']   # 55.08, 55.80 (hidden behind the gl
 HIT = 54.58                             # "lu-MARC" stress (onset 54.46)
 ASM = .16                                # slice assembly duration (lands on HIT)
 W_BE1, W_SEEN = 55.14, 55.22
-W_BE2, W_REM = 55.88, 55.94
+W_BE2, W_REM = 55.88, 55.98            # "remembered" onset re-measured on tight16k (was 55.94)
 SHIM = 56.10
 GONE0, GONE1 = 56.30, round(E.VOICE_END - .04, 2)   # founder dissolves with his last word
 PILL = 56.86
@@ -144,19 +145,22 @@ def grade_maps():
 
 
 def frost(fr, k):
-    """heavy blur + deep-violet duotone (crushed blacks, strong vignette). k 0..1 = glass rising."""
-    if k <= 0: return fr
-    small = fr.convert('RGB').resize((W // 8, H // 8), Image.BILINEAR).filter(ImageFilter.GaussianBlur(9))
+    """heavy blur + deep-violet duotone (crushed blacks, strong vignette). k 0..1 = glass rising.
+    The blur RADIUS ramps with k (computed at 1/8 res: k .5 is already a ~35 px blur) and the duotone is graded on
+    that blurred image, so a partial frame is never a dim violet veil over a still-legible picture."""
+    if k <= .05: return fr
+    ke = eout(k)
+    small = fr.convert('RGB').resize((W // 8, H // 8), Image.BILINEAR)
+    small = small.filter(ImageFilter.GaussianBlur(9 * (.35 + .65 * ke)))
     a = np.asarray(small, np.float32) / 255
     L = a[..., 0] * .3 + a[..., 1] * .59 + a[..., 2] * .11
     L = np.clip((L - .05) * 1.25, 0, 1) ** 1.35
     c0 = np.array([12, 11, 20], np.float32); c1 = np.array([40, 28, 98], np.float32); c2 = np.array([118, 96, 226], np.float32)
     col = c0 + (c1 - c0) * np.clip(L * 2.4, 0, 1)[..., None] + (c2 - c1) * (np.clip(L * 2.4 - 1, 0, 1) * .55)[..., None]
     col *= grade_maps()[..., None]
-    g = Image.fromarray(np.clip(col, 0, 255).astype(np.uint8)).resize((W, H), Image.BICUBIC).convert('RGBA')
-    if k >= 1: return g
-    soft = fr.convert('RGB').filter(ImageFilter.BoxBlur(int(2 + 18 * k))).convert('RGBA')
-    return Image.blend(soft, g, eout(k))
+    if k < 1:   # grade in with k — on the already-blurred image (no sharp layer underneath)
+        col = a * 255 + (col - a * 255) * ke
+    return Image.fromarray(np.clip(col, 0, 255).astype(np.uint8)).resize((W, H), Image.BICUBIC).convert('RGBA')
 
 
 # ================================================================ logo
@@ -205,6 +209,15 @@ def hit_field():
     return C('hitf', mk)
 
 
+def soft_sides(im, frac=.3):
+    """feather a slice's glow at its left/right cut edges (no hard-edged light columns while the slices fly)."""
+    w = im.width; f = max(2.0, w * frac)
+    x = np.arange(w, dtype=np.float32)
+    ramp = np.clip(np.minimum(x + .5, w - .5 - x) / f, 0, 1); ramp = ramp * ramp * (3 - 2 * ramp)
+    a = np.asarray(im.getchannel('A'), np.float32) * ramp[None, :]
+    out = im.copy(); out.putalpha(Image.fromarray(a.astype(np.uint8))); return out
+
+
 def slices_onto(out, t, cx, cy, s):
     """during the assembly: 8 slices converge on light trails with a bright glow edge; returns True if drawn."""
     k = (t - (HIT - ASM)) / ASM
@@ -214,7 +227,7 @@ def slices_onto(out, t, cx, cy, s):
     def off(i, kk): return (1 if i % 2 == 0 else -1) * (300 + 220 * hrand(i, 9)) * (1 - ein(kk) if kk < 1 else 0) ** 1.0
     for i in range(N):
         a0, a1 = int(i * sw), int((i + 1) * sw)
-        piece = lg.crop((a0, 0, a1, lg.height)); gpiece = gl.crop((a0 + gp, 0, a1 + gp, gl.height))
+        piece = lg.crop((a0, 0, a1, lg.height)); gpiece = soft_sides(gl.crop((a0 + gp, 0, a1 + gp, gl.height)))
         o = off(i, k)
         # light trail: glow copies at earlier positions (streak towards where the slice came from)
         for g in range(5, 0, -1):
@@ -371,7 +384,7 @@ def draw(ctx, lt, t):
     else:
         ctx.full = space(); gone = 1.0
 
-    k_frost = (t - (START + .01)) / .12
+    k_frost = clamp((t - (START + .005)) / .06)   # 54.367 clean punch-in, 54.40 ~.6 (heavy blur), 54.433 full glass
 
     def wrap(fr):
         if t < GONE1:

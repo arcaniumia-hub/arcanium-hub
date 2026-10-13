@@ -1,14 +1,14 @@
 """s11 — "Comment 'LUMARC', and we'll show you what your page could look like." (51.08–54.36)
 
-51.08  CUT to a medium shot; "COMMENT" pops big while a dark frosted Instagram comment row rises into the lower third
+51.08  CUT to a medium shot (lands s10's whip: decelerating zoom-through); "COMMENT" pops big while a dark frosted Instagram comment row rises into the lower third
        (gradient story-ring avatar, handle 'you · now', 'Reply').
 51.65  "LUMARC": the comment types itself letter by letter (gradient text, caret), small punch-in on the word.
 52.08  the heart fills red with a pop + spark burst (and a '1 like' appears).
 52.32  CUT (jump) — the founder steps back into depth in front of HIS PAGE: a frosted profile card (story-ring avatar,
        'yourbrand', posts / followers / following) with a 3×3 grid of loading skeletons ("we'll show you").
-52.90  "what your page": the 9 posts fly in tile by tile (diagonal wave, scale-down + light kiss on landing) from
+53.03  "what your page": the 9 posts fly in tile by tile (diagonal wave, scale-down + light kiss on landing) from
        LUMARC's premium work; carousel / Reel badges; followers count up.
-53.85  "like": a light sweep shimmers across the finished grid. Handoff to s12 (54.36): s12 rebuilds this exact frame.
+54.00  "like": a light sweep shimmers across the finished grid (done by 54.33). Handoff to s12 (54.36): s12 rebuilds this exact frame.
 """
 import math
 import subprocess
@@ -18,16 +18,17 @@ import engine as E
 
 START, END = E.span(28, 29)            # 51.08 – 54.36
 T29 = E.TL[29]['t0']                    # 52.32 jump cut
-# word onsets measured on the voice track (src/voice16k.raw)
-W_COMMENT = 51.12
+# word onsets measured on the mixed voice (src/tight16k.raw = tight.mov audio, edit timeline; spectrograms in
+# out/F/polish/spec_b.png, spec_c.png). TL29 was re-measured: the older voice16k values ran 0.1–0.26 s early.
+W_COMMENT = 51.14                       # k-burst 51.16
 W_LUMARC = 51.65
 TYPE0, TYPE_DT = 51.66, .052            # L-U-M-A-R-C (done 51.92)
 HEART = 52.08
-W_AND, W_WELL, W_SHOW, W_YOU = 52.40, 52.52, 52.62, 52.84
-W_WHAT, W_YOUR, W_PAGE = 52.90, 53.06, 53.20
-W_COULD, W_LOOK, W_LIKE = 53.46, 53.70, 53.84
-TILE0, TILE_DT = 52.92, .085            # 9 tiles: 52.92 … 53.60
-SWEEP = 53.86
+W_AND, W_WELL, W_SHOW, W_YOU = 52.40, 52.50, 52.59, 52.87      # "show": sh-noise 52.59–52.72
+W_WHAT, W_YOUR, W_PAGE = 53.02, 53.19, 53.39                      # "page": p-burst 53.39
+W_COULD, W_LOOK, W_LIKE = 53.72, 53.80, 54.00                     # "could" k-burst 53.72
+TILE0, TILE_DT = 53.03, .08             # 9 tiles on "what your page": 53.03 … 53.67
+SWEEP, SWEEP_D = 54.00, .33             # light sweep on "like" — done before the 54.36 cut (s12 rebuilds a clean grid)
 
 TILE_ORDER = [0, 1, 3, 2, 4, 6, 5, 7, 8]   # diagonal wave (index = grid cell, row-major)
 
@@ -138,7 +139,7 @@ def lumarc_text():
 def draw_comment(ctx, t):
     k_in = expo((t - (W_COMMENT - .04)) / .45)
     if k_in <= 0: return
-    out = clamp((T29 - .02 - t) / .1)
+    out = 1.0                                   # hard cut at T29 (no 2-frame ghost fade before the cut)
     card = comment_card().copy()
     # typed text
     g, xs = lumarc_text()
@@ -194,7 +195,7 @@ def draw_comment_word(ctx, t):
     lt = t - W_COMMENT + .02
     s = (.72 + .28 * back(lt / .18)) * (1.05 if .05 < lt < .3 else 1)
     im = E.word_img('COMMENT', 124, 'white')[0]
-    ctx.add('screen', scale_im(im, s), W / 2, 1128, alpha=clamp(lt / .05) * clamp((T29 - .02 - t) / .08))
+    ctx.add('screen', scale_im(im, s), W / 2, 1128, alpha=clamp(lt / .05))
 
 
 # ================================================================ profile page (TL29)
@@ -324,7 +325,11 @@ def page_layers(ctx, t, intro=True):
     k_card = expo((t - (T29 - .02)) / .4) if intro else 1
     cy = 220 + PC_H / 2 + 80 * (1 - k_card)
     al = clamp(k_card * 1.4)
-    ctx.add('behind', profile_card(), W / 2, cy, glass=18, alpha=al)
+    if k_card >= 1 and al >= 1:        # settled: the frosted region is static -> baked into the background once
+        ctx.bg_img = C(('bg_frosted', int(round(cy))), lambda: _frost_bake(ctx.bg_img, cy))
+        ctx.add('behind', profile_card(), W / 2, cy)
+    else:
+        ctx.add('behind', profile_card(), W / 2, cy, glass=18, alpha=al)
     # live stats
     oy = cy - PC_H / 2
     for j, v in enumerate(stat_vals(t)):
@@ -354,7 +359,7 @@ def page_layers(ctx, t, intro=True):
             im = im.copy(); im.alpha_composite(E.fade(fl, .45 * (1 - lt / .16)))
         ctx.add('behind', scale_im(im, s), x, y, alpha=clamp(lt / .035) * al)     # opaque after 1 frame — no ghosting
     # final shimmer sweep across the finished grid
-    ks = (t - SWEEP) / .5
+    ks = (t - SWEEP) / SWEEP_D
     if 0 < ks < 1:
         gw = 3 * TS + 2 * GAP
         band = sweep_band(ks, gw, gw)
@@ -364,6 +369,15 @@ def page_layers(ctx, t, intro=True):
     # dark halo behind the founder (separates him from the page)
     halo = C('halo', lambda: _halo())
     ctx.add('behind', halo, W / 2, 1300, alpha=.85 * al)
+
+
+def _frost_bake(bg, cy):
+    """bg with the profile card's glass blur applied exactly as the engine's _paste(glass=18) would."""
+    card = profile_card(); x, y = int(round(W / 2 - card.width / 2)), int(round(cy - card.height / 2))
+    out = bg.copy().convert('RGB'); x0, y0 = max(0, x), max(0, y); x1, y1 = min(W, x + card.width), min(H, y + card.height)
+    region = out.crop((x0, y0, x1, y1)).filter(ImageFilter.GaussianBlur(18))
+    m = card.getchannel('A').crop((x0 - x, y0 - y, x1 - x, y1 - y)).point(lambda v: 255 if v > 8 else 0)
+    out.paste(region, (x0, y0), m); return out
 
 
 def _grid_mask():
@@ -382,23 +396,29 @@ def _halo():
 
 # ================================================================ captions (own, voice-synced)
 CAP_PAGES = [
-    ([('AND', W_AND, 'white'), ("WE'LL", W_WELL, 'white'), ('SHOW', W_SHOW, 'white'), ('YOU', W_YOU, 'white')], W_AND - .04, W_WHAT - .03),
-    ([('WHAT', W_WHAT, 'white'), ('YOUR', W_YOUR, 'white'), ('PAGE', W_PAGE, 'grad')], W_WHAT - .04, W_COULD - .03),
-    ([('COULD', W_COULD, 'white'), ('LOOK', W_LOOK, 'white'), ('LIKE.', W_LIKE, 'white')], W_COULD - .04, END),
+    ([('AND', W_AND, 'white'), ("WE'LL", W_WELL, 'white'), ('SHOW', W_SHOW, 'white'), ('YOU', W_YOU, 'white')], W_AND - .04, W_WHAT - .02),
+    ([('WHAT', W_WHAT, 'white'), ('YOUR', W_YOUR, 'white'), ('PAGE', W_PAGE, 'grad')], W_WHAT - .04, W_COULD - .02),
+    ([('COULD', W_COULD, 'white'), ('LOOK', W_LOOK, 'white'), ('LIKE.', W_LIKE, 'white')], W_COULD - .04, END + 1),   # held through the cut
 ]
 
 
 def pop_words(ctx, t, words, a, z, y=1560, base=84):
     if not a <= t < z: return
-    gap = base * .34; widths = []
-    for w, _, st in words:
-        l, tp, r, b = E.font(base).getbbox(w); widths.append(r - l)
-    x = W / 2 - (sum(widths) + gap * (len(words) - 1)) / 2
+    def measure(b):
+        ws = []
+        for w, _, st in words:
+            l, tp, r, bb = E.font(b).getbbox(w); ws.append(r - l)
+        return ws, sum(ws) + b * .34 * (len(words) - 1)
+    widths, tot = measure(base)
+    if tot > 860:                       # keep the line inside the safe area (x 110–970)
+        base = int(base * 860 / tot); widths, tot = measure(base)
+    gap = base * .34
+    x = W / 2 - tot / 2
     for (w, t0, st), ww in zip(words, widths):
         if t >= t0 - .02:
             im = E.word_img(w, base, st)[0]
             lt = t - t0 + .02; s = (.72 + .28 * back(lt / .16)) * (1.06 if .05 < lt < .3 else 1)
-            al = clamp(lt / .05) * clamp((z - t) / .06)
+            al = clamp((lt + .02) / .05) * clamp((z - t) / .06)       # never a blank frame on a page switch
             ctx.add('screen', scale_im(im, s), x + ww / 2, y, alpha=al)
         x += ww + gap
 
@@ -439,9 +459,17 @@ def add_founder(ctx, s):
 
 
 # ================================================================ draw
+def studio_graded(blur, dim):
+    """the studio plate with the engine's bg_blur + bg_dim applied (same ops, same order) — cached."""
+    def mk():
+        bg = E.studio().filter(ImageFilter.GaussianBlur(blur))
+        return Image.blend(bg, Image.new('RGB', bg.size, (0, 0, 0)), dim)
+    return C(('studio_g', blur, dim), mk)
+
+
 def page_scene(ctx, t, intro=True):
     """the TL29 world (also rebuilt by s12 for its opening frames)."""
-    ctx.bg_dim = .55; ctx.bg_blur = 8
+    ctx.bg_img = studio_graded(8, .55)          # = bg_blur 8 + bg_dim .55, baked once instead of per frame
     page_layers(ctx, t, intro)
     add_founder(ctx, AV_S)
 
@@ -450,8 +478,10 @@ def draw(ctx, lt, t):
     ctx.captions = False
     if t < T29:
         ka = expo((t - W_LUMARC) / .3)
-        ctx.cam = dict(z=1.14 + .04 * smooth(lt / 1.2) + .05 * ka, x=540., y=760., dx=0., dy=0., rot=0.)
-        ctx.bg_dim = .22; ctx.bg_blur = 2
+        land = .12 * (1 - expo(lt / .3))            # lands s10's push-in whip: decelerating zoom-through + blur tail
+        ctx.cam = dict(z=1.14 + land + .04 * smooth(lt / 1.2) + .05 * ka, x=540., y=760., dx=0., dy=0., rot=0.)
+        ctx.post['zoom_blur'] = .6 * clamp(1 - lt / .06)          # first frame only (card/word stay crisp)
+        ctx.bg_img = studio_graded(2, .22)
         draw_comment_word(ctx, t)
         draw_comment(ctx, t)
         ctx.post['vignette'] = .4

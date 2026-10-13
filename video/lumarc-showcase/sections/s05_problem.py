@@ -20,10 +20,10 @@ import engine as E
 
 START, END = E.span(10, 15)                   # 18.00 – 25.24
 T10, T11, T12, T13, T14, T15 = (E.TL[i]['t0'] for i in range(10, 16))
-# onsets measured on the voice track (caption estimates drift up to 200 ms here)
-W_PROBLEM, W_AMAZING, W_MA, W_BUT, W_ONLINE = 18.34, 19.68, 19.95, 20.72, 20.86
-W_WORK = 19.02
-W_TASTE, W_YOURFOOD, W_FEEL, W_YOURSERV, W_SEE, W_YOURSKILL = 22.19, 22.52, 23.18, 23.60, 24.42, 24.62
+# onsets measured on the voice track (10 ms spectral envelope: stop bursts, fricative onsets, vowel nuclei)
+W_PROBLEM, W_AMAZING, W_MA, W_BUT, W_ONLINE = 18.34, 19.96, 20.21, 20.72, 20.86
+W_WORK = 19.11
+W_TASTE, W_YOURFOOD, W_FEEL, W_YOURSERV, W_SEE, W_YOURSKILL = 22.19, 22.50, 23.18, 23.47, 24.42, 24.66
 
 CUES = [
     (T10 + .01, 'whoosh', {'gain': -8}),        # punch-in cut
@@ -70,6 +70,70 @@ def graded(fr, sat=1., br=1., tint=(1., 1., 1.)):
     if max(abs(v - 1) for v in m) > .002:
         fr = fr.point([min(255, int(v * k + .5)) for k in m for v in range(256)])
     return fr
+
+
+# ================================================================ captions on the voice (shared with s06)
+# The engine's caption onsets are syllable estimates snapped to energy dips; inside TL11/13/16 they drift by up to
+# 9 frames ("might be amazing" pops a word early, "can" lands on "taste" and never shows, "see" pops on "only").
+# These sections draw the SAME caption pages with the engine's own layout / pop / art, re-timed to measured onsets,
+# and only the pages of the segment on screen (no ghost of the previous page over a cut).
+VOICE = {10: (18.06, 18.25, 18.33), 11: (18.84, 19.11, 19.51, 19.79, 19.96), 12: (20.72, 20.87),
+         13: (21.59, 21.96, 22.16, 22.47, 22.62), 14: (23.15, 23.47, 23.58), 15: (24.32, 24.41, 24.68, 24.76),
+         16: (25.29, 25.51, 25.80, 26.29, 26.41), 17: (26.92, 27.07, 27.61, 27.70, 27.84, 28.28)}
+
+
+def voice_pages():
+    def mk():
+        pages = [dict(p, words=[dict(w) for w in p['words']]) for p in E.PAGES if p['seg'] in VOICE]
+        for sg, ts in VOICE.items():
+            ws = [w for p in pages if p['seg'] == sg for w in p['words']]
+            assert len(ws) == len(ts), (sg, [w['text'] for w in ws])
+            for w, t0 in zip(ws, ts): w['t0'] = t0
+            for a, b in zip(ws[:-1], ws[1:]): a['t1'] = max(a['t0'] + .06, b['t0'])
+            ws[-1]['t1'] = max(ws[-1]['t1'], ws[-1]['t0'] + .2)
+        for j, p in enumerate(pages):
+            nxt = pages[j + 1]['words'][0]['t0'] if j + 1 < len(pages) else E.DUR; last = p['words'][-1]['t1']
+            p['a'] = p['words'][0]['t0'] - .04; p['z'] = nxt - .02 if nxt - last < .5 else last + .35
+        return pages
+    return E.cached('s05_vpages', mk)
+
+
+def seg_at(t):
+    i = 0
+    while i + 1 < len(E.TL) and E.TL[i + 1]['t0'] <= t: i += 1
+    return i
+
+
+def page_start(seg, k):
+    # time the k-th caption page of a segment starts
+    return [p for p in voice_pages() if p['seg'] == seg][k]['a']
+
+
+def page_end(seg, k):
+    return [p for p in voice_pages() if p['seg'] == seg][k]['z']
+
+
+def voice_captions(ctx, t):
+    # replaces the engine captions for this frame (same look, measured timing, current segment only)
+    if not ctx.captions: return
+    ctx.captions = False; sg = seg_at(t); base = ctx.cap_size
+    for p in voice_pages():
+        if p['seg'] != sg or not (p['a'] <= t < p['z']): continue
+        for w, sz, cx, cy in E._layout(p, base):          # mirrors engine.draw_captions
+            if t < w['t0'] - .02: continue
+            lt = t - w['t0'] + .02; s = .72 + .28 * E.back(lt / .16)
+            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            img, _ = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')
+            if lt < .05: img = E.fade(img, lt / .05)
+            if p['z'] - t < .06: img = E.fade(img, (p['z'] - t) / .06)
+            w0 = img.width
+            if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
+            # the pop grows a word AWAY from the line centre (anchored on its inner edge), so the overshoot never
+            # eats the word gap ("YOURCONTENT."); a word on the centre line grows symmetrically
+            x = W / 2 + cx - img.width / 2
+            if cx < -40: x = W / 2 + cx + w0 / 2 - img.width
+            elif cx > 40: x = W / 2 + cx - w0 / 2
+            ctx.screen.append(dict(img=img, xy=(int(x), int(ctx.cap_y + cy - img.height / 2)), glass=0))
 
 
 # ================================================================ glass panes (shared with s06)
@@ -310,17 +374,23 @@ def rim_light(ctx, t, amt):
     tops of his shoulders (light from behind/above) — no temples, no ears. world-space RGBA for the 'front' layer."""
     F = film_of(ctx)
     if F is None or amt <= .01: return None
-    A8 = F.av.frame(t).getchannel('A')
-    a = np.asarray(A8, np.float32) / 255
-    down = np.zeros_like(a); down[3:] = a[:-3]                            # silhouette pushed down 3 px
-    band = np.clip(a - down, 0, 1)
-    yy = np.arange(H, dtype=np.float32)[:, None]
-    crown = np.clip((600 - yy) / 70, 0, 1)                                 # crown only (fades out above the temples)
-    shoulders = np.clip((yy - 860) / 60, 0, 1) * np.clip((1180 - yy) / 120, 0, 1) * .55
-    band *= crown + shoulders
+    RH = 1190                                                              # nothing is lit below the shoulders
+    A8 = np.asarray(F.av.frame(t).getchannel('A'))[:RH]
+    a = A8.astype(np.float32) / 255
+    band = a.copy(); band[3:] -= a[:-3]; np.clip(band, 0, 1, out=band)     # silhouette minus itself pushed down 3 px
+    band *= rim_rows()[:RH]
     band = np.asarray(Image.fromarray((np.clip(band * 1.6, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.9)), np.float32)
-    al = np.minimum(band * amt * .95, np.asarray(A8, np.float32))
-    im = Image.new('RGBA', (W, H), (255, 236, 205, 0)); im.putalpha(Image.fromarray(al.astype(np.uint8))); return im
+    al = np.minimum(band * amt * .95, A8)
+    im = Image.new('RGBA', (W, RH), (255, 236, 205, 0)); im.putalpha(Image.fromarray(al.astype(np.uint8))); return im
+
+
+def rim_rows():
+    def mk():
+        yy = np.arange(H, dtype=np.float32)[:, None]
+        crown = np.clip((600 - yy) / 70, 0, 1)                             # crown only (fades out above the temples)
+        shoulders = np.clip((yy - 860) / 60, 0, 1) * np.clip((1180 - yy) / 120, 0, 1) * .55
+        return crown + shoulders
+    return E.cached('s05_rimrows', mk)
 
 
 def halo_behind():
@@ -519,8 +589,11 @@ def gap_framing(s, z, t0, dur):
 
 
 def draw(ctx, lt, t):
+    _draw(ctx, lt, t); voice_captions(ctx, t)
+
+
+def _draw(ctx, lt, t):
     P = ctx.post
-    if t < START + .034 or T11 <= t < T11 + .034: ctx.captions = False     # no 1-frame ghost of the previous page
     # ------------------------------------------------ TL10 "Here's the problem."
     if t < T11:
         base = cam_for_face(lerp(1.28, 1.36, smooth((t - T10) / .8)), 540, 760)

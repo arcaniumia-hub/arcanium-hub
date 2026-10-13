@@ -8,7 +8,8 @@ A  TL22 "We turn the photos and videos you already have into Reels that stop the
    38.58  "VIDEOS"  a shaky video card swipes in behind it, jittering.
    39.08  "ALREADY" a 52 px light band (brand gradient, white-hot core, flare) sweeps down: a soft 30 px wipe turns
           what it passed premium (blurry -> close_food, shaky -> close_service) with a prism fringe on the boundary,
-          light spill on the cards and a 1.04 pop as it crosses each card; 39.82 chip flips to AFTER.
+          light spill on the cards and a 1.04 pop as it crosses each card; the chip flips to AFTER the instant the
+          band core crosses it (T_CHIP ~39.57).
    39.95  "INTO REELS" a phone spins in (perspective Y-spin, LUMARC back face, motion blur) and lands on "REELS"
           40.28 playing the SILENCE ONE film under a Reels UI; a phone-shaped light pulse hugs it.
    40.70  "THAT STOP" a fingertip ring drags the reel up (trail; next post is a cheap flyer)... 41.01 "STOP" snaps back.
@@ -83,9 +84,6 @@ CUES = [
     (W_VIDEOS - .06, 'swipe', {}),                     # shaky video card
     (SCAN0 - .02, 'shimmer', {}),                      # scanning light band
     (SCAN0, 'riser', {'to': SCAN1}),
-    (SCAN0 + .16, 'pop', {'gain': -10}),               # video card pops as the band passes it
-    (SCAN0 + .52, 'pop', {'gain': -8}),                # photo card pops
-    (SCAN1 + .02, 'pop', {}),                          # AFTER
     (SPIN0, 'swoosh_up', {}),                          # phone spins in
     (W_REELS, 'impact', {}),                           # lands on REELS
     (DRAG0, 'swipe', {'gain': -6}),                    # finger drags the reel
@@ -295,6 +293,30 @@ BEAM_Y0, BEAM_Y1 = 250, 1290
 def beam_y(t): return lerp(BEAM_Y0, BEAM_Y1, inout((t - SCAN0) / (SCAN1 - SCAN0)))
 
 
+CHIP_H = 88                                        # pill height (E.pill 34 px, pady 12)
+CHIP_CY = CARD_H - CHIP_H / 2 - 6                  # chip centre row in card-local coords
+def _chip_flip_t():
+    """time the band core crosses the chip centre (card has landed: top edge at CARD_Y - CARD_H/2)."""
+    lo, hi = SCAN0, SCAN1
+    for _ in range(40):
+        m = (lo + hi) / 2
+        if beam_y(m) - (CARD_Y - CARD_H / 2) < CHIP_CY: lo = m
+        else: hi = m
+    return round(hi, 4)
+T_CHIP = _chip_flip_t()                            # ~39.57: chip flips BEFORE -> AFTER as the band passes it
+def _cross_t(y):
+    lo, hi = SCAN0, SCAN1
+    for _ in range(40):
+        m = (lo + hi) / 2
+        if beam_y(m) < y: lo = m
+        else: hi = m
+    return round(hi, 4)
+CUES += [
+    (_cross_t(545), 'pop', {'gain': -10}),             # video card swells as the band crosses its centre
+    (T_CHIP, 'pop', {}),                               # photo card: chip flips to AFTER as the band crosses it
+]
+
+
 def draw_cards(ctx, t):
     """the before/after card pair (world 'front' layer)."""
     if t < W_PHOTOS - .12: return
@@ -326,9 +348,9 @@ def draw_cards(ctx, t):
     frac = clamp((by - cy0) / CARD_H)
     if 0 < frac < 1: s *= 1 + .04 * math.sin(math.pi * frac)
     art = scan_card('bad_blurry_photo', 'close_food', CARD_W, CARD_H, by - cy0).copy()
-    aft = t >= SCAN1
+    aft = t >= T_CHIP
     ck = chip('AFTER' if aft else 'BEFORE', aft)
-    pk = back((t - SCAN1) / .22, 2.6) if aft else 1
+    pk = back((t - T_CHIP) / .22, 2.6) if aft else 1
     if abs(pk - 1) > .01: ck = ck.resize((max(1, int(ck.width * (.6 + .4 * pk))), max(1, int(ck.height * (.6 + .4 * pk)))), Image.BILINEAR)
     art.alpha_composite(ck, (int(14 + (chip('AFTER', True).width - ck.width) / 2), int(CARD_H - ck.height - 6)))
     if t < SPIN0:
@@ -1102,6 +1124,8 @@ def _cap_pages():
         nxt = pages[i + 1]['words'][0]['t0'] - .04 if i + 1 < len(pages) else END
         last = p['words'][-1]['t0']
         p['z'] = min(END, nxt - .02 if nxt - last < 1.0 else last + .75)
+        cut = min([c for c in (T23, T24, T25, END) if c > p['a']])
+        p['z'] = min(p['z'], cut - 1e-3)      # never carry a page across a jump cut (no 1-frame ghost at the new cap_y)
     return pages
 CAP_PAGES = _cap_pages()
 
@@ -1151,7 +1175,7 @@ def draw_A(ctx, t):
             im = pr.resize((int(pr.width * sc_), int(pr.height * sc_)), Image.BILINEAR)
             ctx.add('front', im, x, y, alpha=(1 - lk) ** 1.6)
     place_avatar(ctx, t, avs, avx)
-    ctx.cap_y = 1545
+    ctx.cap_y = 1532                 # 2-line pages (wider engine word spacing) stay inside the y <= 1640 safe area
     ctx.post['vignette'] = .38
 
 
@@ -1211,7 +1235,7 @@ def draw_D(ctx, t):
     pk = inout((t - (W_CUSTOMERS + .12)) / .5)          # closing push-in progress (0..1, 47.65 -> 48.15)
     z = 1.06 + .05 * smooth(lt / 2.7) + .13 * pk
     ctx.cam = dict(z=z, x=540., y=760., dx=0., dy=0., rot=0.)
-    ctx.cap_y = 300
+    ctx.cap_y = 310                  # 2-line pages keep their top inside the y >= 220 safe area
     # laptop rises (screen space foreground -> parallax against the camera push)
     k = cub((t - LAP0) / (LAP1 - LAP0))
     ke = expo((t - LAP0) / .55)
@@ -1249,7 +1273,7 @@ def draw_D(ctx, t):
         im = card if abs(sc - 1) < .005 else card.resize((max(1, int(card.width * sc)), max(1, int(card.height * sc))), Image.BILINEAR)
         if ex > .04:
             im = im.filter(ImageFilter.BoxBlur(min(6., 9. * ex)))
-        cx = 540 + (214 - 40 * (1 - cub(fk / .3)) - 540) * (1 + .6 * ex)
+        cx = 540 + (204 - 40 * (1 - cub(fk / .3)) - 540) * (1 + .6 * ex)
         cy = 690 + (690 - 960) * .25 * ex
         a = clamp(fk / .06) * (1 - smooth((ex - .25) / .45))
         if a > .003:
