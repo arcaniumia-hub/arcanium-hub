@@ -22,7 +22,8 @@ D  TL25 "and a website that turns followers into customers."  (45.40–48.16)  f
    laptop (lid tilted back, trapezoid deck, lip, contact shadow, glass sweep) that rises and lands on "WEBSITE" 45.67;
    the site scrolls, the cursor clicks "Book a table" 46.42, 'New booking' drops onto the screen-top edge 46.52,
    followers card left of his head on "FOLLOWERS" 46.75, counter lands + gradient pulse on "CUSTOMERS" 47.53,
-   then a push-in (z -> 1.24) so the 48.16 cut to s10 (z 1.06) reads as a pull-out.
+   then a push-in (z -> 1.24) so the 48.16 cut to s10 (z 1.06) reads as a pull-out; the card parallaxes out left
+   as a foreground layer (faster than his head, blurring, gone by ~47.95) so it never crosses his ear.
 """
 import math
 import numpy as np
@@ -1207,7 +1208,8 @@ def draw_D(ctx, t):
     ctx.avatar.update(s=1.0, x=0)
     ctx.bg_img = C('studioD', lambda: studio_shift(0, 1.04))
     # slow push, then a deliberate push-in after CUSTOMERS so the 48.16 cut to s10 (z 1.06) reads as a pull-out
-    z = 1.06 + .05 * smooth(lt / 2.7) + .13 * inout((t - (W_CUSTOMERS + .12)) / .5)
+    pk = inout((t - (W_CUSTOMERS + .12)) / .5)          # closing push-in progress (0..1, 47.65 -> 48.15)
+    z = 1.06 + .05 * smooth(lt / 2.7) + .13 * pk
     ctx.cam = dict(z=z, x=540., y=760., dx=0., dy=0., rot=0.)
     ctx.cap_y = 300
     # laptop rises (screen space foreground -> parallax against the camera push)
@@ -1240,8 +1242,18 @@ def draw_D(ctx, t):
         card = stat_card('12.4K', f'+{n:,}', show, pulse)
         sc = .75 + .25 * back(fk / .28, 2.2)
         if t >= W_CUSTOMERS: sc *= 1 + .05 * math.exp(-(t - W_CUSTOMERS) * 9)
+        # closing push-in: the card is a FOREGROUND element, so it parallaxes outward faster than his head
+        # (camera dolly past it) and dissolves -> its right edge always runs away from his ear, never over it.
+        ex = pk
+        sc *= 1 + .2 * ex
         im = card if abs(sc - 1) < .005 else card.resize((max(1, int(card.width * sc)), max(1, int(card.height * sc))), Image.BILINEAR)
-        ctx.add('screen', im, 214 - 40 * (1 - cub(fk / .3)), 690, alpha=clamp(fk / .06), glass=12)
+        if ex > .04:
+            im = im.filter(ImageFilter.BoxBlur(min(6., 9. * ex)))
+        cx = 540 + (214 - 40 * (1 - cub(fk / .3)) - 540) * (1 + .6 * ex)
+        cy = 690 + (690 - 960) * .25 * ex
+        a = clamp(fk / .06) * (1 - smooth((ex - .25) / .45))
+        if a > .003:
+            ctx.add('screen', im, cx, cy, alpha=a, glass=12)
     ctx.post['vignette'] = .38
 
 

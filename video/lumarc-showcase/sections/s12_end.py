@@ -225,16 +225,27 @@ def slices_onto(out, t, cx, cy, s):
     return True
 
 
-def sheen(img, k, half=30, strength=.55, slope=.35):
-    """narrow diagonal light band (±half px), clipped to the glyphs, peak alpha <= strength."""
+def sheen(img, k, mask, half=30, strength=.55, slope=.35):
+    """narrow diagonal light band (+-half px) that brightens ONLY the ink: `mask` (float32 HxW, 0..1) is the bare
+    glyph / pill-body shape, without the baked shadow or glow. The band lifts RGB towards white and never touches
+    alpha, so nothing can appear outside the glyphs (no haze over shadows, glows or the transparent padding)."""
     if k <= 0 or k >= 1: return img
     w, h = img.size
     xx = np.arange(w, dtype=np.float32)[None, :] + np.arange(h, dtype=np.float32)[:, None] * slope
     c = lerp(-2 * half, w + h * slope + 2 * half, k)
     band = np.clip(1 - np.abs(xx - c) / half, 0, 1) ** 1.5 * strength
-    a = np.asarray(img.getchannel('A'), np.float32) / 255
-    m = Image.fromarray((band * a * 255).astype(np.uint8))
-    out = img.copy(); out.alpha_composite(Image.merge('RGBA', [Image.new('L', (w, h), 255)] * 3 + [m])); return out
+    cols = np.nonzero(band.max(0) > 0)[0]
+    if len(cols) == 0: return img
+    x0, x1 = int(cols[0]), int(cols[-1]) + 1                   # only the columns the band touches
+    A = np.asarray(img, np.float32)[:, x0:x1].copy()
+    m = (band[:, x0:x1] * mask[:, x0:x1])[..., None]
+    A[..., :3] += (255 - A[..., :3]) * m
+    out = img.copy(); out.paste(Image.fromarray(A.astype(np.uint8), 'RGBA'), (x0, 0)); return out
+
+
+def ink_mask(key, img, lo, hi):
+    """glyph mask from an image's alpha: below `lo` (shadow / glow / padding) -> 0, above `hi` -> 1."""
+    return C(('ink', key), lambda: np.clip((np.asarray(img.getchannel('A'), np.float32) - lo) / (hi - lo), 0, 1))
 
 
 def shock(img, t, cx, cy):
@@ -282,16 +293,16 @@ def word_mask_img(text, wght, grad):
             out.alpha_composite(gl); out.alpha_composite(g)
         else:
             c = Image.new('RGBA', (w, h), E.WHITE + (0,)); c.putalpha(m); out.alpha_composite(c)
-        return out, r - l
+        return out, r - l, np.asarray(m, np.float32) / 255          # bare glyph mask (for the sheen)
     return C(('wm', text, wght, grad), mk)
 
 
 def line_img(words):
     ims = [word_mask_img(*w) for w in words]; gap = 20
-    tot = sum(iw for _, iw in ims) + gap * (len(ims) - 1)
+    tot = sum(iw for _, iw, _ in ims) + gap * (len(ims) - 1)
     x = -tot / 2; out = []
-    for im, iw in ims:
-        out.append((im, x + iw / 2)); x += iw + gap
+    for im, iw, m in ims:
+        out.append((im, x + iw / 2, m)); x += iw + gap
     return out
 
 
@@ -310,10 +321,10 @@ LINE2 = [('Be', 300, False), ('remembered.', 700, True)]
 
 def draw_tagline(fr, t, y1, y2):
     for words, times, y, sh0 in ((LINE1, (W_BE1, W_SEEN), y1, SHIM + .22), (LINE2, (W_BE2, W_REM), y2, SHIM)):
-        for (im, xo), t0, (txt, _, grad) in zip(line_img(words), times, words):
+        for (im, xo, gm), t0, (txt, _, grad) in zip(line_img(words), times, words):
+            if grad: im = sheen(im, (t - sh0) / .5, gm, 30, .55)     # on the unshifted word, so the mask lines up
             r = rise(im, expo((t - t0 + .02) / .4))
             if r is None: continue
-            if grad: r = sheen(r, (t - sh0) / .5, 30, .55)
             fr.alpha_composite(r, (int(W / 2 + xo - r.width / 2), int(y - r.height / 2)))
 
 
@@ -383,7 +394,7 @@ def draw(ctx, lt, t):
                 lg = logo_img()
                 for t0, d in ((HIT + .08, .4), (SWEEP2, .7)):
                     sk = (t - t0) / d
-                    if 0 < sk < 1: lg = sheen(lg, sk, 40, .6)
+                    if 0 < sk < 1: lg = sheen(lg, sk, ink_mask('logo', logo_img(), 90, 200), 40, .6)
                 lg = scale_im(lg, ls, lanczos=True)
                 out.alpha_composite(lg, (int(cx - lg.width / 2), int(ly - lg.height / 2)))
             # additive bloom on the slam (light, not a grey veil)
@@ -399,7 +410,7 @@ def draw(ctx, lt, t):
             pg = pill_glow(); out.alpha_composite(E.fade(pg, clamp(k / .3) * (.8 + .2 * math.sin(t * 2.6))), (int(cx - pg.width / 2), int(py - pg.height / 2 + 14)))
             p = pill()
             ps = (t - (SWEEP2 + .25)) / .6
-            if 0 < ps < 1: p = sheen(p, ps, 40, .45)
+            if 0 < ps < 1: p = sheen(p, ps, ink_mask('pill', pill(), 200, 230), 40, .45)
             p = scale_im(p, s)
             out.alpha_composite(E.fade(p, clamp(k / .08)), (int(cx - p.width / 2), int(py - p.height / 2)))
         if t >= HANDLE:

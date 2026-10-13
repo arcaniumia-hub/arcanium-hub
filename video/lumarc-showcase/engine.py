@@ -53,19 +53,68 @@ def seg_t(i, frac=0.0):
     s = TL[i]; return s['t0'] + (s['t1'] - s['t0']) * frac
 
 # ---------------------------------------------------------------- words (captions + timing for sections)
+def _voice_islands():
+    """speech islands (start, end) on the edit timeline, from the re-timed plate's audio (10 ms hop)."""
+    def mk():
+        raw = os.path.join(SRC, 'tight16k.raw')
+        if not os.path.exists(raw):
+            subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(SRC, 'tight.mov'), '-ac', '1', '-ar', '16000', '-f', 'f32le', raw], check=True)
+        x = np.fromfile(raw, np.float32); h = 160
+        r = np.sqrt(np.convolve(x ** 2, np.ones(h) / h, 'same')[::h]); sp = 20 * np.log10(r + 1e-6) > -40
+        out, i, n = [], 0, len(sp)
+        while i < n:
+            if sp[i]:
+                j = i
+                while j < n and (sp[j] or (j + 8 < n and sp[j:j + 8].any())): j += 1
+                if j - i >= 4: out.append((i / 100, j / 100))
+                i = j
+            else: i += 1
+        return out
+    return _cache('islands', mk)
+
+def _snap_words(pages):
+    """refine word onsets onto the energy dip that precedes each word (syllable estimates run late)."""
+    raw = os.path.join(SRC, 'tight16k.raw'); x = np.fromfile(raw, np.float32); h = 160
+    r = np.sqrt(np.convolve(x ** 2, np.ones(h) / h, 'same')[::h]); sm = np.convolve(20 * np.log10(r + 1e-6), np.ones(3) / 3, 'same')
+    words = [w for p in pages for w in p['words']]; isl = _voice_islands()
+    starts = [a for a, b in isl]
+    for k, w in enumerate(words):
+        if any(abs(w['t0'] - a) < .03 for a in starts): continue          # already on an island start
+        i0 = max(0, int((w['t0'] - .20) * 100)); i1 = int((w['t0'] + .12) * 100)
+        seg_ = sm[i0:i1]
+        if len(seg_) < 3: continue
+        j = int(np.argmin(seg_)); local = sm[max(0, i0 - 10):i1 + 10].mean()
+        if seg_[j] < local - 8:
+            t = (i0 + j) / 100 + .02
+            lo = words[k - 1]['t0'] + .08 if k and words[k - 1]['seg'] == w['seg'] else -1
+            if t > lo and abs(t - w['t0']) < .2: w['t0'] = t
+    for k, w in enumerate(words[:-1]):
+        if words[k + 1]['seg'] == w['seg']: w['t1'] = max(w['t0'] + .06, words[k + 1]['t0'])
+
 def _pages():
-    pages = []
+    """caption pages; word onsets aligned to the voice: syllable-weighted positions are mapped onto the speech
+    islands of each segment (pauses skipped), so a word after a pause starts when the voice does."""
+    isl = _voice_islands(); pages = []
     for i, s in enumerate(TL):
         if not s['cap']: continue
-        a, z = s['t0'] + .04, s['t1'] - .06
+        own = [(max(a, s['t0']), min(b, s['t1'])) for a, b in isl if b > s['t0'] + .02 and a < s['t1'] - .02]
+        if not own: own = [(s['t0'] + .04, s['t1'] - .06)]
+        speech = sum(b - a for a, b in own)
+        def at(frac):   # position along the concatenated speech -> timeline time
+            d = frac * speech
+            for a, b in own:
+                if d <= b - a + 1e-6: return a + d
+                d -= b - a
+            return own[-1][1]
         groups = [g.split() for g in s['cap'].split('|')]
-        flat = [w for g in groups for w in g]; wt = [syl(w.strip('*“”"')) + .35 for w in flat]; tot = sum(wt); t = a; k = 0
+        flat = [w for g in groups for w in g]; wt = [syl(w.strip('*“”"')) + .35 for w in flat]; tot = sum(wt); acc = 0.0; k = 0
         for g in groups:
             ws = []
             for w in g:
-                d = (z - a) * wt[k] / tot; k += 1
-                ws.append(dict(text=w.strip('*').upper(), emph=w.startswith('*'), t0=t, t1=t + d, seg=i)); t += d
+                t0 = at(acc / tot); acc += wt[k]; t1 = at(acc / tot); k += 1
+                ws.append(dict(text=w.strip('*').upper(), emph=w.startswith('*'), t0=t0, t1=t1, seg=i))
             pages.append(dict(words=ws, seg=i))
+    _snap_words(pages)
     for j, p in enumerate(pages):
         nxt = pages[j + 1]['words'][0]['t0'] if j + 1 < len(pages) else DUR; last = p['words'][-1]['t1']
         p['a'] = p['words'][0]['t0'] - .04; p['z'] = nxt - .02 if nxt - last < .5 else last + .35
@@ -133,6 +182,7 @@ def key(img):
     return np.dstack([r, g2, b]), alpha / 255.0
 
 _gx = np.linspace(-1, 1, W, dtype=np.float32)[None, :, None]
+_rim_y = np.clip((1640 - np.arange(H, dtype=np.float32)) / 260, 0, 1)[:, None, None]
 def light_avatar(rgb, al):
     """sit the studio-lit HeyGen take into the dark purple set: exposure, cool fill, purple/blue rim from the monitors."""
     rgb = rgb * .93
@@ -140,7 +190,7 @@ def light_avatar(rgb, al):
     from scipy.ndimage import minimum_filter
     band = np.clip(al - minimum_filter(al, size=9), 0, 1)[..., None]
     rim = np.where(_gx > 0, np.array([120, 130, 255], np.float32), np.array([190, 90, 255], np.float32))
-    e = band * (.25 + .30 * np.abs(_gx)) * .55
+    e = band * (.25 + .30 * np.abs(_gx)) * .55 * _rim_y
     rgb = rgb * (1 - e) + rim * e
     return rgb
 
@@ -287,13 +337,13 @@ def _layout(page, base):
         items.append([w, sz, r - l])
     lines, cur, cw = [], [], 0
     for it in items:
-        add = it[2] + (base * .26 if cur else 0)
+        add = it[2] + (base * .34 if cur else 0)
         if cur and cw + add > 900: lines.append((cur, cw)); cur, cw = [], 0; add = it[2]
         cur.append(it); cw += add
     lines.append((cur, cw)); out = []; lh = base * 1.12; y0 = -(len(lines) - 1) * lh / 2
     for li, (ln, lw) in enumerate(lines):
         x = -lw / 2
-        for it in ln: out.append((it[0], it[1], x + it[2] / 2, y0 + li * lh)); x += it[2] + base * .26
+        for it in ln: out.append((it[0], it[1], x + it[2] / 2, y0 + li * lh)); x += it[2] + base * .34
     return out
 
 def draw_captions(fr, t, cy0, base=92):

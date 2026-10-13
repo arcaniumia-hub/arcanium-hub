@@ -19,7 +19,7 @@
 """
 import math
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 import engine as E
 
 START, END = E.span(26, 27)            # 48.16 – 51.08
@@ -186,7 +186,7 @@ def wall_row(style):
         rowL = Image.new('L', (n * (w + gap), h))
         if style == 0:
             m = Image.fromarray(np.clip(np.asarray(strk, np.int16) - np.asarray(fill, np.int16), 0, 255).astype(np.uint8))
-            m = m.point(lambda v: int(v * .55))
+            m = m.point(lambda v: int(v * .55 * .95))      # row opacity baked in (no per-frame fade)
         else:
             m = fill.point(lambda v: int(v * .16))
         for i in range(n): rowL.paste(m, (i * (w + gap), 0))
@@ -232,7 +232,9 @@ def draw_wall(ctx, t):
         off = (d * -1) * 1100 * (1 - ent)
         x = W / 2 - img.width / 2 + ((drift + off + 0.5 * period) % period) - period / 2
         y = WALL_Y0 + r * ROW_H
-        ctx.add('behind', img, x, y - img.height / 2, center=False, alpha=ent * (.95 if st == 0 else 1))
+        xi = int(round(x)); c0, c1 = max(0, -xi), min(img.width, W - xi)     # only the visible slice
+        if c1 > c0:
+            ctx.add('behind', img.crop((c0, 0, c1, img.height)), xi + c0, y - img.height / 2, center=False, alpha=ent)
     # centre row: outline snaps in, the gradient wipes in through it
     s = 1 + .22 * (1 - expo(lt / .28)) + .025 * clamp((t - W_IMP) / 1.6)
     ol = outline_word()
@@ -293,29 +295,48 @@ def add_founder(ctx, t, s):
 
 _HO = {}
 def holo_pair(av):
-    """luminance-only light copies of the founder (half res): {-1: blue, 1: violet}. Additive-looking over the dark set:
-    dark hoodie -> transparent, face/hands -> light, plus an edge glow and 2 px scanlines; fades out towards the torso."""
+    """luminance-only light copies of the founder at HALF resolution, cropped to where they have any light:
+    -> (x0, y0, {-1: blue RGBA uint8, 1: violet RGBA uint8}) in half-res plate coordinates.
+    Additive-looking over the dark set: dark hoodie -> transparent, face/hands -> light, plus an edge glow and
+    2 px scanlines; fades out towards the torso. Computed once per avatar frame."""
     if _HO.get('k') is av: return _HO['v']
-    h2 = av.resize((W // 2, H // 2), Image.BILINEAR)
-    A = np.asarray(h2, np.float32)
-    a = A[..., 3] / 255
-    lum = (A[..., 0] * .3 + A[..., 1] * .59 + A[..., 2] * .11) / 255
-    al8 = Image.fromarray((a * 255).astype(np.uint8))
-    edge = np.clip(a - np.asarray(al8.filter(ImageFilter.GaussianBlur(5)), np.float32) / 255, 0, 1) * 2.6
-    edge = np.asarray(Image.fromarray((np.clip(edge, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5)), np.float32) / 255
-    yy = np.arange(H // 2, dtype=np.float32)[:, None] * 2
-    vf = np.clip((1700 - yy) / (1700 - 980), 0, 1) ** 1.3                  # 1 at head/shoulders -> 0 at the torso
-    xx = np.arange(W // 2, dtype=np.float32)[None, :] * 2
-    sf = np.clip(np.minimum(xx, W - 1 - xx) / 60, 0, 1)                     # 60 px side feather
-    body = np.clip(lum * 1.7 - .08, 0, 1) ** 1.25 * a
-    alpha = np.clip(body * .46 + edge * .85, 0, .6) * vf * sf
-    alpha[1::2] *= .85                                                   # 2 px scanlines (half res rows)
+    h2 = av.reduce(2)
+    al8 = h2.getchannel('A')
+    bb = al8.getbbox()
+    if bb is None:
+        v = (0, 0, None); _HO.update(k=av, v=v); return v
+    # the light only exists above y=1700 (full res) -> crop rows first, 8 px margin for the edge blur
+    x0, y0, x1, y1 = max(0, bb[0] - 8), max(0, bb[1] - 8), min(W // 2, bb[2] + 8), min(850, bb[3] + 8)
+    if y1 <= y0:
+        v = (0, 0, None); _HO.update(k=av, v=v); return v
+    h2c, alc = h2.crop((x0, y0, x1, y1)), al8.crop((x0, y0, x1, y1))
+    A = np.asarray(h2c, np.float32)
+    a = A[..., 3] * (1 / 255)
+    lum = (A[..., 0] * .3 + A[..., 1] * .59 + A[..., 2] * .11) * (1 / 255)
+    edge = np.clip(a - np.asarray(alc.filter(ImageFilter.GaussianBlur(5)), np.float32) * (1 / 255), 0, 1) * 2.6
+    edge = np.asarray(Image.fromarray((np.clip(edge, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5)), np.float32) * (1 / 255)
+    b = np.clip(lum * 1.7 - .08, 0, 1); b = b * np.sqrt(np.sqrt(b))                 # ^1.25
+    alpha = np.clip(b * a * .46 + edge * .85, 0, .6) * holo_falloff()[y0:y1, x0:x1]
+    a8 = (alpha * 255).astype(np.uint8)[..., None]
+    l2 = lum * lum * np.sqrt(np.sqrt(lum))                                            # ^2.25
+    base = (150 * l2 + 120 * edge)[..., None]; lum = lum[..., None]
     out = {}
     for side, tint in HOLO.items():
-        rgb = tint[None, None] * (.75 + .9 * lum[..., None]) + 150 * (lum[..., None] ** 2.2) + 120 * edge[..., None]
-        im = np.dstack([np.clip(rgb, 0, 255), alpha * 255]).astype(np.uint8)
-        out[side] = Image.fromarray(im, 'RGBA').resize((W, H), Image.BILINEAR)
-    _HO.update(k=av, v=out); return out
+        rgb = np.clip(tint * (.75 + .9 * lum) + base, 0, 255).astype(np.uint8)
+        out[side] = Image.fromarray(np.concatenate([rgb, a8], 2), 'RGBA')
+    v = (int(x0), int(y0), out); _HO.update(k=av, v=v); return v
+
+
+def holo_falloff():
+    """half-res multiplier: 1 at head/shoulders -> 0 at the torso, 60 px side feather, 2 px scanlines."""
+    def mk():
+        yy = np.arange(H // 2, dtype=np.float32)[:, None] * 2
+        vf = np.clip((1700 - yy) / (1700 - 980), 0, 1) ** 1.3
+        xx = np.arange(W // 2, dtype=np.float32)[None, :] * 2
+        sf = np.clip(np.minimum(xx, W - 1 - xx) / 60, 0, 1)
+        m = (vf * sf).astype(np.float32); m[1::2] *= .85
+        return m
+    return C('holofall', mk)
 
 
 def clone_offset(t, j):
@@ -329,12 +350,22 @@ def clone_offset(t, j):
 
 
 def draw_clones(ctx, t, s):
+    """all clone copies + their light trails are composited into ONE half-res premultiplied buffer (cropped to the
+    clones' light), then upsampled once and added as a single layer — instead of ~16 full-frame composites."""
     if not (W_IMP - .01 <= t < W_IGN): return
     F = film_of(ctx)
     if F is None: return
-    hp = holo_pair(F.av.frame(t))
-    ims = {side: scale_im(hp[side], s) for side in (-1, 1)}
-    bx, by = 540 - W * s / 2, H - H * s
+    hx0, hy0, hp = holo_pair(F.av.frame(t))
+    if hp is None: return
+    # scale the half-res crops by s around the plate's bottom centre (same transform as add_founder)
+    hw, hh = hp[1].size
+    sw, sh = max(1, int(round(hw * s))), max(1, int(round(hh * s)))
+    src = {side: (hp[side] if (sw, sh) == (hw, hh) else hp[side].resize((sw, sh), Image.BILINEAR)) for side in (-1, 1)}
+    src_a = {side: src[side].getchannel('A') for side in (-1, 1)}
+    # crop origin in half-res frame coords (plate scaled by s about (W/2, H) -> half: (W/4, H/2))
+    cx0 = W / 4 + (hx0 - W / 4) * s
+    cy0 = H / 2 + (hy0 - H / 2) * s
+    copies = []
     for j in (2, 1):                           # far ring first
         for side in (-1, 1):
             d = clone_offset(t, j)
@@ -342,13 +373,30 @@ def draw_clones(ctx, t, s):
             vel = (d - clone_offset(t - 1 / 30, j)) * 30          # px / s
             al = (1.0 if j == 1 else .55) * clamp((t - W_IMP + .01) / .05)
             if t > COLLAPSE: al *= 1 - .5 * ein((t - COLLAPSE) / (W_IGN - COLLAPSE))
-            # light trails behind the motion (2-3 steps)
-            nt = 3 if abs(vel) > 120 else 1
+            nt = 3 if abs(vel) > 120 else 1                          # light trails behind the motion
             for g in range(nt, 0, -1):
                 dd = d - max(abs(vel) / 30 * 1.3, 26) * g * (1 if vel >= 0 else -1)
                 if (dd > 0) == (d > 0):
-                    ctx.add('behind', ims[side], bx + side * dd, by, center=False, alpha=al * .32 * (1 - g / (nt + 1)))
-            ctx.add('behind', ims[side], bx + side * d, by, center=False, alpha=al)
+                    copies.append((side, side * dd, al * .32 * (1 - g / (nt + 1))))
+            copies.append((side, side * d, al))
+    if not copies: return
+    # canvas bounds (half res) covering every copy
+    xs = [cx0 + off / 2 for _, off, _ in copies]
+    X0 = int(math.floor(max(0, min(xs)))); X1 = int(math.ceil(min(W / 2, max(xs) + sw)))
+    Y0 = int(max(0, math.floor(cy0))); Y1 = int(min(H / 2, math.ceil(cy0) + sh))
+    if X1 <= X0 or Y1 <= Y0: return
+    canvas = Image.new('RGBA', (X1 - X0, Y1 - Y0), (0, 0, 0, 0))
+    yi = int(round(cy0))
+    for side, off, al in copies:                                   # PIL "over", far -> near, trails first
+        xi = int(round(cx0 + off / 2))
+        ax0, ay0 = max(X0, xi), max(Y0, yi); ax1, ay1 = min(X1, xi + sw), min(Y1, yi + sh)
+        if ax1 <= ax0 or ay1 <= ay0: continue
+        box = (ax0 - xi, ay0 - yi, ax1 - xi, ay1 - yi)
+        S = src[side].crop(box)
+        if al < .995: S.putalpha(src_a[side].crop(box).point(lambda v, al=al: int(v * al + .5)))
+        canvas.alpha_composite(S, (ax0 - X0, ay0 - Y0))
+    im = canvas.resize((canvas.width * 2, canvas.height * 2), Image.BILINEAR)
+    ctx.add('behind', im, X0 * 2, Y0 * 2, center=False)
 
 
 # ================================================================ front type
@@ -408,6 +456,22 @@ def bloom_field():
     return C('bloom', mk)
 
 
+def bg_plate(blur, z=1.0, anchor=(540, 760)):
+    """the blurred studio built at HALF resolution (blur radius, zoom and the affine are 4x cheaper there and invisible
+    on an out-of-focus plate), upsampled once. Same result as the engine's bg_z + bg_blur path."""
+    half = C('studio_half', lambda: E.studio().reduce(2))
+    im = half
+    if abs(z - 1) > 1e-4:
+        ax, ay = anchor[0] / 2, anchor[1] / 2; a = 1 / z
+        im = im.transform(im.size, Image.AFFINE, (a, 0, ax - a * ax, 0, a, ay - a * ay), Image.BILINEAR)
+    if blur > .3: im = im.filter(ImageFilter.GaussianBlur(blur / 2))
+    return im.resize((W, H), Image.BILINEAR)
+
+
+def bloom_u8():
+    return C('bloom8', lambda: Image.fromarray(np.clip(bloom_field(), 0, 255).astype(np.uint8)))
+
+
 def draw(ctx, lt, t):
     ctx.captions = False
 
@@ -416,9 +480,8 @@ def draw(ctx, lt, t):
         k = smooth(lt / (T27 - START))
         z = 1.34 + .08 * (1 - expo(lt / .35)) - .06 * k            # 1.42 -> 1.34 settle, then a slow pull to 1.28
         ctx.cam = dict(z=z, x=540., y=740., dx=0., dy=0., rot=0.)
-        ctx.bg_blur = 2 + 5 * smooth(lt / .7)
         ctx.bg_dim = .2 + .14 * k
-        ctx.bg_z = 1.08 - .04 * k
+        ctx.bg_img = bg_plate(2 + 5 * smooth(lt / .7), 1.08 - .04 * k)    # rack focus + slow background dolly
         ctx.post['vignette'] = .46
         ctx.post['bright'] = .97
         ctx.post['zoom_blur'] = .45 * clamp(1 - lt / .08)             # 2-3 frame settle masks the cut from s09
@@ -429,7 +492,7 @@ def draw(ctx, lt, t):
         # ---------------- jump cut: extreme close-up, "WE MAKE IT"
         k = (t - T27) / (W_IMP - T27)
         ctx.cam = dict(z=1.58 + .05 * k, x=540., y=640., dx=0., dy=0., rot=0.)
-        ctx.bg_dim = .3; ctx.bg_blur = 4
+        ctx.bg_dim = .3; ctx.bg_img = C('bg4', lambda: bg_plate(4))
         ctx.post['vignette'] = .42
         pop_words(ctx, t, [('WE', W_WE, 'white'), ('MAKE', W_MAKE, 'white'), ('IT', W_IT, 'white')], T27, W_IMP - .05, y=1470)
         return
@@ -445,7 +508,7 @@ def draw(ctx, lt, t):
     sx2, sy2, sr2 = shake(t, W_IMP, 16, .3)
     ctx.cam = dict(z=z, x=540., y=lerp(640., 760., kp), dx=sx + sx2, dy=sy + sy2, rot=sr + sr2)
     ctx.bg_dim = .3 + .42 * kp
-    ctx.bg_blur = 4 + 5 * kp
+    ctx.bg_img = C('bg9', lambda: bg_plate(9)) if kp > .995 else bg_plate(4 + 5 * kp)
     draw_wall(ctx, t)
     draw_clones(ctx, t, s_av)
     add_founder(ctx, t, s_av)
@@ -463,8 +526,8 @@ def draw(ctx, lt, t):
         kb = 1.05 * (1 - eout((t - W_IGN) / .32)) if t < W_IGN + .32 else 0
         if kb > .01:
             def wrap(fr, kb=kb):
-                a = np.asarray(fr.convert('RGB'), np.float32) + bloom_field() * kb
-                return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+                b = bloom_u8().point(lambda v: int(v * kb + .5) if v * kb < 255 else 255)
+                return ImageChops.add(fr.convert('RGB'), b)
             ctx.wrap = wrap
     if t >= EXIT:                                              # whip exit into s11
         P['zoom_blur'] = max(P['zoom_blur'], 1.0 * clamp((t - EXIT) / (END - EXIT)) ** 1.5)

@@ -10,3 +10,4 @@ out/
 music.wav
 __pycache__/
 sections/__pycache__/
+src/tight16k.raw

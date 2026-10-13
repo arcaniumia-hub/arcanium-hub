@@ -209,31 +209,29 @@ def shard_sprite(src, s, ang, tiltc, thick, spec):
         s['m'] = s['mask'].astype(np.float32) / 255
         hh, ww = s['m'].shape; yy, xx = np.mgrid[0:hh, 0:ww].astype(np.float32); s['u'] = (xx * .7 + yy * .7) / max(1, (ww + hh) * .7)
     piece, m, u = s['piece'], s['m'], s['u']
-    h, w = m.shape; pad = 10
+    h, w = m.shape; pad = 10; ls = 2.2
     # light direction in the shard's local frame (inverse rotation)
     r = math.radians(ang); c, si = math.cos(r), math.sin(r)
     lx, ly = c * LIGHT[0] + si * LIGHT[1], -si * LIGHT[0] + c * LIGHT[1]
-    lit = np.clip(m - shift(m, -lx * 2.2, -ly * 2.2), 0, 1)          # edges facing the light
-    shd = np.clip(m - shift(m, lx * 2.2, ly * 2.2), 0, 1)            # edges facing away
+    lit = np.clip(m - shift(m, -lx * ls, -ly * ls), 0, 1)            # edges facing the light
+    shd = np.clip(m - shift(m, lx * ls, ly * ls), 0, 1)              # edges facing away
     # rotating specular sheen: a soft band across the shard whose strength follows the shard's orientation
     band = np.exp(-((u - (.5 + .35 * math.sin(ang * .05 + s['ph']))) / .18) ** 2) * spec
-    rgb = piece * (1 - .1 * (1 - tiltc)) + band[..., None] * 105
-    rgb = rgb * (1 - shd[..., None] * .55) + lit[..., None] * np.array([255, 255, 255], np.float32) * .9
-    rgb = np.clip(rgb, 0, 255)
-    # canvas with thickness (dark glass body offset along the fall direction, in local coords)
+    rgb = piece * (1 - .1 * (1 - tiltc)); rgb += band[..., None] * 105
+    rgb *= (1 - shd * .55)[..., None]; rgb += (lit * 229.5)[..., None]
+    if 'a8' not in s:      # static: alpha + the dark glass body (tinted by what it carries)
+        s['a8'] = (m * 255 + .5).astype(np.uint8)
+        body = np.empty((h, w, 4), np.uint8); body[..., :3] = np.clip(piece * .28 + np.array([18, 18, 40], np.float32), 0, 255)
+        body[..., 3] = (m * 225 + .5).astype(np.uint8); s['body'] = Image.fromarray(body, 'RGBA')
+    top = np.empty((h, w, 4), np.uint8); top[..., :3] = np.clip(rgb, 0, 255); top[..., 3] = s['a8']
+    # canvas with thickness (dark glass body offset along the fall direction, in local coords), lit face on top
     tx, ty = c * thick[0] + si * thick[1], -si * thick[0] + c * thick[1]
     Cw, Ch = w + 2 * pad, h + 2 * pad
-    out = np.zeros((Ch, Cw, 4), np.float32)
+    out = Image.new('RGBA', (Cw, Ch), (0, 0, 0, 0))
     ox, oy = pad + int(round(tx)), pad + int(round(ty))
-    if 0 <= ox and ox + w <= Cw and 0 <= oy and oy + h <= Ch:
-        out[oy:oy + h, ox:ox + w, :3] = piece * .28 + np.array([18, 18, 40], np.float32)   # glass body: dark, tinted by what it carries
-        out[oy:oy + h, ox:ox + w, 3] = m * 225
-    top = np.dstack([rgb, m * 255])
-    a_t = top[..., 3:] / 255
-    reg = out[pad:pad + h, pad:pad + w]
-    reg[..., :3] = top[..., :3] * a_t + reg[..., :3] * (1 - a_t)
-    reg[..., 3] = np.maximum(reg[..., 3], top[..., 3])
-    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8), 'RGBA'), pad
+    if 0 <= ox and ox + w <= Cw and 0 <= oy and oy + h <= Ch: out.paste(s['body'], (ox, oy))
+    out.alpha_composite(Image.fromarray(top, 'RGBA'), (pad, pad))
+    return out, pad
 
 
 def affine2(img, sx, sy, ang_deg):
@@ -269,7 +267,8 @@ def shatter(fr, t):
         rad = math.hypot(pw, ph) * zsc / 2
         if cx + rad < 0 or cx - rad > W or cy + rad < 0 or cy - rad > H: continue
         if uu <= 0:   # not yet released: sits in place (refracted)
-            spr, pad = shard_sprite(src, s, 0, 1, (0, 0), .0)
+            if 'static' not in s: s['static'] = shard_sprite(src, s, 0, 1, (0, 0), .0)   # identical every frame
+            spr, pad = s['static']
             E._paste(out, dict(img=spr, xy=(x0 - pad, y0 - pad), glass=0)); continue
         th = 3 + 3 * min(1, uu / .12) * zsc
         fall = (s['dir'][0] * .6, s['dir'][1] * .6 + .8); fn = math.hypot(*fall) or 1
@@ -282,7 +281,7 @@ def shatter(fr, t):
 
 
 # ================================================================ "content": the frame becomes a feed post
-CARD = (80, 396, 1000, 1546)                  # 4:5 image area (920 x 1150)
+CARD = (90, 330, 990, 1455)                   # 4:5 image area (900 x 1125); header top 234 — caption fits under it
 HDR = 96
 
 
@@ -340,8 +339,9 @@ def post_card(fr, t):
     crop = inner.crop((int(round(x0)), int(round(img_top)), int(round(x0)) + iw, int(round(img_top)) + ih))
     out = bg
     # soft shadow under the card
-    sh = Image.new('L', (W, H)); ImageDraw.Draw(sh).rounded_rectangle((x0, y0 + 20, x1, y1 + 20), 34, fill=int(200 * k))
-    out.paste((0, 0, 0, 255), (0, 0), sh.filter(ImageFilter.GaussianBlur(30)))
+    q = 4; sh = Image.new('L', (W // q, H // q))                      # shadow at quarter res (blur 30 -> 7.5)
+    ImageDraw.Draw(sh).rounded_rectangle((x0 / q, (y0 + 20) / q, x1 / q, (y1 + 20) / q), 34 / q, fill=int(200 * k))
+    out.paste((0, 0, 0, 255), (0, 0), sh.filter(ImageFilter.GaussianBlur(7.5)).resize((W, H), Image.BILINEAR))
     r = lerp(0, 34, k)
     full = Image.new('RGBA', (iw, int(round(y1 - y0))), (16, 16, 22, 255))
     full.paste(crop, (0, int(round(img_top - y0))))
@@ -380,9 +380,11 @@ def bgz(t):
 def dolly_bg(z, speed):
     st = sharp_plate()
     im = E.zoom(st, z, (540, 700))
-    if speed > .15:   # a touch of radial motion blur on the background only
-        im2 = E.zoom(st, z * (1 + min(.03, speed * .02)), (540, 700))
-        im = Image.blend(im, im2, .5)
+    if speed > .15:   # a touch of radial motion blur on the background only (the smeared copy is built at half res)
+        a = 1 / (z * (1 + min(.03, speed * .02)))
+        sm = C('plate_half', lambda: st.resize((W // 2, H // 2), Image.BOX))
+        im2 = sm.transform((W // 2, H // 2), Image.AFFINE, (a, 0, (540 - a * 540) / 2, 0, a, (700 - a * 700) / 2), Image.BILINEAR)
+        im = Image.blend(im, im2.resize((W, H), Image.BILINEAR), .5)
     return im
 
 
@@ -404,7 +406,7 @@ def streaks(t, amt):
             p0 = (cx + math.cos(th) * ra / S, cy + math.sin(th) * ra * 1.15 / S)
             p1 = (cx + math.cos(th) * rb / S, cy + math.sin(th) * rb * 1.15 / S)
             d.line([p0, p1], fill=int(255 * a0 * (k + 1) / 4), width=wd)
-    im = im.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(.8))
+    im = im.filter(ImageFilter.GaussianBlur(.4)).resize((W, H), Image.BILINEAR)
     out = Image.new('RGBA', (W, H), (215, 205, 255, 0)); out.putalpha(im); return out
 
 
@@ -483,7 +485,7 @@ def draw(ctx, lt, t):
             ctx.cam['dx'] += 16 * k * math.sin(u * 90); ctx.cam['dy'] += 9 * k * math.cos(u * 70)
             P['bright'] = 1 + .3 * clamp(1 - u / .12) ** 2
         ctx.captions = t >= TS + .25                        # THEY ONLY appears once the burst has cleared the centre
-        if t >= W_CONTENT - .03: ctx.cap_y = 1650           # under the post card
+        if t >= 26.11: ctx.cap_y = 1546                     # 'YOUR CONTENT.' page sits under the post card (glyphs ≈1506–1590)
         def wrap(fr):
             fr = graded(fr, sat, br, tint).convert('RGBA')
             if t < TS + .75: fr = shatter(fr, t)

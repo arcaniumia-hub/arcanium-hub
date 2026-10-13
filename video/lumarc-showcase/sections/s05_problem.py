@@ -15,7 +15,7 @@ Handoff to s06 (25.24): the triptych at TRIP_* geometry, scaled by trip_scale(EN
 """
 import math
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageFilter, ImageChops
 import engine as E
 
 START, END = E.span(10, 15)                   # 18.00 – 25.24
@@ -63,9 +63,13 @@ def cam_for_face(z, fx, fy, wx=520., wy=690.):
 
 
 def graded(fr, sat=1., br=1., tint=(1., 1., 1.)):
-    a = np.asarray(fr.convert('RGB'), np.float32); g = a.mean(2, keepdims=True)
-    a = (g + (a - g) * sat) * (np.array(tint, np.float32) * br)
-    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    """saturation + exposure + per-channel tint, done with PIL blend / LUTs (≈15 ms instead of a float pass)."""
+    fr = fr.convert('RGB')
+    if abs(sat - 1) > .004: fr = Image.blend(fr.convert('L').convert('RGB'), fr, sat)
+    m = [br * c for c in tint]
+    if max(abs(v - 1) for v in m) > .002:
+        fr = fr.point([min(255, int(v * k + .5)) for k in m for v in range(256)])
+    return fr
 
 
 # ================================================================ glass panes (shared with s06)
@@ -186,10 +190,13 @@ def draw_pane(fr, blur, key, x, y, w, h, t, vx=0., vy=0., land=0., label_k=0., s
     fr.paste(fz, (x, y), m)
     # 3. photo inside (parallax: the image lags behind the pane and drifts slowly)
     iw, ih = w - 2 * RIM, h - 2 * RIM
-    src = photo_src(name, ih)
-    cx = src.width * fx - iw / 2 + par[0]; cy = (src.height - ih) * fy + par[1]
-    cx = clamp(cx, 0, src.width - iw); cy = clamp(cy, 0, src.height - ih)
-    ph = src.crop((int(cx), int(cy), int(cx) + iw, int(cy) + ih))
+    REF = TRIP_H - 2 * RIM
+    src = photo_src(name, REF)                 # one cached source; the slow triptych push resamples a box of it
+    sc = ih / REF; bw, bh = iw / sc, ih / sc
+    cx = src.width * fx - bw / 2 + par[0] / sc; cy = (src.height - bh) * fy + par[1] / sc
+    cx = clamp(cx, 0, src.width - bw); cy = clamp(cy, 0, src.height - bh)
+    if abs(sc - 1) < 1e-3: ph = src.crop((int(cx), int(cy), int(cx) + iw, int(cy) + ih))
+    else: ph = src.resize((iw, ih), Image.BILINEAR, box=(cx, cy, cx + bw, cy + bh))
     sp = math.hypot(vx, vy)
     if sp > 4:   # chromatic split along the motion (glass refraction at speed)
         k = min(16, sp * .22); ux, uy = vx / sp, vy / sp
@@ -299,20 +306,21 @@ def film_of(ctx):
 
 
 def rim_light(ctx, t, amt):
-    """warm back-light catching the TOP edges of his hair and shoulders (light from behind/above).
-    world-space RGBA (avatar at s=1, x=0) for the 'front' layer."""
+    """warm back-light: a THIN (~3 px) bright edge that catches only the top-facing silhouette of his crown and the
+    tops of his shoulders (light from behind/above) — no temples, no ears. world-space RGBA for the 'front' layer."""
     F = film_of(ctx)
     if F is None or amt <= .01: return None
-    a = np.asarray(F.av.frame(t).getchannel('A').resize((W // 2, H // 2), Image.BILINEAR), np.float32) / 255
-    down = np.zeros_like(a); down[6:] = a[:-6]                           # silhouette pushed down: exposes top-facing edges
-    side = np.zeros_like(a); side[4:, 3:] = a[:-4, :-3]; side2 = np.zeros_like(a); side2[4:, :-3] = a[:-4, 3:]
-    band = np.clip(a - down, 0, 1) * .9 + np.clip(a - np.minimum(side, side2), 0, 1) * .12
-    yy = np.linspace(0, H, H // 2, dtype=np.float32)[:, None]
-    band *= np.clip((1080 - yy) / 380, 0, 1) * (1 + .8 * np.clip((760 - yy) / 260, 0, 1))   # hair strongest, torso none
-    band = np.asarray(Image.fromarray((np.clip(band, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(2.4)), np.float32)
-    al = Image.fromarray(np.clip(band * amt * 1.0, 0, 255).astype(np.uint8)).resize((W, H), Image.BILINEAR)
-    al = Image.fromarray(np.minimum(np.asarray(al), np.asarray(F.av.frame(t).getchannel('A'))))   # stays inside him
-    im = Image.new('RGBA', (W, H), (255, 220, 160, 0)); im.putalpha(al); return im
+    A8 = F.av.frame(t).getchannel('A')
+    a = np.asarray(A8, np.float32) / 255
+    down = np.zeros_like(a); down[3:] = a[:-3]                            # silhouette pushed down 3 px
+    band = np.clip(a - down, 0, 1)
+    yy = np.arange(H, dtype=np.float32)[:, None]
+    crown = np.clip((600 - yy) / 70, 0, 1)                                 # crown only (fades out above the temples)
+    shoulders = np.clip((yy - 860) / 60, 0, 1) * np.clip((1180 - yy) / 120, 0, 1) * .55
+    band *= crown + shoulders
+    band = np.asarray(Image.fromarray((np.clip(band * 1.6, 0, 1) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.9)), np.float32)
+    al = np.minimum(band * amt * .95, np.asarray(A8, np.float32))
+    im = Image.new('RGBA', (W, H), (255, 236, 205, 0)); im.putalpha(Image.fromarray(al.astype(np.uint8))); return im
 
 
 def halo_behind():
@@ -373,6 +381,21 @@ def grid_tex():
     return E.cached('s05_grid', mk)
 
 
+def tint_grid():
+    """multiplier image (255 = x1): cool tint (.86, .93, 1.0) x screen-door grid."""
+    def mk():
+        g = grid_tex() * np.array([.86, .93, 1.0], np.float32) * 255
+        return Image.fromarray(np.clip(g + .5, 0, 255).astype(np.uint8))
+    return E.cached('s05_tg', mk)
+
+
+def refl_rgb():
+    def mk():
+        a = np.asarray(refl_tex(), np.float32)[..., None] * np.array([.85, .9, 1.0], np.float32)
+        return Image.fromarray(np.clip(a + .5, 0, 255).astype(np.uint8))
+    return E.cached('s05_rrgb', mk)
+
+
 def refl_tex():
     def mk():
         S = 4; yy, xx = np.mgrid[0:H // S, 0:(W + 900) // S].astype(np.float32) * S
@@ -389,13 +412,12 @@ def screen_glass(fr, edge, vel, t):
     if e >= W: return fr
     e0 = max(0, e)
     out = fr.copy()
-    reg = fr.convert('RGB').crop((e0, 0, W, H)).filter(ImageFilter.GaussianBlur(1.1))
-    a = np.asarray(reg, np.float32) * np.array([.86, .93, 1.04], np.float32) * grid_tex()[:, e0:]
-    # slow drifting reflection (additive, mostly on the highlights side)
+    reg = fr.convert('RGB').crop((e0, 0, W, H)).filter(ImageFilter.BoxBlur(1))
+    # cool tint x screen-door grid as one cached multiply, then a slow drifting reflection (additive)
+    reg = ImageChops.multiply(reg, tint_grid().crop((e0, 0, W, H)))
     off = int(450 + 380 * math.sin(t * .8)) - (e0 - e if e < 0 else 0)
-    rf = np.asarray(refl_tex().crop((off, 0, off + W - e0, H)), np.float32)[..., None]
-    a = a + rf * np.array([.85, .9, 1.0], np.float32)
-    out.paste(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)), (e0, 0))
+    rf = refl_rgb().crop((off, 0, off + W - e0, H))
+    out.paste(ImageChops.add(reg, rf), (e0, 0))
     # refractive leading strip: 10 px showing a squeezed, displaced, chromatically split slice of the world
     SW = 16
     if e + SW > 0:
@@ -479,11 +501,21 @@ SEE_OFF = .35                                              # screen glass slides
 
 
 def ax_for(t):
-    """avatar shift (world px) that keeps his face in the gap to the right of the panes."""
-    if t < T14:
-        k, _ = slide(t, TA0); return 140 * clamp((k - .2) / .8) if t >= TA0 else 0.
-    if t < T15: return 157.
-    return 96.
+    """avatar shift (world px, s=1) that keeps his face in the gap to the right of the TASTE pane (TL13)."""
+    k, _ = slide(t, TA0); return 140 * clamp((k - .2) / .8) if t >= TA0 else 0.
+
+
+GAP_CX = (SLOTS[1] + TRIP_W + W) / 2 + 2      # centre of the free column right of the FEEL pane (≈ 893)
+HEAD_WX, HEAD_WY = 520., 690.                 # his face centre in the plate (s = 1)
+
+
+def gap_framing(s, z, t0, dur):
+    """FEEL / SEE framings: he is scaled to sit INSIDE the free column with air on both sides (head ≈ 330·s·z px
+    wide in a 370 px gap) and the camera breathes in on his face. returns (avatar dict, cam dict)."""
+    ax = GAP_CX - 540 - (HEAD_WX - 540) * s
+    fwx, fwy = 540 + ax + (HEAD_WX - 540) * s, H - (H - HEAD_WY) * s
+    zz = lerp(z, z + .02, smooth((t0) / dur))
+    return dict(s=s, x=ax), cam_for_face(zz, GAP_CX, fwy, fwx, fwy)
 
 
 def draw(ctx, lt, t):
@@ -581,12 +613,10 @@ def draw(ctx, lt, t):
     # ------------------------------------------------ TL13-15 GLASS LAYERS
     if t < T14:      # "nobody can taste your food" — he sits right; the first pane takes the left
         ctx.cam = cam_for_face(lerp(1.16, 1.2, smooth((t - T13) / 1.6)), 770, 690)
-    elif t < T15:    # "feel your service" — cut: tighter, he's pushed into the last third, two panes beside him
-        ctx.cam = cam_for_face(lerp(1.3, 1.33, smooth((t - T14) / 1.1)), 892, 700)
-    else:            # "or see your skill" — punch in on him, then the third pane closes over him
-        ctx.cam = cam_for_face(lerp(1.45, 1.5, smooth((t - T15) / 1.0)), 880, 640)
-    ax = ax_for(t)
-    ctx.avatar['x'] = ax; plate_feather(ctx, ax, .2)
+        ax = ax_for(t); ctx.avatar['x'] = ax; plate_feather(ctx, ax, .2)
+    else:            # "feel your service" / "or see your skill" — cut: he steps back into the free third column
+        A, ctx.cam = gap_framing(.84, 1.0, t - T14, 1.1) if t < T15 else gap_framing(.92, 1.0, t - T15, .6)
+        ctx.avatar.update(A); plate_feather(ctx, 540 + A['x'] - W * A['s'] / 2, .2)
     ctx.bg_dim = .2
     ctx.captions = False                                   # the pane labels carry the words from here
     def wrap(fr):
