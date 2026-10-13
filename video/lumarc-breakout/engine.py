@@ -463,14 +463,15 @@ def render(t0, t1, path):
     F = Film(t0)
     enc = subprocess.Popen(['ffmpeg', '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                             '-c:v', 'libx264', '-preset', 'medium', '-crf', '16', '-pix_fmt', 'yuv420p', path], stdin=subprocess.PIPE)
+    j0 = int(round(t0 * FPS))                       # integer frame grid: t = j / FPS exactly (section + avatar agree)
     for i in range(int(round((t1 - t0) * FPS))):
-        enc.stdin.write(F.frame(t0 + i / FPS).tobytes())
+        enc.stdin.write(F.frame((j0 + i) / FPS).tobytes())
     enc.stdin.close(); enc.wait()
 
 def stills(ts, outdir):
     os.makedirs(outdir, exist_ok=True); paths = []
     for t in ts:
-        F = Film(t); p = os.path.join(outdir, f'still_{t:06.2f}.jpg'); F.frame(t).save(p, quality=88); paths.append(p)
+        t = round(t * FPS) / FPS; F = Film(t); p = os.path.join(outdir, f'still_{t:06.2f}.jpg'); F.frame(t).save(p, quality=88); paths.append(p)
     return paths
 
 def sheet(t0, t1, step, path, cols=6, w=270):

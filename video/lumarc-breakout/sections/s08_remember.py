@@ -10,8 +10,10 @@
        post desaturates, blurs, dims and recedes — forgotten. The LUMARC-made post stays crisp and bright.
 18.80  "REMEMBER" -> it pushes hard toward camera (spring to 1.30 with overshoot, clear of his head), leaves an
        after-image (two border echoes ripple out), light sweep, the halo behind his head swells; camera kick + lean.
-19.21  a frosted lock-screen card rises over his chest ("TODAY 11:59 PM"; captions off from here — the card carries the
-       word). 19.333 "TOMORROW." -> the date rolls TODAY -> TOMORROW, 11:59 PM -> 8:00 AM, morning light blooms in the
+19.19  a frosted lock-screen card snaps up over his chest, inside the safe area ("TODAY 11:59 PM" reads for 4 frames;
+       captions off from here — the card carries the word). 19.333 "TOMORROW." -> a cascade of clean flips (each value
+       exits up and is gone before the new one rises in — never two words stacked): TODAY -> TOMORROW, 11:59 -> 8:00,
+       PM -> AM; morning light blooms in the
        glass and returns to the studio (fog burns off). The remembered post flies down in an arc right of his face,
        shedding its chrome but keeping its brand halo (light trail, motion blur), into the silence.one notification.
 19.87  the lock card is dismissed (drops out of frame with motion blur) -> clean studio at the 19.96 cut.
@@ -29,7 +31,7 @@ START, END = E.span(15, 15)               # 17.48 – 19.96
 # "t" release of STILL 18.64, "ill" 18.65-18.80, REMEMBER from 18.80, "t" burst of TOMORROW 19.34)
 WORDS = {'THE': 17.59, 'BRAND': 17.70, 'YOU': 18.29, 'STILL': 18.42, 'REMEMBER': 18.80, 'TOMORROW.': 19.34}
 W_THE, W_BRAND, W_YOU, W_STILL, W_REM, W_TOM = (WORDS[k] for k in ('THE', 'BRAND', 'YOU', 'STILL', 'REMEMBER', 'TOMORROW.'))
-CARD0 = W_TOM - .13                        # lock card starts rising
+CARD0 = W_TOM - .15                        # lock card starts rising (TODAY 11:59 PM reads ~4 frames before the flip)
 PAGES = K.make_pages([[('THE', W_THE, False), ('BRAND', W_BRAND, False)],
                       [('YOU', W_YOU, False), ('STILL', W_STILL, False)],
                       [('REMEMBER', W_REM, True)]], CARD0 + .01)
@@ -60,9 +62,9 @@ CUES = [
     (W_REM, 'impact', {'gain': -7}),                          # REMEMBER push
     (W_REM + .01, 'glass', {'gain': -6, 'seed': 4, 'pan': .3}),
     (CARD0 - .03, 'swoosh_up', {'gain': -8}),                 # lock card rises
-    (ROLL0, 'tick', {'gain': -2}),                            # date roll
-    (ROLL0 + .05, 'tick', {'gain': -5}),
-    (ROLL0 + .09, 'tick', {'gain': -7}),
+    (ROLL0, 'tick', {'gain': -2}),                            # date flips
+    (ROLL0 + .035, 'tick', {'gain': -5}),                     # time flips
+    (ROLL0 + .065, 'tick', {'gain': -7}),                     # AM/PM flips
     (FLY0, 'whoosh', {'gain': -12, 'pan': .3}),               # post flies into the notification
     (NOTE0 + .03, 'notify', {'gain': -1}),
     (FLY1, 'pop', {'gain': -8, 'pan': .25}),
@@ -171,8 +173,10 @@ def forget(i, t):
 
 
 def scroll_off(t):
-    """wall offset: it arrives scrolling up and locks with a small elastic settle."""
-    u = (t - START) / (SCROLL1 - START)
+    """wall offset: it arrives scrolling up and locks with a small elastic settle. The scroll is already running one
+    frame before START (s07 hands its last frame to this section when the take has jumped -> no frozen first frame)."""
+    s0 = START - 1 / E.FPS
+    u = (t - s0) / (SCROLL1 - s0)
     if u >= 1:
         k = t - SCROLL1; return -10 * math.exp(-k * 9) * math.sin(k * 20 + .6) * 1.5
     return 560 * (1 - K.expo(u)) ** 1.15 - 14 * math.sin(math.pi * u) * u
@@ -421,20 +425,20 @@ def note_panel():
     return K.C('s08note', mk)
 
 
-def roll_word(a_img, b_img, k, box_h):
-    """cylinder roll from a_img to b_img (k 0..1) inside a box of height box_h; returns RGBA (w = max widths)."""
-    w = max(a_img.width, b_img.width); h = box_h
-    out = Image.new('RGBA', (w, h + 40), (0, 0, 0, 0))
-    R = h * .55
-    for img, ang in ((a_img, k * 90), (b_img, (k - 1) * 90)):
-        if abs(ang) >= 89.5: continue
-        c = math.cos(math.radians(ang)); sh = int(img.height * c)
-        if sh < 2: continue
-        im = img.resize((img.width, sh), Image.BILINEAR)
-        im = E.fade(im, clamp(c ** 1.5)) if c < .999 else im
-        y = (h + 40) / 2 - R * math.sin(math.radians(ang)) - sh / 2
-        out.alpha_composite(im, (int((w - img.width) / 2), int(y))) if y >= 0 and y + sh <= out.height else K.paste(out, im, (w - img.width) / 2, y)
-    return out
+def flip(dst, a_img, b_img, cx, cy, tt, out_d=.045, in_d=.14, travel=30):
+    """sequential flip of one lock-screen field (tt = t - flip start): a exits upward (squash, vertical motion blur,
+    fade) and is GONE before b rises in from below (stretch -> settle) -> never two values stacked/legible at once."""
+    if tt < 0:
+        K.paste(dst, a_img, cx - a_img.width / 2, cy - a_img.height / 2); return
+    if tt < out_d:
+        p = tt / out_d; img, dy, al, L, sy = a_img, -travel * p * p, (1 - p) ** 1.6, travel * 1.1 * p, 1 - .22 * p
+    else:
+        q = clamp((tt - out_d) / in_d); e = K.cub(q)
+        img, dy, al, L, sy = b_img, travel * (1 - e), clamp(q * 4.5), travel * 1.1 * (1 - q) ** 2, .80 + .20 * e
+    if al < .01: return
+    if abs(sy - 1) > .01: img = img.resize((img.width, max(2, int(img.height * sy))), Image.BILINEAR)
+    if L >= 2: img = K.vsmear(K_pad(img, int(L) + 2), L)
+    K.paste(dst, img, cx - img.width / 2, cy + dy - img.height / 2, alpha=al)
 
 
 def date_imgs():
@@ -456,19 +460,16 @@ def lock_img(t):
         gw = K.radial(LW + 200, (168, 150, 255), 2.2, 1.0, sy=.62)
         K.paste(im, gw, LW / 2 - gw.width / 2, -gw.height * .45, alpha=.42 * mg + .25 * K.kick(t - ROLL0, .12))
         im = K.round_img(im, LR)
-    # date
-    a, b = date_imgs(); k = K.cub((t - ROLL0) / .14)
-    dr = roll_word(a, b, k, 80); im.alpha_composite(dr, (LW // 2 - dr.width // 2, 124 - dr.height // 2))
-    # time
+    # date, then time, then AM/PM: a cascade of clean flips on TOMORROW
+    a, b = date_imgs()
+    flip(im, a, b, LW / 2, 124, t - ROLL0)
     ta, tb, pa, pb = time_imgs()
-    k2 = K.cub((t - ROLL0 - .03) / .16)
-    tr = roll_word(ta, tb, k2, 132)
-    k3 = K.cub((t - ROLL0 - .06) / .16)
-    pr = roll_word(pa, pb, k3, 52)
-    tw_ = lerp(ta.width, tb.width, k2); total = tw_ + 18 + pr.width
+    T_T, T_P = ROLL0 + .035, ROLL0 + .065
+    kw = K.smooth((t - T_T - .025) / .10)               # the row re-centres as 11:59 -> 8:00 narrows
+    tw_ = lerp(ta.width, tb.width, kw); total = tw_ + 18 + max(pa.width, pb.width)
     x0 = LW / 2 - total / 2
-    im.alpha_composite(tr, (int(x0 + tw_ / 2 - tr.width / 2), 262 - tr.height // 2))
-    im.alpha_composite(pr, (int(x0 + tw_ + 18), 296 - pr.height // 2))
+    flip(im, ta, tb, x0 + tw_ / 2, 262, t - T_T, travel=40)
+    flip(im, pa, pb, x0 + tw_ + 18 + pa.width / 2, 296, t - T_P, travel=22)
     # notification banner
     if t >= NOTE0:
         k = K.expo((t - NOTE0) / .22)
@@ -492,19 +493,22 @@ def sheen_soft(img, k):
     return Image.fromarray(np.dstack([np.clip(rgb, 0, 255), al]).astype(np.uint8), 'RGBA')
 
 
-LCX, LCY = 540, 1376
+LCX, LCY = 540, 1368
+
+
+LS = .94                                    # card scale: 846 x 523 on screen -> x 117-963, y 1107-1630 (safe area)
 
 
 def lock_state(t):
-    """(cx, cy, s, rx, alpha) of the lock card in screen space."""
-    k = K.expo((t - CARD0) / .22)
+    """(cx, cy, s, rx, alpha) of the lock card in screen space. Rises fast so TODAY 11:59 PM reads before the flip."""
+    k = K.expo((t - CARD0) / .17)
     cy = LCY + 330 * (1 - k)
     rx = 22 * (1 - k)
-    s = lerp(.92, 1.0, k)
-    if t > CARD0 + .22: cy += -3 * math.sin((t - CARD0 - .22) * 2.2)
+    s = LS * lerp(.92, 1.0, k)
+    if t > CARD0 + .17: cy += -3 * math.sin((t - CARD0 - .17) * 2.2)
     if t > EXIT0:                               # dismissed: drops out of frame, tipping back (never across his face)
         u = (t - EXIT0) / (END - EXIT0); cy += 980 * u ** 2.1; rx += 26 * u ** 1.5; s *= 1 - .05 * u
-    return LCX, cy, s, rx, clamp((t - CARD0) / .08)
+    return LCX, cy, s, rx, clamp((t - CARD0) / .05)
 
 
 def slot_screen(t):
@@ -616,13 +620,14 @@ def draw(ctx, lt, t):
             if t > EXIT0:
                 v = lock_state(t)[1] - lock_state(t - 1 / 60)[1]
                 if v > 2: im, ox, oy = K.smear_hq(im, 0, v * .9); x0 += ox; y0 += oy
-            ctx.add('screen', _shadow_card(), cx, cy + 18, alpha=a * .9)
+            shc = _shadow_card(); shc = shc.resize((int(shc.width * s), int(shc.height * s)), Image.BILINEAR)
+            ctx.add('screen', shc, cx, cy + 18 * s, alpha=a * .9)
             ctx.add('screen', im, x0, y0, center=False, glass=14, alpha=a)
     # the flight into the notification
     if flying:
         bx, by, sc, u, e = flight_pos(t, cam)
         if u >= 1:
-            img = thumb_img(t)
+            img = thumb_img(t, int(round(THUMB[2] * lock_state(t)[2])))
             pk = 1 + .12 * K.kick(t - FLY1, .08)
             img = img.resize((int(img.width * pk), int(img.height * pk)), Image.BILINEAR)
             if t > EXIT0:

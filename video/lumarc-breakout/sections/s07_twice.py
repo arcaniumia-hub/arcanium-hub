@@ -2,9 +2,11 @@
 
 15.40  JUMP CUT -> tight multicam framing: founder on the right third (z 1.40, plate edge pinned at the frame edge), the
        studio falls out of focus. A Reel card swings in from the bottom-left in true perspective with motion blur — a
-       powered-off glass screen: deep black glass mirroring the purple room, a specular streak sliding across as it turns.
-15.667 "VIDEO" ('v' 15.645) -> it lands (settle spring) and the screen WAKES: the picture spreads out radially from the
-       centre with a glowing edge + over-exposure; its live colour spills onto his left cheek/shoulder.
+       SLEEPING phone screen: the paused Reel glows at a third of its brightness under glass that mirrors the purple
+       room, a specular streak sliding across as it turns; the 3D swing keeps turning right up to the word.
+15.667 "VIDEO" ('v' 15.645) -> it slams in (overshoot spring + punch) and the screen WAKES in 2 frames: a white-hot
+       power-on flash bursts out of the centre and resolves into the picture, a bloom flares around the card into the
+       room and onto his cheek; its live colour keeps spilling onto his left cheek/shoulder.
 15.67–16.87  the Reel plays the end of the SILENCE ONE film (scaled into the video area above the Reels UI so its own
        "SILENCE ONE / $349" end card never collides with the author row); the progress bar runs to the end exactly on
        "TWICE." On "WATCH" the house lights go down and the screen lights him.
@@ -14,6 +16,8 @@
 17.167 tape stop -> the Reel restarts (40h burst), ring pulses, the replay glyph collapses into a gradient "×2" badge
        which glides up into a corner chip (the replay then plays clean); an outline echo of "TWICE." ripples out of the
        caption. Lip-sync is never touched.
+17.467 the take already shows the next segment's first frame (17.48 lies between two 30 fps frames) -> that frame is
+       drawn by s08 (wall scroll), so his pose jump always lands on the cut.
 """
 import math
 import numpy as np
@@ -47,7 +51,7 @@ CUES = [
     (START - .02, 'swipe', {'gain': -6, 'pan': -.3}),        # multicam snap + card swings in
     (FLY0 + .13, 'whoosh', {'gain': -10, 'pan': -.4}),       # the card's swing (peaks mid-flight)
     (LAND, 'glass', {'gain': -4, 'seed': 7, 'pan': -.35}),   # lands on VIDEO
-    (LAND, 'thud', {'gain': -10}),
+    (LAND, 'thud', {'gain': -7}),                            # slams in + the screen wakes (flash)
     (W_TWICE - .015, 'click', {'gain': -2, 'pan': -.35}),    # bar hits the end
     (W_TWICE, 'rewind', {'dur': .34, 'gain': 0, 'pan': -.3}),
     (W_TWICE, 'glitch', {'gain': -10, 'seed': 14, 'pan': -.3}),
@@ -77,26 +81,27 @@ CR = 34
 
 
 def card_state(t):
-    """(cx, cy, s, rx, ry, rz) of the Reel card in screen space."""
+    """(cx, cy, s, rx, ry, rz) of the Reel card in screen space. The position arrives first, the 3D swing keeps
+    turning right up to VIDEO (never a parked slab), then it slams in with an overshoot and settles."""
     x_, y_, s_, rx_, ry_, rz_ = 292., 770., 1.0, 2.5, -13., -1.5
-    if t < LAND + .5:
-        u = clamp((t - FLY0) / (LAND - FLY0))
-        e = K.cub(u) * .55 + K.quint(u) * .45
-        x0, y0, s0, rx0, ry0, rz0 = -120., 1380., .70, 14., 58., -14.
-        cx, cy = lerp(x0, x_, e), lerp(y0, y_, e) - 90 * math.sin(math.pi * e) * (1 - e)
-        s = lerp(s0, s_, e); rx = lerp(rx0, rx_, e); ry = lerp(ry0, ry_, e); rz = lerp(rz0, rz_, e)
-        if t >= LAND:          # settle spring (overshoot in ry / scale)
-            k = t - LAND
-            ry += 5.0 * math.exp(-k * 9) * math.sin(k * 24)
-            s *= 1 + .018 * math.exp(-k * 10) * math.sin(k * 26)
-        return cx, cy, s, rx, ry, rz
-    k = t - LAND
-    cx, cy = x_ + 3 * math.sin(k * 1.3), y_ - 7 * math.sin(k * 1.7)
-    ry = ry_ + 1.6 * math.sin(k * 1.1); rx = rx_ + .8 * math.sin(k * 1.5 + 1)
-    s = s_ * (1 + .006 * k)
+    x0, y0, s0, rx0, ry0, rz0 = -120., 1380., .70, 14., 58., -14.
+    u = clamp((t - FLY0) / (LAND - FLY0))
+    ep = K.cub(u) * .5 + (1 - (1 - u) ** 1.6) * .5            # position / scale
+    er = 1 - (1 - u) ** 1.35                                   # the swing still has speed on the land
+    cx, cy = lerp(x0, x_, ep), lerp(y0, y_, ep) - 90 * math.sin(math.pi * ep) * (1 - ep)
+    s = lerp(s0, s_, ep); rx = lerp(rx0, rx_, ep); ry = lerp(ry0, ry_, er); rz = lerp(rz0, rz_, ep)
+    if t >= LAND:
+        k = t - LAND
+        ry -= 6.5 * math.exp(-k * 8) * math.sin(k * 21)        # slam: the swing carries past, springs back
+        s *= 1 + .018 * math.exp(-k * 10) * math.sin(k * 26)
+        r = K.smooth(k / .6)                                   # idle float eases in (no step at the hand-over)
+        cx += 3 * math.sin(k * 1.3) * r; cy -= 7 * math.sin(k * 1.7) * r
+        ry += 1.6 * math.sin(k * 1.1) * r; rx += .8 * math.sin(k * 1.5 + 1) * r
+        s *= 1 + .006 * k
+    if t >= ON0: s *= 1 + .03 * K.kick(t - ON0, .08)           # the screen wakes with a punch
     # "twice": two small punches of the card on the rewind start and the tape stop
     s *= 1 + .028 * K.kick(t - RW0, .09) + .034 * K.kick(t - RW1, .10)
-    return cx, cy, s, rx, ry, rz_
+    return cx, cy, s, rx, ry, rz
 
 
 # ---------------------------------------------------------------- art
@@ -319,14 +324,15 @@ def progress(t):
 
 
 ON0 = LAND - .025                          # screen wakes on VIDEO ('v' onset 15.645 -> first lit frame 15.667)
+STANDBY = .26                              # sleeping display: light output of the paused Reel (dim, a third of its brightness)
 
 
 def power(t):
-    """screen power: dark glass during the swing-in, switches ON exactly on VIDEO (with an over-exposed flash).
-    returns (light output for the spill, ui alpha, radial reveal 0..1)."""
-    if t < ON0: return .10, 0., 0.
+    """screen power: a dim sleeping display during the swing-in, slams ON exactly on VIDEO (2-frame radial wake with a
+    hot over-exposure that decays over ~5 frames). returns (light output for the spill, ui alpha, radial reveal 0..1)."""
+    if t < ON0: return STANDBY, 0., 0.
     k = t - ON0
-    return 1 + 1.1 * K.kick(k, .07), clamp(k / .08), clamp(k / .10)
+    return 1 + 1.5 * K.kick(k, .085), clamp(k / .06), clamp(k / .05)
 
 
 def glass_refl():
@@ -334,7 +340,7 @@ def glass_refl():
     def mk():
         p = E.studio().crop((0, 200, 1080, 1400)).transpose(Image.FLIP_LEFT_RIGHT)
         p = p.resize((816, 906), Image.BILINEAR).filter(ImageFilter.GaussianBlur(10))
-        return np.asarray(K.grade(p, bright=.50, sat=1.1), np.float32)
+        return np.asarray(K.grade(p, bright=.56, sat=1.15), np.float32)
     return K.C('s07refl', mk)
 
 
@@ -347,9 +353,14 @@ def _card_uv():
     return K.C('s07uv', mk)
 
 
+def sleep_ui():
+    return K.C('s07sleepui', lambda: E.fade(reels_ui(), .34))
+
+
 def dark_glass(t):
-    """the powered-off screen: deep black glass carrying a mirrored, defocused room + a specular streak that slides
-    across as the card swings (parallax with its rotation) -> reads as real glass, not a black slab."""
+    """the sleeping screen: the paused Reel at a third of its brightness (desaturated, a touch soft) behind deep glass
+    that mirrors the defocused purple room + a specular streak sliding across as the card swings (parallax with its
+    rotation) -> reads as a real phone about to wake, never a black slab."""
     cx, cy, s, rx, ry, rz = card_state(t)
     R = glass_refl()
     ox = int(clamp((ry + 13) / 75) * 300) + 18; oy = int(clamp((rx - 2.5) / 12) * 40) + 6
@@ -357,20 +368,34 @@ def dark_glass(t):
     u, _ = _card_uv()
     c = .30 + (ry + 13) / 95 - (cy - 770) / 2600
     streak = (np.exp(-((u - c) / .055) ** 2) * .26 + np.exp(-((u - c - .16) / .02) ** 2) * .10)[..., None]
-    base = np.array([5, 5, 9], np.float32)
-    a = base + refl * .62
+    st = src_time(t)
+    rng = PLAY_A if st >= PLAY_A[0] else PLAY_B
+    pic = place_film(K.fixed_at(E.HYPER, rng[0], rng[1], (CW, CH), st)).convert('RGBA')
+    pic.alpha_composite(sleep_ui())
+    pic = np.asarray(K.grade(pic.convert('RGB'), sat=.55, bright=.33, contrast=.92), np.float32)
+    a = np.array([5, 5, 9], np.float32) + pic + refl * .55
     a = a + (255 - a) * streak
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
 
 
 def wake(c, g, k):
-    """radial power-on: the picture spreads out from the centre over the dark glass, its edge glowing."""
+    """radial power-on: the picture bursts out from the centre over the sleeping glass, a white-hot rim leading it."""
     _, d = _card_uv()
-    R = k * 1.12 * 560
-    m = np.clip((R - d) / 70 + .5, 0, 1)[..., None]
-    edge = np.exp(-((d - R) / 46) ** 2)[..., None] * (1 - k) * 150
-    a = np.asarray(c, np.float32) * m + np.asarray(g, np.float32) * (1 - m) + edge * np.array([.86, .84, 1.0], np.float32)
+    R = (.10 + k * 1.02) * 560
+    m = np.clip((R - d) / 60 + .5, 0, 1)[..., None]
+    edge = np.exp(-((d - R) / 52) ** 2)[..., None] * (1 - k * .8) * 230
+    core = np.exp(-(d / 150) ** 2)[..., None] * (1 - k) * 120
+    a = np.asarray(c, np.float32) * m + np.asarray(g, np.float32) * (1 - m) + (edge + core) * np.array([.88, .86, 1.0], np.float32)
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+
+
+def flash_fill():
+    """white-hot panel colour for the power-on flash (slightly cool, hotter in the centre)."""
+    def mk():
+        _, d = _card_uv()
+        a = 255 - np.clip(d / 560, 0, 1)[..., None] ** 1.6 * np.array([70, 74, 40], np.float32)
+        return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    return K.C('s07flash', mk)
 
 
 def card_img(t):
@@ -379,7 +404,9 @@ def card_img(t):
         c = dark_glass(t)
     else:
         c = content(t)
-        if abs(pw - 1) > .01: c = K.grade(c, bright=pw, lift=40 * max(0, pw - 1))
+        if abs(pw - 1) > .01: c = K.grade(c, bright=pw, contrast=1 + .10 * max(0, pw - 1), lift=14 * max(0, pw - 1))
+        fl = K.kick(t - ON0, .05)                             # power-on flash: the panel blows out, the picture resolves
+        if fl > .02: c = Image.blend(c, flash_fill(), min(1., 1.6 * fl))
         if kon < 1: c = wake(c, dark_glass(t), kon)
     c = c.convert('RGBA')
     if ui > .01: c.alpha_composite(E.fade(reels_ui(), ui) if ui < 1 else reels_ui())
@@ -463,6 +490,11 @@ def wrap_fn(t, q):
         ex = max(xs) - 40; ey = (min(ys) + max(ys)) / 2
         fr = fr.convert('RGB')
         K.add_light(fr, big, ex - 450, ey - 560, gain * .55)
+        wk = K.kick(t - ON0, .12) if t >= ON0 else 0.        # VIDEO: the screen slams on -> a bloom bursts around it
+        if wk > .03:
+            bw, bh = int((max(xs) - min(xs)) * 2.5), int((max(ys) - min(ys)) * 1.75)
+            hb = K.radial(160, (214, 204, 255), 1.5, 1.0, sy=1.45).resize((bw, bh), Image.BILINEAR)
+            K.add_light(fr, hb, sum(xs) / 4 - bw / 2, sum(ys) / 4 - bh / 2, 1.7 * wk)
         return fr
     return fn
 
@@ -478,7 +510,15 @@ def theater(t):
     return K.smooth((t - W_WATCH + .02) / .30)
 
 
+_K_NEXT = int(round(END * E.AV_FPS))        # first source frame of the next segment (his pose jumps there)
+
+
 def draw(ctx, lt, t):
+    if E.Avatar._k_of(t) >= _K_NEXT:
+        # 17.48 falls between two 30 fps frames: the last frame before END already shows the next segment's pose, so
+        # it is drawn with s08's framing -> the jump always coincides with the cut (pure function of t).
+        from sections import s08_remember as S08
+        return S08.draw(ctx, t - S08.START, t)
     ctx.captions = False
     ctx.cam = camera(t)
     ctx.bg_blur = 3.5

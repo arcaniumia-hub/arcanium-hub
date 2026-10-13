@@ -426,3 +426,24 @@ def zblur(img, amount, center=(W / 2, H / 2), n=5):
         s = 1 + amount * .05 * i; a = 1 / s
         acc += np.asarray(base.transform(base.size, Image.AFFINE, (a, 0, cx - cx * a, 0, a, cy - cy * a), Image.BILINEAR), np.float32)
     return Image.fromarray((acc / n).astype(np.uint8)).convert(img.mode)
+
+
+def zoom_smear(img, s0, s1, center=(W / 2, H / 2), max_step=4.0):
+    """camera zoom motion blur: the average of copies of `img` scaled between s0 and s1 about `center` (s = scale of
+    the scene at the shutter open/close relative to this frame, e.g. v(t -/+ 1/60) / v(t)). Enough taps that no
+    copy is more than ~max_step px from the next at the frame corners; long smears are accumulated at half resolution
+    (they are all blur anyway). Returns RGB."""
+    span = abs(s1 - s0)
+    if span < .003: return img
+    cx, cy = center
+    reach = max(math.hypot(cx, cy), math.hypot(W - cx, cy), math.hypot(cx, H - cy), math.hypot(W - cx, H - cy))
+    q = 2 if span * reach > 24 else 1
+    base = img.convert('RGB'); full = base.size
+    if q > 1: base = base.resize((full[0] // q, full[1] // q), Image.BILINEAR); cx, cy = cx / q, cy / q
+    n = int(clamp(span * reach / q / max_step + 1, 3, 12))
+    acc = np.zeros((base.height, base.width, 3), np.float32)
+    for i in range(n):
+        s = s0 + (s1 - s0) * i / (n - 1); a = 1 / s
+        acc += np.asarray(base.transform(base.size, Image.AFFINE, (a, 0, cx - cx * a, 0, a, cy - cy * a), Image.BILINEAR), np.float32)
+    out = Image.fromarray((acc / n + .5).astype(np.uint8))
+    return out.resize(full, Image.BILINEAR) if q > 1 else out

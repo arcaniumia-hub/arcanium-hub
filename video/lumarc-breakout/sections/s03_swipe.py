@@ -125,8 +125,9 @@ scroll_now = [0.0]
 
 def blur_len(t, v):
     """motion-blur length (px) of the scrolling feed: 90-degree shutter capped at 340 px for the throw, so the posts
-    whizzing past still read as posts; the yank back (YANK..LAND) is a rewind smear."""
-    if YANK <= t <= LAND + .02: return int(min(1200, abs(v) * .5 / E.FPS))
+    whizzing past still read as posts; the yank back (YANK..LAND, ~3 posts per frame) is capped at 420 px too: a
+    strobing rewind of real posts (photos, headers, captions streaking down), never a grey mush."""
+    if YANK <= t <= LAND + .02: return int(min(420, abs(v) * .5 / E.FPS))
     return int(min(340, abs(v) * .25 / E.FPS))
 
 

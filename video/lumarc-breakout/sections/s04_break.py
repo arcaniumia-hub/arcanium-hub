@@ -8,15 +8,18 @@ One continuous take (no pose jumps). Shared glass state (crack network, Reel, jo
 8.09  "MINE." — the concentric spiderweb completes inner -> outer and the studio light starts leaking through the
       cracks (fissures turn to light, violet halo, strongest at the impact), the glass bulges (growing refraction),
       tremor + leak build with the riser; creaks at 8.30 / 8.45.
-8.56  BREAK — flash + boom. The glass (feed UI + the flat Reel printed on it) bursts into ~80 shards flying TOWARD the
-      lens in slow motion (explosive first 2-3 frames, then 0.28x): rigid planar pieces in 3-D (pinhole camera,
-      homography per shard), tumbling. Photographic glass (GK render_refract): each piece REFRACTS the real studio
-      behind it (broken-mirror slices of his face), bevels glow with the burst light behind the glass then catch the
-      key light (dark on the shadow side), the room's softboxes / monitor strips slide across the pieces as they turn
-      (env reflection, Fresnel), star glints, glass dust. The printed photo dies within ~5 frames (pieces over his
-      face first) while the white UI glyphs (For you, heart, home...) stay printed on the flying cover glass. Rack
-      focus glass -> him, near pieces defocused + motion-blurred. The camera dollies forward THROUGH the hole
-      (vanishing point = the impact): behind is HIM in his real studio, full size, with true parallax.
+8.56  BREAK — one-frame flash + boom (the fissures blaze). The glass (feed UI + the flat Reel printed on it) bursts into
+      ~80 shards blown TOWARD the lens (explosive first 2-3 frames, then 0.32x slow motion) + six authored hero BLADES
+      of the cover glass that fly straight at the lens: they loom from 1x to ~5x in 0.3 s nearly in place, defocused
+      and motion-blurred, and sweep out across the frame edges (never toward his face). Rigid planar pieces in 3-D
+      (pinhole camera, homography per shard), tumbling, short shutter (crisp, high-speed-photography read).
+      Photographic "hero look" glass (GK render_refract): dark refracting bodies with a sweeping internal gradient
+      (broken-mirror slices of his face), the slab's side face peeking out as a lit strip, crisp white bevels on the
+      key side + purple/blue monitor rim on the others, a hard-edged window reflection sliding across each piece as it
+      turns, star glints, tapered glass dust with sparkles, bloom on the glass highlights only. The printed photo
+      dies within 2 frames while the white UI glyphs (For you, heart, home...) stay printed on the flying cover glass.
+      Camera: expo-out dolly toward him 8.56 -> 9.40 (he comes FORWARD x1.11, studio parallax via bg_z) — the
+      shards spread over the whole frame and clear his face by ~8.83; the glass is gone by ~9.0.
 9.28  He's out. Eight loose shards drift in slow motion around the frame edges (off his face and off the caption band),
       three still carrying a UI glyph, one big soft foreground piece for depth; light catches on CONTENT, DOESN'T, STAY.
 9.76  "CONTENT": snap push-in to a tight face framing (3 frames, radial motion blur on the world only — the words stay
@@ -54,15 +57,69 @@ CREAKS = (8.30, 8.45)
 
 VP = S3.VP; IMPACT = S3.IMPACT; FR = S3.FR
 FOC = 1600.0
-ZH, ZB = 6.0, 8.5                             # depth of him / the studio wall behind the glass (units of FOC)
-C_MAX = .92                                   # camera travel through the hole (units of FOC)
+ZH, ZB = 4.55, 7.0                            # depth of him / the studio wall behind the glass (units of FOC)
+C_MAX = .45                                   # camera travel (units of FOC) toward him: x ZH/(ZH-C_MAX) = 1.11 (the dolly)
+TAU_C, U_C = .22, .84                         # expo-out dolly: ~75 % of the travel in the first 0.3 s, at rest by 9.40
 BGZ0 = S3.BGZ0
 def _group(i, j, k):
     if j <= 1: return ('a', j, k // 4)                    # crushed centre: a few wedge pieces
     if j <= 6: return ('b', j, k // 2)                    # mid rings: pairs of cells
     return ('c', i)
+FACE = (540.0, 790.0)                         # his face on the glass at the break
 SH = GK.Shatter(FR, seed=3, focal=FOC, vp=VP, group=_group, wave=20000., speed=1.25)
-DUST = GK.Dust(FR, n=200, seed=5, focal=FOC, vp=VP)
+DUST = GK.Dust(FR, n=340, seed=5, focal=FOC, vp=VP)
+
+
+class HeroShards(GK.Shatter):
+    """authored blade-shaped hero pieces of the cover glass (they get huge, so they must not show the spiderweb's
+    curved ring cells): same flight model as the shatter, own shapes."""
+    def __init__(self, items, F, focal, vp):
+        self.F, self.f, self.vp = F, float(focal), (float(vp[0]), float(vp[1])); self.shards = items
+
+
+def _blade(rng, cx, cy, L, wid, ang):
+    """a sharp glass blade (irregular triangle or dagger quad) of length L, width wid, axis angle ang (radians)."""
+    ca, sa = math.cos(ang), math.sin(ang)
+    if rng.random() < .5:
+        pts = [(L * .5, rng.uniform(-.1, .1) * wid), (-L * .5, wid * .5 * rng.uniform(.8, 1.1)), (-L * rng.uniform(.25, .45), -wid * .5 * rng.uniform(.8, 1.1))]
+    else:
+        pts = [(L * .5, 0.0), (L * rng.uniform(-.05, .15), wid * .5), (-L * .5, wid * rng.uniform(.15, .35)), (-L * rng.uniform(.15, .35), -wid * .5)]
+    return [(cx + x * ca - y * sa, cy + x * sa + y * ca) for x, y in pts]
+
+
+def _heroes():
+    """six blades of the cover glass around the impact (never toward his face) are blown straight AT the lens: each
+    grows from 1x to ~5x in 0.3 s nearly in place, defocused + motion-blurred, and sweeps out across a frame edge."""
+    for s in SH.shards: s['vz'] *= 1.6                         # the whole pane is blown toward the lens
+    rng = np.random.default_rng(29); items = []
+    spec = [(165, 300, 330, 120), (220, 330, 300, 130), (318, 300, 320, 120), (12, 280, 290, 140), (58, 250, 300, 110), (122, 270, 340, 130)]
+    for i, (adeg, r0, L, wid) in enumerate(spec):
+        a = math.radians(adeg); cx, cy = IMPACT[0] + r0 * math.cos(a), IMPACT[1] + r0 * math.sin(a)
+        poly = _blade(rng, cx, cy, L, wid, a + rng.uniform(-1.1, 1.1))
+        xs, ys = [p[0] for p in poly], [p[1] for p in poly]
+        c = (float(np.mean(xs)), float(np.mean(ys))); dx, dy = c[0] - IMPACT[0], c[1] - IMPACT[1]; dist = math.hypot(dx, dy)
+        vz = -rng.uniform(4000, 5200)
+        ax = rng.normal(0, 1, 3); ax[2] *= .5; ax /= np.linalg.norm(ax)
+        items.append(dict(i=500 + i, polys=[poly], poly=poly, c=c, dist=dist, dir=(dx / dist, dy / dist), area=GK.poly_area(poly),
+                          bbox=(int(min(xs)) - 2, int(min(ys)) - 2, int(max(xs)) + 3, int(max(ys)) + 3),
+                          vr=-dist * (-vz / FOC) * rng.uniform(.45, .62), vz=vz, axis=ax, w=rng.uniform(3.0, 5.0) * rng.choice([-1, 1]),
+                          delay=dist / 20000., ph=rng.uniform(0, 6.3), grav=rng.uniform(100, 250), side=0.0,
+                          cull=6.5, edge_k=1.5, shade_k=1.25, hero=True))
+    return HeroShards(items, FR, FOC, VP)
+
+
+HS = _heroes()
+
+
+def _inside(pt, poly):
+    x, y = pt; n = len(poly); ins = False
+    for k in range(n):
+        x0, y0 = poly[k - 1]; x1, y1 = poly[k]
+        if (y0 > y) != (y1 > y) and x < x0 + (y - y0) * (x1 - x0) / (y1 - y0): ins = not ins
+    return ins
+
+
+HIDDEN = {s['i'] for s in SH.shards if any(_inside(s['c'], h['poly']) for h in HS.shards)}   # cells the blades replace
 
 CUES = [
     (W_NOT, 'knock', {'seed': 3, 'gain': 3}),
@@ -75,7 +132,7 @@ CUES = [
     (BREAK, 'shatter', {'dur': 1.6, 'gain': 0}),
     (BREAK + .04, 'whoosh', {'gain': -3}),
     (BREAK + .38, 'glass', {'seed': 6, 'gain': -9}),          # slow-mo shards shimmer past
-    (9.02, 'swoosh_up', {'gain': -6}),                        # camera flies through the hole
+    (8.82, 'swoosh_up', {'gain': -7}),                        # (peak) the hero blades fly past the lens
     (W_CONTENT, 'whoosh', {'gain': -12}),                    # snap push-in on CONTENT
     (W_CONTENT + .03, 'shimmer', {'gain': -12}),              # a drifting shard glints on CONTENT
     (W_DOESNT + .06, 'tick', {'gain': -16, 'pan': .4}),       # a far shard catches the light on DOESN'T
@@ -101,14 +158,16 @@ Z_BRK = z_in(BREAK)
 
 
 def cam_c(t):
-    """forward travel of the camera after the break (units of FOC): eases through the glass plane by ~9.22."""
+    """forward travel of the camera after the break (units of FOC), expo-out: the camera is kicked forward by the burst
+    (the glass rushes at the lens), passes the glass plane at ~9.0 and settles by 9.40 -> he comes FORWARD x1.11."""
     u = t - BREAK
-    return C_MAX * smooth(clamp((u - .06) / .64)) ** 1.3 if u > 0 else 0.0
+    if u <= 0: return 0.0
+    return C_MAX * (1 - math.exp(-min(u, U_C) / TAU_C)) / (1 - math.exp(-U_C / TAU_C))
 
 
 def z_real(t):
     c = cam_c(t); z = Z_BRK * ZH / (ZH - c)
-    if t > 9.24: z *= 1 + .025 * smooth((t - 9.24) / 2.6)       # keeps drifting in while he talks
+    if t > BREAK + U_C: z *= 1 + .02 * smooth((t - BREAK - U_C) / 2.4)       # keeps drifting in while he talks
     return z
 
 
@@ -118,10 +177,7 @@ def bgz_real(t):
 
 def tau(t):
     """shard sim time: an explosive first 2-3 frames, then 0.3x slow motion."""
-    u = max(0.0, t - BREAK); return .085 * (1 - math.exp(-u / .03)) + .28 * u
-
-
-FACE = (540.0, 790.0)                         # his face on the glass at the break
+    u = max(0.0, t - BREAK); return .085 * (1 - math.exp(-u / .03)) + .32 * u
 
 
 def shard_ink(s, u):
@@ -129,11 +185,13 @@ def shard_ink(s, u):
     glass remains (the UI glyphs stay printed, see glyph_key). Pieces over his face clear first so the real him reads
     through the burst at once."""
     d = math.hypot(s['c'][0] - FACE[0], (s['c'][1] - FACE[1]) * .8)
-    tg = u + s['delay'] if u > 0 else 0.0               # global sim time: every piece is clear before LIVE_GLASS
-    return 1 - smooth(tg / (.05 if d < 300 else .095))
+    tg = u + s['delay'] if u > 0 else 0.0               # global sim time (a piece keeps its print until released)
+    return 1 - smooth(tg / (.03 if d < 300 else .06))
 
 
-LIVE_GLASS = .16                              # after this the printed photo is gone from every piece: static glass print
+def any_ink(tau_):
+    """True while at least one piece still carries the printed photo (else the cheap static glass print is enough)."""
+    return any(shard_ink(s, max(0.0, tau_ - s['delay'])) > .004 for s in SH.shards + HS.shards)
 
 
 def glyph_key():
@@ -232,11 +290,11 @@ def burst_glow(t):
     """the light behind the glass bursting through the hole (additive RGBA)."""
     u = t - BREAK
     if not (0 <= u < .5): return None
-    a = math.exp(-u / .09)
+    a = math.exp(-u / .05)
     def mk():
         yy, xx = np.mgrid[0:H // 4, 0:W // 4].astype(np.float32) * 4
         r = np.hypot(xx - IMPACT[0], (yy - IMPACT[1]) * .9)
-        g = np.exp(-(r / 260) ** 2) + .35 * np.exp(-(r / 700) ** 2)
+        g = np.exp(-(r / 230) ** 2) + .18 * np.exp(-(r / 620) ** 2)
         return np.clip(g, 0, 1)
     g = C('burst', mk)
     im = Image.new('RGBA', (W // 4, H // 4), (226, 214, 255, 0))
@@ -244,13 +302,35 @@ def burst_glow(t):
     return im.resize((W, H), Image.BILINEAR)
 
 
-def add_light(fr, glow):
-    """additive light (RGBA glow: colour x alpha) onto fr."""
+def add_light(fr, glow, col=(226, 214, 255)):
+    """additive light (the glow's alpha x col) onto fr. (The colour is passed explicitly: a resized RGBA glow is
+    premultiplied, so its transparent corner pixel reads black.)"""
     if glow is None: return fr
     from PIL import ImageChops
-    al = glow.getchannel('A'); r, g, b = glow.getpixel((0, 0))[:3]
+    al = glow.getchannel('A'); r, g, b = col
     add = Image.merge('RGB', [al.point(lambda v, c=c: int(v * c / 255 * .9)) for c in (r, g, b)])
     return ImageChops.add(fr.convert('RGB'), add).convert('RGBA')
+
+
+# the photographic glass look of the flying pieces (GK render_refract "hero look")
+GLASS_KW = dict(dof=2.5, near=120.0, cull_scale=4.2, glyph_alpha=.9, refract=26.0, edge=2.2, veil=.10, sheen=.5,
+                reflect=1.0, refl_cap=.5, env_q=2, env_pow=3.0, bevel=2.6, shade=.85, absorb=.22, tint=(12, 10, 30), rim=1.0,
+                blur_cap=9.0, blur_fade=30.0, max_smear=12, smear_div=4.0, star_scale=4.0, smear_soft=True,
+                q_blur=5.0, tex_r_area=90000, thick=2.4, gloss=.9)
+BLOOM = 1.0
+
+
+def bloom(fr, base, k):
+    """photographic bloom of the glass highlights only: what the shards ADD over the world (hot bevels, glints,
+    reflections) glows softly (quarter res)."""
+    if k <= 0: return fr
+    a = np.asarray(fr.convert('RGB'), np.int16); b = np.asarray(base.convert('RGB'), np.int16)
+    d = np.clip((a - b).max(2) - 45, 0, 255).astype(np.uint8)
+    sm = Image.fromarray(d).resize((W // 4, H // 4), Image.BOX)
+    g = np.asarray(sm.filter(ImageFilter.GaussianBlur(2.2)), np.float32) * 1.6 + np.asarray(sm.filter(ImageFilter.GaussianBlur(7)), np.float32) * 1.4
+    g = np.asarray(Image.fromarray(np.clip(g, 0, 255).astype(np.uint8)).resize((W, H), Image.BILINEAR), np.float32) / 255 * k
+    out = a + g[..., None] * np.array([150, 140, 255], np.float32) * .55
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)).convert('RGBA')
 
 
 # ================================================================ drifting slow-mo shards after the break
@@ -469,27 +549,34 @@ def draw(ctx, lt, t):
     P['vignette'] = .34; P['grain'] = 1.0
     if t < 9.30:
         g = None
-        if SH.visible(tau(t), cam_c(t) * FOC, 150.0):
-            if u < LIVE_GLASS:
+        if SH.visible(tau(t), cam_c(t) * FOC, 120.0, 4.2) or HS.visible(tau(t), cam_c(t) * FOC, 120.0, 4.2):
+            if any_ink(tau(t)):
                 g = glass_screen(ctx, t)
                 g = FR.composite(g, BREAK, refr=refr(BREAK), leak=1.0 * math.exp(-u / .12) + .25, glint=2.0, sweep=900, leak_falloff=(.12, 430.0)).convert('RGBA')
                 g.putalpha(glyph_key())
             else: g = static_glass()
         rw = real_world(ctx, t)
         rw = add_light(rw, burst_glow(t))
-        foc = lerp(1.0, ZH - cam_c(t), smooth((u - .15) / .40)) * FOC
-        dtau = tau(t) - tau(t - .5 / E.FPS)
-        fr = rw if g is None else SH.render_refract(rw, g, tau(t), dz=cam_c(t) * FOC, focus_z=foc, dof=5.0, shutter_dtau=dtau,
-                                                    dz_prev=cam_c(t - .5 / E.FPS) * FOC, near=150.0, cull_scale=3.2,
-                                                    img_alpha=shard_ink, glyph_alpha=.9, refract=22.0, edge=1.5, veil=.5, sheen=.6, reflect=1.7,
-                                                    bevel=3.2, backlight=1.6 * math.exp(-u / .12))
+        c = cam_c(t)
+        fs = lerp(1 / (1 - .8 * c), 1 / (ZH - c), smooth((u - .25) / .35))   # focus on the mid glass, then rack to him
+        foc = FOC / fs
+        SHUT = .25 / E.FPS                                           # short shutter: crisp, high-speed-photography shards
+        dtau = tau(t) - tau(t - SHUT)
+        if g is not None:
+            kw = dict(dz=c * FOC, focus_z=foc, shutter_dtau=dtau, dz_prev=cam_c(t - SHUT) * FOC, img_alpha=shard_ink,
+                      backlight=1.0 * math.exp(-u / .08), **GLASS_KW)
+            fr = SH.render_refract(rw, g, tau(t), keep=lambda s: s['i'] not in HIDDEN, **kw)
+            fr = HS.render_refract(fr, g, tau(t), **kw)
+        else: fr = rw
+        if g is not None: fr = bloom(fr, rw, BLOOM)
+        if u < .05: fr = add_light(fr, burst_glow(t))            # the break itself: a hot radial burst in front of the glass
         da = smooth(u / .03) * (1 - smooth((u - .35) / .3))
         if da > .01:
-            fr.alpha_composite(DUST.render((W, H), tau(t), cam_c(t) * FOC, dtau, cam_c(t - .5 / E.FPS) * FOC, alpha=da))
+            fr.alpha_composite(DUST.render((W, H), tau(t), c * FOC, tau(t) - tau(t - .5 / E.FPS), cam_c(t - .5 / E.FPS) * FOC, alpha=da,
+                                           taper=True, sparkle=.3, gain=1.3))
         if u > .25: fr = render_floaters(fr, t)
         ctx.full = fr
-        e = math.exp(-u / .045)
-        P['flash'] = .32 * e; P['flash_col'] = (236, 228, 255); P['bright'] = 1 + .35 * math.exp(-u / .1)
+        P['flash'] = .28 * math.exp(-u / .03); P['flash_col'] = (236, 228, 255); P['bright'] = 1 + .35 * math.exp(-u / .04)
         return
     # ------------------------------------------------ 9.30 – 11.96: out in the studio
     pane_layer(ctx, t)

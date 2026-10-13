@@ -1,14 +1,17 @@
 """s10 — CTA + END CARD (TL17-19 + hold, 22.04–29.44):
 "Want your brand to break out of the feed?" / "Comment 'LUMARC'" / "and I'll show you how." / end card / loop flick.
 
-22.04  JUMP CUT -> medium (z 1.19). Behind him a FROSTED GLASS WALL: the feed (4 columns of posts) seen through
-       frosted glass lit by the studio's violet light, scrolling up fast with motion blur, settling (elastic).
+22.04  JUMP CUT -> medium two-shot (z 1.19, camera panned to the right edge of the world: he sits left of centre).
+       Behind him a FROSTED GLASS WALL: the feed (4 columns of posts) seen through frosted glass lit by the studio's
+       violet light, scrolling up fast with motion blur, settling (elastic). The brand's post lands on the right,
+       beside his head (screen x ~ 625-990).
 22.69  "BRAND" — one post (northroast.coffee) lights up behind the frost: brand-gradient ring + glow bleeding through.
 23.00  "TO" — the post knocks against the glass from inside (callback to his knocks): the glass flexes.
 23.17  "BREAK" — a crack star bursts across the glass over the post (fissures, glints, refraction, its light leaks
        through the cracks), camera jolt.
 23.46  "OUT" — it BREAKS OUT: the glass shatters toward the lens (3-D shards, DOF, motion blur, dust of light), the
-       post flies out crisp and saturated, tumbling forward into the space in front of him (upper right), the hole in
+       post flies out crisp and saturated, tumbling forward into the free space beside him (right of his head, the
+       whole card inside x ~ 620-1000 / y ~ 270-900, clear of his face and hair), the hole in
        the wall shows the sharp feed behind the glass. "OF THE FEED?" it hangs there, then rushes into the lens
        (multi-sample shutter blur + growing defocus).
 24.28  JUMP CUT hidden by the post passing the lens: it covers the frame (opaque, defocused), then wipes off past the
@@ -21,7 +24,8 @@
 26.84  slam on the end of the voice (boom): END CARD — logo, "Be seen. Be remembered.", gradient pill
        Comment “LUMARC”, @lumarc_studio · slumarc.com, planet-horizon light, bokeh, light sweeps.
 29.10  LOOP HANDSHAKE: a thumb flick — the end card is flicked up into the feed (chrome slides back in), accelerating to
-       ~12 000 px/s with vertical motion blur, so the last frame flows into frame 0 (the feed flying up onto his Reel).
+       ~12 000 px/s with vertical motion blur; it lands exactly on s01's frame 0 (his post centred at scroll S*, crisp:
+       whip-to-crisp snap; the virtual frame 0 of the flick is pixel-identical to the film's first frame).
 """
 import math, os
 import numpy as np
@@ -127,8 +131,9 @@ Z_HIM = 1330.0
 CW, HEAD, MED, FOOT = 300, 46, 375, 54
 CH = HEAD + MED + FOOT                             # 475
 PX_, PY_ = 316, CH + 14
-COLS = [800 - 2 * PX_, 800 - PX_, 800, 800 + PX_]
-BX, BY = COLS[2], 430.0                            # the brand post's centre at rest (world)
+BXC = 852                                          # the brand's column (world): on screen x ~ 627-985 (beat A camera)
+COLS = [BXC - 2 * PX_, BXC - PX_, BXC, BXC + PX_]
+BX, BY = COLS[2], 560.0                            # the brand post's centre at rest (world), beside his head
 RB = 3                                             # its row index in the grid image
 NROWS = 10
 SCROLL0 = 1180.0                                   # content starts this much lower and flies up into place
@@ -381,14 +386,23 @@ def shard_layers(t):
     tau = (t - W_OUT) * 1.1
     if tau <= 0 or tau > 2.2: return None, None
     out = []
-    zs = {s['i']: SH.pose(s, tau)[0][2] for s in SH.shards if s['i'] in SH_IDS}
+    poses = {s['i']: SH.pose(s, tau)[0] for s in SH.shards if s['i'] in SH_IDS}
+    zs = {i: P[2] for i, P in poses.items()}
+    area = {s['i']: s['area'] for s in SH.shards}
+    def face_k(i):
+        """pieces flying in front of him thin out where they would cross his face (a pale slab over an eye reads as
+        a smudge, not glass): ghosted inside an ellipse around his face (world px), scaled by the piece's size."""
+        P = poses[i]; x, y = SH.proj(P[None])[0]; r = math.sqrt(area[i]) * FOC / max(P[2], 1.0) * .5
+        d = math.hypot((x - 540) / (170 + r), (y - 900) / (300 + r))
+        return .12 + .88 * clamp((d - .85) / .5)
     for front in (False, True):
         ids = {i for i, z in zs.items() if (z < Z_HIM) == front}
         if not ids: out.append(None); continue
         canvas = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+        afn = (lambda s, u: clamp(1.25 - u / 1.4) * face_k(s['i'])) if front else (lambda s, u: clamp(1.25 - u / 1.4))
         img = SH.render(canvas, glass_tex(), tau, dz=0.0, focus_z=FOC * .9, dof=7.0, shutter_dtau=1.1 / 60, near=120,
                         cull_scale=6.0, keep=lambda s: s['i'] in ids, spec_gain=1.3,
-                        img_alpha=lambda s, u: clamp(1 - u / .5) * .8 + .1, alpha_fn=lambda s, u: clamp(1.25 - u / 1.4))
+                        img_alpha=lambda s, u: clamp(1 - u / .5) * .8 + .1, alpha_fn=afn)
         out.append(img)
     return out[0], out[1]
 
@@ -398,15 +412,16 @@ def hero_state(t):
     """(cx, cy, scale, rx, ry, rz, alpha) of the broken-out post in SCREEN space (scale 1 = the wall card at z 1)."""
     if t < W_OUT: return None
     e = t - W_OUT
-    za = camera(min(t, T18 - 1e-3))['z']
-    sx0, sy0 = 540 + (BX - 540) * za, 860 + (BY - 860) * za
+    cam = camera(min(t, T18 - 1e-3)); za = cam['z']
+    sx0, sy0 = w2s(cam, BX, BY)
     k1 = expo(e / .24)
-    cx = lerp(sx0, 842, k1); cy = lerp(sy0, 470, k1); s = lerp(za, 1.40, k1)
-    rx = lerp(0, 10, k1); ry = lerp(0, -26, k1); rz = lerp(0, -6, k1)
-    if e > .12:   # it keeps coming at you, slowly, with a breath of float
+    # it comes forward into the free space right of his head: whole card inside x 80-1000, clear of his face/hair
+    cx = lerp(sx0, HX, k1); cy = lerp(sy0, HY, k1); s = lerp(za, HS, k1)
+    rx = lerp(0, 9, k1); ry = lerp(0, -22, k1); rz = lerp(0, -5, k1)
+    if e > .12:   # it keeps coming at you, slowly, with a breath of float (growing to the right: never onto his face)
         d = smooth((e - .12) / (RUSH0 - W_OUT - .12))
-        cy += -12 * d + 4 * math.sin((e - .12) * 5); cx += -6 * d; s += .14 * d
-        rx -= 4 * d; ry += 8 * d; rz += 3 * d
+        cy += -10 * d + 4 * math.sin((e - .12) * 5); cx += 3 * d; s += .035 * d
+        rx -= 4 * d; ry += 7 * d; rz += 3 * d
     al = 1.0
     if t >= RUSH0:
         u = min(1.0, (t - RUSH0) / (T18 - RUSH0))
@@ -420,6 +435,14 @@ def hero_state(t):
 
 
 EXIT_D = .10                                       # the card clears the frame 2-3 frames after the 24.28 cut
+HX, HY, HS = 811., 588., 1.22                      # where the broken-out post hangs (screen centre, scale): beside him
+
+
+def w2s(cam, x, y):
+    """world -> screen through an engine camera (same clamp as engine.compose_world)."""
+    z = max(1.0, cam['z']); X, Y = cam['x'] + cam['dx'], cam['y'] + cam['dy']
+    X = min(max(X, W - z * (W - cam['x'])), z * cam['x']); Y = min(max(Y, H - z * (H - cam['y'])), z * cam['y'])
+    return X + (x - cam['x']) * z, Y + (y - cam['y']) * z
 
 
 def hero_quad(st, qq=1):
@@ -742,7 +765,8 @@ def camera(t):
             if t >= t0:
                 e = t - t0; dy += amp * math.exp(-e / .09) * math.sin(e * 2 * math.pi * 8); dx += amp * .6 * math.exp(-e / .09) * math.sin(e * 2 * math.pi * 6 + 1)
         if t >= W_OUT: rot = .0022 * math.exp(-(t - W_OUT) / .12) * math.sin((t - W_OUT) * 38)
-        return dict(z=z, x=540., y=860., dx=dx, dy=dy, rot=rot)
+        dx += 546. - 540. * z            # pans to the right edge of the world: a two-shot, him left of centre, the
+        return dict(z=z, x=540., y=860., dx=dx, dy=dy, rot=rot)       # brand's post on the right (6 px of shake room)
     if t < T19:
         lt = t - T18
         z = 1.40 + .04 * smooth(lt / 1.4) + .02 * kick(t - W_LUM, .2) * (t >= W_LUM) + .015 * kick(t - HEART, .15) * (t >= HEART)
@@ -1002,8 +1026,9 @@ def end_card(t, base):
 
 
 # ======================================================================================= loop handshake (feed, frame 0)
-D0, A_, W_ = 650., 22., 13.                        # s01: scroll(t) = S* - D0 e^(-A t) cos(W t)
-V0 = D0 * A_                                       # 14 300 px/s at frame 0
+# s01 (frame 0) is the snap: his post exactly centred (scroll S*) and crisp, the momentum carrying it ~17 px past centre
+# before it settles. The flick therefore lands ON S* at the virtual frame 0, still at full speed (whip-to-crisp).
+V0 = 14300.                                        # px/s at the virtual frame 0 (~12 200 px/s over the last frame)
 S_STAR = FK.center_scroll(FK.SPECIAL)
 FL_T = LOOP_T - FL0                                # flick duration (to the virtual frame 0)
 FL_P = 1.5                                         # velocity ramp exponent
@@ -1053,7 +1078,7 @@ def flick_frame(t, card):
     """end card flicked up into the scrolling feed (screen RGBA)."""
     tr = flick_travel(t); v = flick_vel(t)
     # finger anticipation: the card dips a hair before the flick
-    s = S_STAR - D0 - (FL_TRAVEL - tr)
+    s = S_STAR - (FL_TRAVEL - tr)
     scr = feed_screen(s)
     scr.alpha_composite(card, (0, int(round(-tr))))
     if v > 120: scr = K.vblur(scr, min(240, v / 60))

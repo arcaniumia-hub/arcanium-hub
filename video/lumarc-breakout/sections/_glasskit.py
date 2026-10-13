@@ -40,6 +40,12 @@ Everything is seeded and cached on first use; every per-frame call is a pure fun
         #   reflect=k + env_img (default GK.env_map()): the room mirrored by each piece (picked by its reflection
         #   vector, so it slides as the piece tumbles); bevel=px width; backlight=k: light from behind the glass
         #   glowing through the bevels (e.g. right after a break). Big pieces are shaded at half texture res.
+        #   "hero" look (all off by default): shade=k dark refracting body with a sweeping internal gradient (thick
+        #   glass absorbs; one side darker), rim=k coloured monitor light on every bevel (purple on the left of the
+        #   frame, blue on the right, rim_cols), edge_dark, env_q/env_pow (sharper / harder reflections of the room),
+        #   blur_cap/blur_fade (defocus cap in px and how much defocus thins the glass), smear_div (finer motion
+        #   smear: one copy per smear_div px), star_min/star_gain/star_scale (corner glints). A shard dict may carry
+        #   'cull' (its own cull_scale: e.g. hero pieces that grow huge in front of the lens before fading).
     GK.env_map(size)  -> RGB float32 dark room (softboxes, monitor strips, specks) used for the reflections
     S.visible(tau, dz, near) -> bool                   # any shard still on screen (skip building the glass image)
     S.shards       -> list of dicts (polys, bbox, c, dist, motion params)
@@ -608,7 +614,7 @@ class Shatter:
         W, H = self.F.size if self.F is not None else (1080, 1920)
         for s in self.shards:
             Q, P, R, u = self.corners(s, tau, dz)
-            if Q[:, 2].min() < near or self.f / P[2] > cull_scale + 1.6: continue
+            if Q[:, 2].min() < near or self.f / P[2] > s.get('cull', cull_scale) + 1.6: continue
             pp = self.proj(Q)
             if pp[:, 0].max() > 0 and pp[:, 0].min() < W and pp[:, 1].max() > 0 and pp[:, 1].min() < H: return True
         return False
@@ -740,7 +746,8 @@ class Shatter:
             pp = self.proj(PP)
             x0, y0 = pp[:, 0].min(), pp[:, 1].min(); x1, y1 = pp[:, 0].max(), pp[:, 1].max()
             if x1 < 0 or y1 < 0 or x0 > W or y0 > H: continue
-            fade = 1.0 if scale <= cull_scale else clamp(1 - (scale - cull_scale) / 1.6)
+            cs = s.get('cull', cull_scale)
+            fade = 1.0 if scale <= cs else clamp(1 - (scale - cs) / 1.6)
             a_s = fade * alpha * (alpha_fn(s, u) if alpha_fn else 1.0)
             if a_s <= .01: continue
             n = R @ np.array([0, 0, -1.0]); V = -P / (np.linalg.norm(P) + 1e-6)
@@ -783,20 +790,28 @@ class Shatter:
     def render_refract(self, dst, glass, tau, dz=0.0, focus_z=None, dof=10.0, shutter_dtau=0.0, near=140.0, alpha=1.0,
                        spec_gain=1.0, cull_scale=4.2, keep=None, dz_prev=None, alpha_fn=None, img_alpha=1.0,
                        refract=22.0, glyph_alpha=0.0, veil=1.0, env_col=(150, 132, 255), absorb=.07, tint=(120, 100, 220),
-                       edge=1.0, sheen=1.0, max_smear=6, stars=True, reflect=0.0, env_img=None, bevel=2.2, backlight=0.0, back_col=(225, 210, 255)):
+                       edge=1.0, sheen=1.0, max_smear=6, stars=True, reflect=0.0, env_img=None, bevel=2.2, backlight=0.0, back_col=(225, 210, 255),
+                       shade=0.0, shade_col=(5, 5, 14), rim=0.0, rim_cols=((190, 90, 255), (105, 140, 255)), edge_dark=.45,
+                       env_q=4, env_pow=1.0, blur_cap=None, blur_fade=10.0, smear_div=5.0, star_min=.35, star_gain=1.0, star_scale=3.0,
+                       smear_soft=False, q_blur=3.0, tex_r_area=40000, refl_cap=None, thick=0.0, gloss=0.0):
         """photographic glass: like render(), but each shard REFRACTS what is behind it (dst seen through the piece,
         displaced by its tilt) instead of a milky tint; the printed image (glass RGB) is `img_alpha` opaque, and where
         `glass` has an alpha channel those pixels (e.g. white UI glyphs) stay printed at `glyph_alpha`; clear glass only
         shows a faint Fresnel reflection of the room (env_col) at grazing angles, a moving specular sheen, and a bevel
-        edge that is bright on the lit side and dark on the other. Defocused shards distort softly (bokeh glass)."""
+        edge that is bright on the lit side and dark on the other. Defocused shards distort softly (bokeh glass).
+        Hero look (off by default): shade / rim / edge_dark / env_q / env_pow / blur_cap / blur_fade / smear_div — see
+        the module docstring."""
         W, H = dst.size; f = self.f
         if focus_z is None: focus_z = f
         G = self._gather(tau, dz, near, cull_scale, keep, alpha, alpha_fn, dof, focus_z, shutter_dtau, dz_prev, W, H)
         if not G: return dst.copy()
+        if blur_cap is not None:
+            for g in G: g['blur'] = min(g['blur'], blur_cap)
         out = self._refract_bg(dst, G, refract, absorb, tint) if refract > 0 else dst.copy()
         has_a = glass.mode == 'RGBA'; glass_rgb = glass.convert('RGB'); glass_a = glass.getchannel('A') if has_a else None
         half = quarter = None
         env = np.array(env_col, np.float32); dark = np.array([10, 10, 18], np.float32); edc = np.array([244, 246, 255], np.float32)
+        shc = np.array(shade_col, np.float32); rc0, rc1 = np.array(rim_cols[0], np.float32), np.array(rim_cols[1], np.float32)
         EM = env_img if env_img is not None else (env_map() if reflect > 0 else None)
         EMim = Image.fromarray(EM.astype(np.uint8)) if EM is not None else None
         for g in G:
@@ -807,10 +822,11 @@ class Shatter:
             spec = max(0.0, float(n @ Hh)) ** 36 * spec_gain
             diff = .82 + .25 * max(0.0, float(n @ LIGHT3))
             area = (x1 - x0) * (y1 - y0)
-            q = 1 if (area < 300000 and blur < 3.0) else (2 if area < 800000 else 4)
+            q = 1 if (area < 300000 and blur < q_blur) else (2 if area < 800000 else 4)
             bx0, by0, bx1, by1 = s['bbox']
-            r = 2 if (bx1 - bx0) * (by1 - by0) > 40000 else 1
+            r = 2 if (bx1 - bx0) * (by1 - by0) > tex_r_area else 1
             mm, ee, lit, band = self.masks(s, r, bevel)
+            ek, sk = s.get('edge_k', 1.0), s.get('shade_k', 1.0)           # per-shard look multipliers (hero pieces)
             th, tw = mm.shape
             crop = (lambda im: im.crop((bx0, by0, bx1, by1))) if r == 1 else (lambda im: im.crop((bx0, by0, bx1, by1)).resize((tw, th), Image.BILINEAR))
             ia = img_alpha(s, u) if callable(img_alpha) else img_alpha
@@ -818,10 +834,18 @@ class Shatter:
             if has_a and glyph_alpha > 0:
                 ink = np.maximum(ink, np.asarray(crop(glass_a), np.float32) / 255 * glyph_alpha)
             ink3 = ink[..., None]
-            # 1 clear glass: faint reflection of the room, stronger at grazing angles
             dfo = 1 / (1 + blur / 8.0)                                          # defocused glass: reflections smear out
+            # 0 thick dark body (hero look): absorption with a gradient that sweeps across the piece as it tumbles
+            if shade > 0:
+                c0 = .5 + .42 * math.sin(s['ph'] * 1.7 + u * s['w'] * .7)
+                grd = np.clip((band - c0) / .30 + .5, 0, 1)
+                sa0 = np.clip(shade * sk * (.30 + .70 * grd) * (.75 + .25 * fres), 0, .95).astype(np.float32)
+                A = sa0; Cp = shc * sa0[..., None]
+            else:
+                A = np.zeros(mm.shape, np.float32); Cp = np.zeros(mm.shape + (3,), np.float32)
+            # 1 clear glass: faint reflection of the room, stronger at grazing angles
             va = min(.6, veil * (.03 + .34 * gr ** 1.5)) * dfo
-            A = np.full(mm.shape, va, np.float32); Cp = (env * (.45 + .9 * band[..., None])) * va
+            Cp = (env * (.45 + .9 * band[..., None])) * va + Cp * (1 - va); A = va + A * (1 - va)
             # 2 printed image (the display layer)
             if ia > .004 or (has_a and glyph_alpha > 0):
                 tex = np.asarray(crop(glass_rgb), np.float32) * diff
@@ -834,11 +858,13 @@ class Shatter:
                 m = .55 * es / 1080 * max(1.0, 1.0 / max(.35, scale))       # patch size: planar mirror shows a wide view
                 cxe, cye = es * (.5 + .55 * float(Rv[0])), es * (.5 + .55 * float(Rv[1]))
                 pw, ph = max(2, hw_ * m), max(2, hh_ * m)
-                small = EMim.transform((max(2, tw // 4), max(2, th // 4)), Image.EXTENT,
+                small = EMim.transform((max(2, tw // env_q), max(2, th // env_q)), Image.EXTENT,
                                        (cxe - pw / 2, cye - ph / 2, cxe + pw / 2, cye + ph / 2), Image.BILINEAR)
                 Fr = reflect * (.07 + .9 * gr ** 3) * dfo
+                if refl_cap is not None: Fr = min(Fr, refl_cap)
                 refl_peak = small.getextrema()[2][1] / 255 * Fr                 # blue channel: max of white + purple light
                 patch = np.asarray(small.resize((tw, th), Image.BILINEAR), np.float32)
+                if env_pow != 1.0: patch = 255 * (patch / 255) ** env_pow       # harder reflections: hot lights, black room
                 Lr = patch * Fr                                              # additive light
                 la_ = np.clip(Lr[..., 2] / 255, 0, 1)
                 Cp = Lr + Cp * (1 - la_[..., None]); A = la_ + A * (1 - la_)
@@ -846,38 +872,77 @@ class Shatter:
             sb = np.exp(-((band - (.5 + .45 * math.sin(s['ph'] + u * s['w'] * .8))) / .13) ** 2)
             sa = np.clip(sb * (.09 + .9 * spec) * sheen, 0, 1) * .7
             Cp = 245 * sa[..., None] + Cp * (1 - sa[..., None]); A = sa + A * (1 - sa)
+            if gloss > 0:                                       # 3b hard-edged reflection (a window of light) inside the piece
+                ang = s['ph'] * 2.1; yy_, xx_ = np.mgrid[0:th, 0:tw].astype(np.float32)
+                bd = (xx_ * math.cos(ang) + yy_ * math.sin(ang)) / max(tw, th)
+                c1 = float(bd.min() + (bd.max() - bd.min()) * (.2 + .6 * (.5 + .5 * math.sin(s['ph'] * 2.3 + u * s['w'] * .9))))
+                d_ = bd - c1
+                kg = gloss * (.3 + .7 * (.5 + .5 * math.cos(s['ph'] + u * s['w'] * .6)) ** 2) * (.6 + .6 * gr)
+                kg *= clamp(abs(u * s['w']) / .25)                  # a piece still in the pane's plane reflects nothing new
+                ga = np.clip(np.where(d_ > 0, .55 * np.exp(-d_ / .02) + .20 * np.exp(-d_ / .10), 0) * np.clip(d_ / .008, 0, 1) * kg,
+                             0, .8).astype(np.float32)
+                Cp = np.array([228, 226, 255], np.float32) * ga[..., None] + Cp * (1 - ga[..., None]); A = ga + A * (1 - ga)
             # 4 bevel: dark on the shadow side, catching the light on the lit side
-            da = ee * (1 - lit) * .45 * edge
+            da = ee * (1 - lit) * edge_dark * edge * ek
             Cp = dark * da[..., None] + Cp * (1 - da[..., None]); A = da + A * (1 - da)
-            la = np.clip(ee * (.3 + .7 * lit) * (.8 + 2.2 * spec + .7 * gr) * edge, 0, 1)
+            if rim > 0:                                          # monitor light caught by every edge (strongest off the key)
+                side = clamp((float(pp[:, 0].mean()) - W * .5) / (W * .7) + .5)
+                rc = rc0 * (1 - side) + rc1 * side
+                ra = np.clip(ee * rim * ek * (.40 + .60 * (1 - lit)) * (.7 + .5 * gr), 0, 1)
+                Cp = rc * ra[..., None] + Cp * (1 - ra[..., None]); A = ra + A * (1 - ra)
+            la = np.clip(ee * (.3 + .7 * lit) * (.8 + 2.2 * spec + .7 * gr) * edge * ek, 0, 1)
             Cp = edc * la[..., None] + Cp * (1 - la[..., None]); A = la + A * (1 - la)
             if backlight > .01:                                  # light from behind glowing through the bevel + a faint body
                 bl = np.clip(ee * backlight + mm * backlight * .06, 0, 1)
                 Cp = np.array(back_col, np.float32) * bl[..., None] + Cp * (1 - bl[..., None]); A = bl + A * (1 - bl)
+            Pd = 0
+            if thick > 0:                                        # 5 the slab's side face: the back outline peeks out
+                Vl = g['R'].T @ V; vzl = max(.15, abs(float(Vl[2])))  # (view ray in the piece's own frame)
+                ox_, oy_ = float(Vl[0]) / vzl * thick / r, float(Vl[1]) / vzl * thick / r
+                lm = 1.6 * thick / r; ln_ = math.hypot(ox_, oy_)
+                if ln_ > lm: ox_, oy_ = ox_ * lm / ln_, oy_ * lm / ln_       # edge-on: a bright line, never a white slab
+                Pd = int(math.ceil(lm)) + 2
+                Cpf = np.pad(Cp * mm[..., None], ((Pd, Pd), (Pd, Pd), (0, 0))); Af = np.pad(A * mm, Pd); mmP = np.pad(mm, Pd)
+                ix, iy = int(math.floor(ox_)), int(math.floor(oy_)); fx, fy = ox_ - ix, oy_ - iy
+                shf = np.zeros_like(mmP)
+                for ddx, ddy, wgt in ((ix, iy, (1 - fx) * (1 - fy)), (ix + 1, iy, fx * (1 - fy)), (ix, iy + 1, (1 - fx) * fy), (ix + 1, iy + 1, fx * fy)):
+                    if wgt > 1e-3: shf += np.roll(np.roll(mmP, ddy, 0), ddx, 1) * wgt
+                side = np.clip(shf - mmP, 0, 1) * min(1.0, math.hypot(ox_, oy_) * r / 1.2)
+                sd = clamp((float(pp[:, 0].mean()) - W * .5) / (W * .7) + .5)
+                lt = clamp(.5 - .5 * (ox_ * LIGHT2[0] + oy_ * LIGHT2[1]) / (math.hypot(ox_, oy_) + 1e-6))   # side face toward the key?
+                sidec = (rc0 * (1 - sd) + rc1 * sd) * (1 - (.25 + .65 * lt)) + 255 * (.25 + .65 * lt)
+                sa_ = np.clip(side * .9 * ek, 0, 1)
+                Cp = Cpf + sidec * sa_[..., None] * (1 - Af[..., None]); A = Af + sa_ * (1 - Af); mmA = 1.0
+            else:
+                mmA = mm
             rgb = Cp / np.maximum(A, 1e-4)[..., None]
-            a = A * mm * g['a'] / (1 + blur / 10.0)
+            a = A * mmA * g['a'] / (1 + blur / blur_fade)
             spr = Image.fromarray(np.dstack([np.clip(rgb, 0, 255), np.clip(a * 255, 0, 255)]).astype(np.uint8), 'RGBA')
-            ox0, oy0 = max(0, int(math.floor(x0)) - 2), max(0, int(math.floor(y0)) - 2)
-            ox1, oy1 = min(W, int(math.ceil(x1)) + 3), min(H, int(math.ceil(y1)) + 3)
+            mg = 2 + int(math.ceil(Pd * r * scale * 1.2))
+            ox0, oy0 = max(0, int(math.floor(x0)) - mg), max(0, int(math.floor(y0)) - mg)
+            ox1, oy1 = min(W, int(math.ceil(x1)) + mg + 1), min(H, int(math.ceil(y1)) + mg + 1)
             if ox1 - ox0 < 2 or oy1 - oy0 < 2: continue
             dstp = [((px - ox0) / q, (py - oy0) / q) for px, py in pts]
-            srcp = [(0, 0), ((bx1 - bx0) / r, 0), ((bx1 - bx0) / r, (by1 - by0) / r), (0, (by1 - by0) / r)]
+            srcp = [(Pd, Pd), ((bx1 - bx0) / r + Pd, Pd), ((bx1 - bx0) / r + Pd, (by1 - by0) / r + Pd), (Pd, (by1 - by0) / r + Pd)]
             try: co = homography(srcp, dstp)
             except np.linalg.LinAlgError: continue
             ow, oh = max(1, (ox1 - ox0 + q - 1) // q), max(1, (oy1 - oy0 + q - 1) // q)
             im = spr.transform((ow, oh), Image.PERSPECTIVE, co, Image.BILINEAR)
             mv = g['mv'] / q; L = math.hypot(*mv)
+            soft_r = 0.0
             if L > 3:
                 pd = int(L / 2) + 2; im = _pad(im, pd); ox0 -= pd * q; oy0 -= pd * q
-                im = smear(im, mv[0], mv[1], min(max_smear, int(L / 5) + 2))
-            if blur / q > .7:
-                r_ = float(min(30, blur / q)); pd = int(r_ * 2.6) + 2
+                ns = min(max_smear, int(L / smear_div) + 2)
+                im = smear(im, mv[0], mv[1], ns)
+                if smear_soft: soft_r = .42 * L / max(1, ns - 1)            # melt the copies into one continuous streak
+            if blur / q > .7 or soft_r > .6:
+                r_ = float(min(30, max(blur / q, soft_r))); pd = int(r_ * 2.6) + 2
                 im = _pad(im, pd); ox0 -= pd * q; oy0 -= pd * q
                 im = im.filter(ImageFilter.GaussianBlur(r_))
             spk = max(spec, refl_peak * 1.15)
-            if stars and spk > .35 and q <= 2 and scale < 3.0:
-                st = star(56); k = min(1.0, (spk - .35) / .5)
-                sz = int((26 + 50 * k) * min(1.6, scale) / q) | 1
+            if stars and spk > star_min and q <= 2 and scale < star_scale:
+                st = star(56); k = min(1.0, (spk - star_min) / .5)
+                sz = int((26 + 50 * k) * min(1.6, scale) * star_gain / q) | 1
                 gimg = E.fade(st.resize((sz, sz), Image.BILINEAR), k * g['a'])
                 vi = int(np.argmin(pp[:, 0] * -LIGHT2[0] + pp[:, 1] * -LIGHT2[1]))
                 gx_, gy_ = (pp[vi, 0] - ox0) / q, (pp[vi, 1] - oy0) / q
@@ -971,7 +1036,10 @@ class Dust:
         Z = self.f + self.vz * u - dz
         return X, Y, Z, u
 
-    def render(self, size, tau, dz, dtau, dz_prev, alpha=1.0, near=90.0):
+    def render(self, size, tau, dz, dtau, dz_prev, alpha=1.0, near=90.0, taper=False, sparkle=0.0, gain=1.0):
+        """taper: streaks fade from the head to the tail (no 'pins'); sparkle: fraction of the brightest particles that
+        flash as tiny 4-ray star glints; gain: brightness."""
+        if taper or sparkle > 0 or gain != 1.0: return self._render2(size, tau, dz, dtau, dz_prev, alpha, near, taper, sparkle, gain)
         W, H = size; S = 2
         im = Image.new('L', (W * S, H * S)); d = ImageDraw.Draw(im)
         X1, Y1, Z1, u = self.proj(tau, dz); X0, Y0, Z0, _ = self.proj(max(0.0, tau - dtau), dz_prev)
@@ -992,3 +1060,36 @@ class Dust:
             d.ellipse((x1 * S - r_, y1 * S - r_, x1 * S + r_, y1 * S + r_), fill=int(255 * a))
         im = im.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(.6))
         out = Image.new('RGBA', (W, H), (238, 232, 255, 0)); out.putalpha(im); return out
+
+    def _render2(self, size, tau, dz, dtau, dz_prev, alpha, near, taper, sparkle, gain):
+        W, H = size; S = 2
+        im = Image.new('L', (W * S, H * S)); d = ImageDraw.Draw(im); stars_ = []
+        X1, Y1, Z1, u = self.proj(tau, dz); X0, Y0, Z0, _ = self.proj(max(0.0, tau - dtau), dz_prev)
+        for i in range(len(X1)):
+            if Z1[i] < near or Z0[i] < near or u[i] <= 0: continue
+            x1, y1 = self.vp[0] + self.f * X1[i] / Z1[i], self.vp[1] + self.f * Y1[i] / Z1[i]
+            x0, y0 = self.vp[0] + self.f * X0[i] / Z0[i], self.vp[1] + self.f * Y0[i] / Z0[i]
+            if not (-50 < x1 < W + 50 and -50 < y1 < H + 50): continue
+            sc = self.f / Z1[i]
+            tw = (.35 + .65 * (.5 + .5 * math.sin(self.ph[i] + tau * self.tw[i] * 6)) ** 4)
+            a = min(1.0, tw * alpha * gain * min(1.0, 1.6 / max(.6, sc ** .5)))
+            w = max(1, int(round(self.size[i] * min(3.0, sc) * S)))
+            L = math.hypot(x1 - x0, y1 - y0)
+            if L > 1.5:
+                Lc = min(L, 40.0); ux, uy = (x1 - x0) / L, (y1 - y0) / L
+                if taper:                         # 4 segments, fading toward the tail
+                    for k in range(4):
+                        f0, f1 = k / 4, (k + 1) / 4
+                        d.line([((x1 - ux * Lc * f1) * S, (y1 - uy * Lc * f1) * S), ((x1 - ux * Lc * f0) * S, (y1 - uy * Lc * f0) * S)],
+                               fill=int(255 * a * .4 * (1 - f0) ** 2), width=max(1, w - 1))
+                else:
+                    d.line([((x1 - ux * Lc) * S, (y1 - uy * Lc) * S), (x1 * S, y1 * S)], fill=int(255 * a * .45), width=max(1, w - 1))
+            r_ = w * .9 + .5
+            d.ellipse((x1 * S - r_, y1 * S - r_, x1 * S + r_, y1 * S + r_), fill=int(255 * min(1, a)))
+            if sparkle > 0 and (i % 97) / 97 < sparkle and tw > .7: stars_.append((x1, y1, a * tw, sc))
+        im = im.resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(.6))
+        out = Image.new('RGBA', (W, H), (238, 232, 255, 0)); out.putalpha(im)
+        for x, y, a, sc in stars_:
+            sz = int(18 + 22 * min(2.0, sc)) | 1; st = star(32, 4).resize((sz, sz), Image.BILINEAR)
+            E._paste(out, dict(img=E.fade(st, min(1, a)), xy=(int(x - sz / 2), int(y - sz / 2)), glass=0))
+        return out

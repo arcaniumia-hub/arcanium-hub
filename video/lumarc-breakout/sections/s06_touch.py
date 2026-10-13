@@ -18,8 +18,10 @@ foreground (frame-in-frame) playing the SILENCE ONE teardown film, and the produ
 14.93  "TOUCH." (t-burst 14.93, contact on the 14.933 frame): the protein leather DENTS under the fingertip (radial
        pinch of the grain, lit/shaded dent walls, contact occlusion, soft rebound), liquid-glass rings run across the
        leather (refraction + caustic crests, only on the surface), a small light pulse, haptic thud + micro-shake.
-15.10  the leading ring becomes a liquid-lens iris wipe back to the studio (magnifying, chromatic rim); rack focus returns
-       to him (hand-off to s07 at 15.40).
+15.10  the leading ring becomes a liquid-lens iris wipe back to the studio (magnifying, chromatic rim) — onto a NEW,
+       tighter angle (1.30x: him bigger, the floating product low in the foreground), so the 0.6 s he moved while we
+       were in the macro reads as a camera change, not a jump; the camera then pulls back (zoom-blurred) to the wide
+       while the rack focus returns to him (hand-off to s07's tight right-third framing at 15.40).
 
 The product is the SILENCE ONE turntable (orbit0-2 sprite sheets) keyed off black (_C_kit.key_rgba: texture/brightness
 body + luminance matte, un-premultiplied, defringed), sharpened, graded with a violet/blue monitor rim. Captions use the
@@ -61,6 +63,25 @@ CUES = [
 
 
 def C(k, fn): return E.cached(('s06',) + (k if isinstance(k, tuple) else (k,)), fn)
+
+
+# ---------------------------------------------------------------- the return angle (after the macro)
+VIEW_C = (540., 900.)                          # the second camera scales about his chin: head stays, product sweeps
+VIEW_V0 = 1.30                                 # framing the iris wipe opens on (vs the 1.0 the dive left from)
+VIEW_DUR = .40                                 # pull-back to the wide (cubic ease-out; still drifting at the 15.40 cut)
+
+
+def view_v(t):
+    """extra magnification of the whole studio shot (world + phone + product) after the macro: the wipe reveals a
+    tighter angle than the one the dive left from, which then pulls back. 1.0 before T_REVEAL."""
+    if t < T_REVEAL: return 1.0
+    return 1 + (VIEW_V0 - 1) * (1 - K.eout((t - T_REVEAL) / VIEW_DUR))
+
+
+def vmap(q, v):
+    """the return-angle mapping of screen points (scaled by v about VIEW_C)."""
+    if v == 1.0: return q
+    return [(VIEW_C[0] + (p[0] - VIEW_C[0]) * v, VIEW_C[1] + (p[1] - VIEW_C[1]) * v) + tuple(p[2:]) for p in q]
 
 
 # ---------------------------------------------------------------- canonical phone (from the showcase s02)
@@ -115,11 +136,12 @@ def phone_state(t):
     if t > T_PRODUCT:   # settle drift
         x = t - T_PRODUCT
         cy += 5 * math.sin(x * 2.1); rz += .6 * math.sin(x * 1.6 + .5)
-    return dict(cx=cx, cy=cy, s=s, rx=rx, ry=ry, rz=rz)
+    return dict(cx=cx, cy=cy, s=s, rx=rx, ry=ry, rz=rz, v=view_v(t))
 
 
 def phone_proj(st, pts):
-    return K.proj_pts(pts, CW, CH, st['cx'], st['cy'], st['s'], st['rx'], st['ry'], st['rz'], f=2600.)
+    pr = K.proj_pts(pts, CW, CH, st['cx'], st['cy'], st['s'], st['rx'], st['ry'], st['rz'], f=2600.)
+    return vmap(pr, st.get('v', 1.0))
 
 
 def phone_quad(st):
@@ -177,7 +199,11 @@ def out_p(t):
     return 1 - (1 - clamp((t - T_PRODUCT) / .40)) ** 3
 
 
-def product_quad(t):
+def product_quad(t, v=None):
+    return vmap(_product_quad(t), view_v(t) if v is None else v)
+
+
+def _product_quad(t):
     p = out_p(t)
     qf = product_rect_float(t)
     arc = -70 * math.sin(math.pi * clamp(p * 1.05))           # rises a little above its rest, settles
@@ -245,7 +271,8 @@ def product_layer(t, st):
         if rel > 0: m = m.point(lambda v: int(v + (255 - v) * rel))
         img.putalpha(ImageChops.multiply(img.getchannel('A'), m))
     # motion blur (centre velocity over a 180-degree shutter)
-    qa, qb = product_quad(t - 1 / 120), product_quad(t + 1 / 120)
+    v = view_v(t)                                 # object motion only: the camera move is smeared on the whole shot
+    qa, qb = product_quad(t - 1 / 120, v), product_quad(t + 1 / 120, v)
     dx = sum(b[0] - a[0] for a, b in zip(qa, qb)) / 4; dy = sum(b[1] - a[1] for a, b in zip(qa, qb)) / 4
     if math.hypot(dx, dy) > 2:
         img, ox, oy = K.smear(img, dx, dy); x0 += ox; y0 += oy
@@ -370,7 +397,9 @@ def phone_layer(t, st):
     q = phone_quad(st)
     # entrance: vertical motion blur while it flies up (the warp keeps the part below the frame edge so the smear
     # stays opaque there — clipping it first made the body translucent at the bottom of frame)
-    qa, qb = phone_quad(phone_state(t - 1 / 120)), phone_quad(phone_state(t + 1 / 120))
+    sa, sb = phone_state(t - 1 / 120), phone_state(t + 1 / 120)
+    sa['v'] = sb['v'] = st['v']                   # object motion only: the camera move is smeared on the whole shot
+    qa, qb = phone_quad(sa), phone_quad(sb)
     dy = sum(b[1] - a[1] for a, b in zip(qa, qb)) / 4
     w_ = K.warp(ph, q, margin=10 + int(abs(dy) * .6))
     if w_ is None: return None
@@ -483,10 +512,17 @@ def glint(img, t):
 
 
 def world_cam(t):
-    """13.32 CUT to the wide angle (s05 ends on its 1.25x punch-in: -20 % scale and his head drops ~70 px, with the rack
-    focus and the phone rising — the pose jump reads as a multicam cut), then a slow push."""
+    """13.32 CUT to the wide angle (s05 ends on its 1.25x punch-in close-up with the crown; here -20 % scale and his
+    head drops, with the rack focus and the phone rising — the pose jump reads as a multicam cut), then a slow push.
+    After the macro the same camera is magnified by view_v about VIEW_C (the overlays use the same mapping)."""
     z = 1.0 + .055 * smooth((t - START) / 2.08)
-    return dict(z=z, x=520., y=1400., dx=20., dy=0., rot=0.)
+    cam = dict(z=z, x=520., y=1400., dx=20., dy=0., rot=0.)
+    v = view_v(t)
+    if v != 1.0:
+        # engine: screen = (X, Y) + (world - anchor) * z with X, Y = anchor + d (clamped). Base offset -> scaled about C.
+        X = min(max(540., W - z * (W - 520.)), z * 520.); Y = min(max(1400., H - z * (H - 1400.)), z * 1400.)
+        cam.update(z=z * v, dx=VIEW_C[0] + (X - VIEW_C[0]) * v - 520., dy=VIEW_C[1] + (Y - VIEW_C[1]) * v - 1400.)
+    return cam
 
 
 # ---------------------------------------------------------------- ALMOST: macro dive
@@ -656,6 +692,9 @@ def draw(ctx, lt, t):
     def wrap(fr_world):
         if need_world:
             shot = studio_shot(fr_world, t, fg_blur=lerp(0, 3.0, K.eio((t - T_REVEAL) / .28)) if t >= T_REVEAL else 0.0)
+            if t >= T_REVEAL:                     # the return angle pulls back: zoom motion blur (180-degree shutter)
+                v = view_v(t)
+                shot = K.zoom_smear(shot, view_v(max(T_REVEAL, t - 1 / 60)) / v, view_v(t + 1 / 60) / v, VIEW_C).convert('RGBA')
         else:
             shot = None
         if t < T_ALMOST:

@@ -5,9 +5,10 @@ Word onsets measured on src/tight16k.raw (10 ms RMS + band energies), not the sy
   HEY 0.09 (voice .13) | YEAH .63  YOU .98 | DOWN 1.48  HERE 1.72 (h 1.71, vowel 1.78) |
   YOUR 2.28  CONTENT 2.52  LIVES 3.06  IN 3.32 (auto said 3.50)  HERE 3.54 (soft h from 3.46, vowel 3.62; tap 3.61)
 
-  0.00  LOOP HANDSHAKE: the feed is still flying upward (scroll = S* - 650 px, +14 300 px/s, vertical motion blur
-        238 px under sharp chrome), decelerates and lands with an elastic settle on his Reel post: centred at 0.13 s,
-        overshoot +9 px at 0.17 s, at rest by ~0.33 s. scroll(t) = S* - 650 e^(-22t) cos(13t), S* = 3745. Haptic tick.
+  0.00  LOOP HANDSHAKE / THUMBNAIL: frame 0 is the first frame anyone sees (feed thumbnail), so it reads clean: his
+        Reel post exactly centred in the feed, crisp. s10's motion-blurred thumb flick SNAPS onto it (whip-to-crisp)
+        and the momentum carries the feed ~17 px past centre before it settles back (elastic catch, at rest by
+        ~0.2 s). scroll(t) = S* + 40 e^(-14t) sin(22t), S* = 3745. Haptic tick on the snap.
         His live studio world plays inside the post; the like counter ticks, the Reel playhead bar runs along the
         bottom of the media (it IS this film's playhead), mute + reels badges. Captions are burned INSIDE his Reel.
   0.52  "Yeah, you." (jump cut = inner framing snaps tight on his face) — the phone screen slowly pushes in on the
@@ -19,12 +20,12 @@ Word onsets measured on src/tight16k.raw (10 ms RMS + band energies), not the sy
         WALL of feeds (his column + neighbouring feeds left/right, staggered): on CONTENT the app chrome retracts
         under the bezel (opaque wipe, never a ghost over post text) and the camera pulls back; on LIVES it cranes up
         and the wall tilts back into purple fog (perspective, mip-mapped depth of field, depth fog), infinite above,
-        rushing past the lens below. His post is the light source: the other posts are unlit/desaturated (the loud
-        flyer most), the wall falls off into darkness away from him, his light spills on the neighbours + lavender rim.
+        rushing past the lens below. His post is the light source: the other posts are unlit (exposure down, film
+        shoulder on the whites, colour out — the loud tonys.pizza flyer above him near-monochrome), the wall falls off into darkness away from him, his light spills on the neighbours + lavender rim.
         On HERE (vowel 3.62) a knuckle tap from inside his post: refraction rings ON the glass of the wall only (never
         in the void), caustic crest, jolt, rim flare — foreshadows the knock at 7.08.
 Captions: segs 0-2 burned inside his post (move/scale with it); seg 3 = engine-look captions on screen, page 1 riding
-on his hoodie, page 2 on the photo of the post below his (never over any post's UI text). All captions use the
+on his hoodie, page 2 on the photo of the post below his (never over any post's UI text), each on a soft dark scrim. All captions use the
 measured ONSETS (K.draw_caps fix=) so they are right before the integrator merges them into WORD_FIX.
 """
 import math
@@ -46,7 +47,7 @@ W_YOUR, W_CONTENT, W_LIVES, W_HERE2 = 2.28, 2.52, 3.06, 3.54
 T_LAND = 1.76                                               # the box floor lands (h 1.71 -> vowel 1.78 of "here")
 T_TAP = 3.61                                                # knuckle tap from inside (vowel of "here" 3.62)
 
-CUES = [(0.0, 'swipe', {'gain': -9}), (0.13, 'tick', {'gain': -12}),
+CUES = [(0.0, 'swipe', {'gain': -13}), (0.02, 'tick', {'gain': -11}),
         (T1, 'whoosh', {'gain': -14}), (W_YOU, 'thud', {'gain': -12}),
         (W_DOWN - .02, 'whoosh', {'gain': -6}), (T_LAND, 'thud', {'gain': -2}),
         (T3, 'swoosh_up', {'gain': -10}), (W_CONTENT, 'whoosh', {'gain': -5}), (W_LIVES, 'shimmer', {'gain': -12}),
@@ -59,14 +60,18 @@ MY0 = K.special_top(S_STAR) + FK.HEAD_H                     # 305: media top on 
 MCX, MCY = W / 2, MY0 + FK.MEDIA_H / 2                      # 540, 980
 CAP_Y3 = 1450                                              # seg-3 screen captions (over his media in the window shot)
 CAP_MY, CAP_MB = 1060, 64                                   # in-media caption centre / base size (media px)
+CAP_SCRIM = .62                                             # soft dark scrim behind the seg-3 captions over the wall
 
 # ---------------------------------------------------------------- loop handshake
-D0, A_, W_ = 650., 22., 13.
+# Frame 0 is the thumbnail / first frame anyone sees: it must read clean. s10's thumb flick (motion-blurred, ~12 000
+# px/s) SNAPS onto his post on frame 0 — whip-to-crisp, the post exactly centred and sharp — and the momentum carries
+# it ~17 px past centre before it settles back (elastic catch, at rest by ~0.2 s). Haptic tick on the snap.
+B_SNAP, A_, W_ = 40., 14., 22.
 def scroll_at(t):
-    """content flies up and lands on his post: damped oscillation around S*, o(0) = -D0, o'(0) = +D0*A."""
-    return S_STAR - D0 * math.exp(-A_ * t) * math.cos(W_ * t)
+    """o(0) = 0 (centred), o'(0) = +B*W (still moving up with the flick's momentum), damped back to rest."""
+    return S_STAR + B_SNAP * math.exp(-A_ * t) * math.sin(W_ * t)
 def scroll_vel(t):
-    return D0 * math.exp(-A_ * t) * (A_ * math.cos(W_ * t) + W_ * math.sin(W_ * t))
+    return B_SNAP * math.exp(-A_ * t) * (W_ * math.cos(W_ * t) - A_ * math.sin(W_ * t))
 
 
 # ---------------------------------------------------------------- framing inside his Reel (world camera)
@@ -142,7 +147,7 @@ def feed_phase(ctx, t):
     if t >= T2: m = K.well(m, box_depth(t), trail=fall_trail(t), overlay=ov)
     else: m.alpha_composite(ov)
     m = finish_media(m, t)
-    blurL = abs(v) / 60.0                                   # 180-degree shutter
+    blurL = abs(v) / 60.0 if t >= .5 / E.FPS else 0.0     # 180-degree shutter; frame 0 (the snap) is crisp
     scr = K.feed(s, m, t, chrome=True, blurL=blurL)
     dim = dim_amt(t)
     if dim > .005:
@@ -188,12 +193,25 @@ def card_full(j):
     return K.C(('s01_card', j), mk)
 
 
+UNLIT = {1: (.06, .66, 1.45), None: (.34, .90, .62)}       # (saturation, exposure a, shoulder b) — flyer / others
+
+
+def _unlit_lut(a, b):
+    """film-like shoulder f(x) = a x / (1 + b x): an unlit print next to a light source — whites roll off hard (a
+    white/cream post can never glow), shadows keep their detail, contrast drops with the exposure."""
+    return [int(round(255 * a * (v / 255) / (1 + b * v / 255))) for v in range(256)] * 3
+
+
 def card_muted(j):
-    """the other posts as the camera sees them next to his glowing one: unlit, colour pulled down (the loud
-    red/yellow flyer most), so his post is the light source of the shot."""
-    im = K.desat(card_full(j), .18 if j == 1 else .55)
-    if j == 1: im = Image.eval(im.convert('RGB'), lambda v: int(v * .62)).convert('RGBA')      # the loud flyer, quieter
-    return im
+    """the other posts as the camera sees them next to his glowing one: unlit (exposure down, highlights rolled off,
+    colour pulled out) so HIS post is unmistakably the light source of the shot. The loud red/yellow tonys.pizza
+    flyer that sits right above him is graded hardest: near-monochrome, its white paper ~26 % grey, its red type
+    ~1.7:1 against it — still a photograph of a flyer, no longer a billboard."""
+    def mk():
+        s, a, b = UNLIT.get(j, UNLIT[None])
+        im = K.desat(card_full(j), s).convert('RGB').point(_unlit_lut(a, b))
+        return im.convert('RGBA')
+    return K.C(('s01_unlit', j), mk)
 
 
 def his_card(m, t):
@@ -420,6 +438,6 @@ def draw(ctx, lt, t):
         if t >= T2: P['vignette'] = .34; P['grain'] = .85
     else:
         fr = column_phase(ctx, t)
-        K.draw_caps(fr, t, CAP_Y3, 84, {3}, fix=ONSETS, cy_fn=lambda n: cap_y3(t, n))
+        K.draw_caps(fr, t, CAP_Y3, 84, {3}, fix=ONSETS, cy_fn=lambda n: cap_y3(t, n), scrim=CAP_SCRIM)
         ctx.full = fr; ctx.captions = False
         P['vignette'] = .34; P['grain'] = 1.0

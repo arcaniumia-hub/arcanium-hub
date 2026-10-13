@@ -2,21 +2,25 @@
 
 He is out of the screen, in his real studio. LUMARC-made work (SILENCE ONE films playing live, the North Roast carousel,
 Maison Crumb post, Oliva website, the burger close-up, the headphone hero) orbits his head as frosted-glass cards on a
-steeply tilted 3-D ring that ENCLOSES his head: the far arc rises behind his head (occluded by him — only the card tops
-peek over his hair), the sides pass his ears, the near arc sweeps in front of his collar/chest (never over his mouth);
-true perspective scale, carousel yaw, depth of field (near cards defocus, far cards soft, focus on his head),
-depth-dimmed/cooled far cards, purple glow under every card, motion blur (soft 180-degree shutter). Captions (measured
-onsets) sit at the top, in the headroom (s04 also ends with its words up there).
+3-D ring worn like a CROWN / HALO: the ring sits at his brow and is seen from slightly below, so its near arc sweeps
+ABOVE his head (in front of him, in the headroom), the sides pass his temples and the far arc runs behind his head
+(occluded by him — cards only peek out beside his ears). Nothing ever crosses his face or his gesturing hands; true
+perspective scale, carousel yaw, depth of field (near cards slightly soft, far cards soft + dimmed/cooled, focus on his
+head), purple glow under every card, motion blur (soft 180-degree shutter). Captions (measured onsets) sit low, on his
+chest (the crown owns the top of the frame).
 
 11.96  CUT to the WIDE angle (s04 ends on a 1.27x close-up: -21 % scale, his head drops 160 px -> the pose jump reads
-       as a multicam cut); the cards rush in from the frame edges, spiralling, motion-blurred, while the camera creeps in.
+       as a multicam cut); the cards rush in from above and the frame edges (the far ones rise from behind his
+       shoulders), spiralling, motion-blurred, while the camera creeps in.
 12.17  "STAYS": the cards are captured into the orbit (12.19-12.24, each lands with a glow pulse; glass cue).
-12.58  "IN YOUR": the orbit keeps turning; the slots are steered so the cards arrive exactly on their lock positions.
-12.93  "HEAD." (lock on the 12.933 frame; /h/ 12.92, vowel 12.96): the ring stops hard with a tiny overshoot and the
-       cards turn toward camera and snap into focus; a luminous orbit line ignites around his head (back half behind
-       him, front half in front) while a sonar pulse races outward from the orbit; a light hit, a specular sheen + lit
-       bezel rim travel around the cards (staggered), star glints; the camera SNAP-PUNCHES in (spring, 1.075 -> 1.25x,
-       jolt + roll wobble). Slow drift to 13.32 (hard cut to s06's wide angle: another clear framing change).
+12.58  "IN YOUR": the crown keeps turning (cards dip behind his head and come back over the top).
+12.93  "HEAD." (lock on the 12.933 frame; /h/ 12.92, vowel 12.96): the ring stops hard with a tiny overshoot in a
+       symmetric crown (one card centred above his head, two at the upper corners, one at each temple, the rest behind
+       him), the cards turn toward camera and snap into focus; a luminous orbit line ignites around his head (back half
+       behind him, front half above him) while a sonar pulse races outward from the orbit; a light hit, a specular
+       sheen + lit bezel rim travel around the cards (staggered), star glints; the camera SNAP-PUNCHES in (spring,
+       1.075 -> 1.25x, head + crown fill the frame, jolt + roll wobble). Slow drift to 13.32 (hard cut to s06's wide
+       angle: another clear framing change).
 """
 import math
 import numpy as np
@@ -33,7 +37,7 @@ WORD_FIX = {(12, 'IT'): 12.07, (12, 'STAYS'): 12.17, (12, 'IN'): 12.58, (12, 'YO
 T_IT, T_STAYS, T_IN, T_YOUR = 12.07, 12.17, 12.58, 12.68
 T_HEAD = 12.925                               # lock lands on the frame of "HEAD." (12.93: /h/ 12.90, vowel 12.97)
 PAGES = K.caption_pages(12, WORD_FIX)
-CAP_Y = 330                                   # top: the orbit owns the frame; s04 ends with its words up here too
+CAP_Y = 1540                                  # low, on his chest: the crown owns the top of the frame
 
 CUES = [
     (START + .06, 'whoosh', {'gain': -4}),                  # cards rush past the lens into orbit
@@ -47,17 +51,21 @@ CUES = [
 ]
 
 # ---------------------------------------------------------------- orbit geometry (world px; head plane = depth 0)
-# a HALO around his head (world px; his head: x≈518, top 625, eyes ≈780, chin ≈960): the far arc passes behind his
-# forehead (hidden by his head, only the card tops peek over his hair), the near arc sweeps in front of his collar.
-OCX, OCY = 520., 880.
-R = 400.
-ELEV = math.radians(50.); SE, CE = math.sin(ELEV), math.cos(ELEV)
+# a CROWN around his head (world px; his head: x≈518, top 625, eyes ≈760, chin ≈960). ELEV < 0: the ring is seen from
+# slightly below, so the near arc rises ABOVE his head and the far arc dips behind it (hidden by his head). The orbit is
+# a little narrower than deep (AX) so the temple cards stay inside the frame after the punch-in.
+OCX, OCY = 520., 700.
+R = 420.
+AX = .80                                      # x radius / depth radius
+ELEV = math.radians(-37.); SE, CE = math.sin(ELEV), math.cos(ELEV)
 ROLL = math.radians(-3.)
-CARD_S = .48                                  # card art -> world px at the head plane
+CARD_S = .42                                  # card art -> world px at the head plane
 F = 1700.                                     # focal: the head plane is at distance F (scale 1)
 N = 8
-CARDS = [('film', E.TEARDOWN, 4.10), ('img', 'carousel_1'), ('img', 'website'), ('img', 'close_food'),
-         ('film', E.HYPER, 15.90), ('img', 'design_post'), ('hero', None), ('img', 'carousel_2')]
+# lock layout (index -> place in the crown): 0 left temple, 1 upper-left, 2 TOP CENTRE, 3 upper-right, 4 right temple,
+# 5 behind-right (peeks out by his ear), 6 straight behind his head (hidden), 7 behind-left
+CARDS = [('film', E.TEARDOWN, 4.10), ('img', 'close_food'), ('img', 'carousel_1'), ('img', 'website'),
+         ('film', E.HYPER, 15.90), ('hero', None), ('img', 'carousel_2'), ('img', 'design_post')]
 STAG = [0.00, .03, .01, .045, .02, .035, .005, .025]
 FLY = .26                                       # fly-in duration: card i lands at START - .03 + STAG[i] + FLY (12.19-12.24)
 BEZ = 12                                       # bezel (art px, art is 2x the base card size)
@@ -149,8 +157,9 @@ def phase_free(t):
 
 
 def _lock_phase():
-    pf = phase_free(T_HEAD); step = math.pi / 4; off = math.pi / 8
-    return off + step * math.ceil((pf - off) / step + .15)
+    """nearest crown slot to where the free spin is on "HEAD." (a card exactly at the top centre; card 2 lands there)."""
+    pf = phase_free(T_HEAD); step = math.pi / 4
+    return step * round(pf / step)
 
 
 PH_LOCK = _lock_phase()
@@ -172,7 +181,7 @@ WIPE = 3                                        # this card opens the shot as a 
 
 def ring_xyz(a, r):
     """orbit-plane point (angle a, radius r) -> camera-space (X, Y, Z) relative to the ring centre (roll applied)."""
-    X = r * math.cos(a); Zr = r * math.sin(a)
+    X = r * AX * math.cos(a); Zr = r * math.sin(a)
     Y = -Zr * SE; Z = Zr * CE
     return X * math.cos(ROLL) - Y * math.sin(ROLL), X * math.sin(ROLL) + Y * math.cos(ROLL), Z
 
@@ -240,7 +249,7 @@ def card_draw(ctx, i, t):
     # depth: dim + cool the far half, DOF (focus on his head plane)
     zn = Z / (R * CE)
     if zn > 0: bright = 1 - .30 * min(1, zn); blur = 2.6 * min(1.3, zn)
-    else: bright = 1.0; blur = 4.2 * (-zn) ** 1.5 * (1 - .55 * lk)    # the lock snaps the near cards into focus
+    else: bright = 1.0; blur = 2.8 * (-zn) ** 1.5 * (1 - .65 * lk)    # the lock snaps the near cards into focus
     fl = kick(xl, .07) if xl >= 0 else 0.0
     land = START - .03 + STAG[i] + FLY             # the card is captured into the orbit (on "STAYS")
     lf = .8 * kick(t - land, .09) if t >= land else 0.0

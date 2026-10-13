@@ -501,9 +501,27 @@ def pages_fixed(fix):
     _PF[key] = pages; return pages
 
 
-def draw_caps(fr, t, cy0, base, segs, x0=None, fix=None, cy_fn=None):
+SCRIM_COL = (7, 5, 14)
+def cap_scrim(fr, boxes, alpha, padx=54, pady=34, blur=30, q=4):
+    """soft dark scrim behind a caption line: the union of the revealed words' text boxes (screen px), padded, a
+    pill shape blurred into a cloud (no visible edge), alpha <= 1. Drawn at 1/q res inside its own bbox only."""
+    if alpha <= .01 or not boxes: return
+    x0 = min(b[0] for b in boxes) - padx; x1 = max(b[2] for b in boxes) + padx
+    y0 = min(b[1] for b in boxes) - pady; y1 = max(b[3] for b in boxes) + pady
+    m = 3 * blur; X0, Y0 = int(max(0, x0 - m)), int(max(0, y0 - m)); X1, Y1 = int(min(fr.width, x1 + m)), int(min(fr.height, y1 + m))
+    if X1 - X0 < 8 or Y1 - Y0 < 8: return
+    sw, sh = max(2, (X1 - X0) // q), max(2, (Y1 - Y0) // q)
+    mk = Image.new('L', (sw, sh)); r = (y1 - y0) / 2 / q
+    ImageDraw.Draw(mk).rounded_rectangle(((x0 - X0) / q, (y0 - Y0) / q, (x1 - X0) / q, (y1 - Y0) / q), r, fill=int(255 * min(1., alpha)))
+    mk = mk.filter(ImageFilter.GaussianBlur(blur / q)).resize((X1 - X0, Y1 - Y0), Image.BILINEAR)
+    fr.paste(SCRIM_COL, (X0, Y0, X1, Y1), mk)
+
+
+def draw_caps(fr, t, cy0, base, segs, x0=None, fix=None, cy_fn=None, scrim=0.0):
     """E.draw_captions restricted to the pages of `segs` (so a page never lingers across a cut into a new shot).
-    fix: {(seg, WORD): onset} measured onsets; cy_fn(page_index_within_segs) -> centre y (per-page placement)."""
+    fix: {(seg, WORD): onset} measured onsets; cy_fn(page_index_within_segs) -> centre y (per-page placement).
+    scrim > 0: a soft dark scrim (that peak alpha) grows behind the revealed words so the line never fights busy
+    pixels under it (fades in with the first word, out with the page)."""
     cx0 = fr.width / 2 if x0 is None else x0
     pages = pages_fixed(fix) if fix else E.PAGES
     n = -1
@@ -512,6 +530,15 @@ def draw_caps(fr, t, cy0, base, segs, x0=None, fix=None, cy_fn=None):
         n += 1
         if not (p['a'] <= t < p['z']): continue
         cy0_ = cy_fn(n) if cy_fn is not None else cy0
+        if scrim > 0:
+            boxes = []
+            for w, sz, cx, cy in E._layout(p, base):
+                if t < w['t0'] - .02: continue
+                lt = t - w['t0'] + .02; s = .72 + .28 * E.back(lt / .16, 1.4)
+                l_, t_, r_, b_ = E.font(sz).getbbox(w['text']); hw, hh = (r_ - l_) * s / 2, (b_ - t_) * s / 2
+                boxes.append((cx0 + cx - hw, cy0_ + cy - hh, cx0 + cx + hw, cy0_ + cy + hh))
+            fa = clamp((t - p['a']) / .14) * clamp((p['z'] - t) / .08)
+            cap_scrim(fr, boxes, scrim * smooth(fa))
         for w, sz, cx, cy in E._layout(p, base):
             if t < w['t0'] - .02: continue
             lt = t - w['t0'] + .02; s = .72 + .28 * E.back(lt / .16, 1.4)
