@@ -43,4 +43,6 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - Studio plate: `lumarc-showcase/src/studio_plate.png`. Real-location plates (studio/café/rooftop/Paris/boardroom/
   classroom/beach): `lumarc-clones/src/bg/` (gitignored — regenerate in Higgsfield if missing).
 - Showcase assets (bad examples, close-ups, carousel, poster, website): `lumarc-showcase/src/assets/` (gitignored).
+- `video/lumarc-breakout/` ("Break out of the feed", ultracode build): fake Instagram feed kit (`sections/feedkit.py`),
+  glass crack/shatter kit (`sections/_glasskit.py`), engine fork with deterministic frame reads — reuse for feed/glass ideas.
 - Per-project READMEs in each `video/*/` folder explain how each film was built.
