@@ -118,9 +118,9 @@ SFX = {
 
 def score():
     M0, M1 = MOVIE
-    lounge(0.0, TS(10) - .05, -1)                                       # the session…
+    lounge(0.0, TS(10) - .05, 7)                                       # the session…
     # "…Creative?" -> dead air (crickets come from the section cue) until "My algorithm cried."
-    lounge(TS(11) - .02, M0 - .30, 0)                                    # …continues to the movie
+    lounge(TS(11) - .02, M0 - .30, 8)                                    # …continues to the movie
     for k in ('keys', 'bass', 'drums'):
         if k in mix.stems: mix.stems[k][T(M0 - .30):] *= 0
     # the MOVIE: trailer treatment
@@ -131,7 +131,7 @@ def score():
     for k, at in enumerate((M0 + 1.15, M0 + 1.75, M0 + 2.2)): A('trailer', taiko(1.0), at, -8 - k)
     A('trailer', addl(nz(impact(2.4, 1.2, .9, .6)), nz(braam(note('D1'), 1.6, .9)) * .6), M1 - 1.15, -3)
     # after the movie: bright session groove under "I'm listening" + CTA
-    lounge(TS(16) + .5, E.VOICE_END - .05, 1, sfx='2', bright=1.2)
+    lounge(TS(16) + .5, E.VOICE_END - .05, 4, sfx='2', bright=1.2)
     A('pad', pad([note(n) for n in ['D3', 'A3', 'D4', 'F#4', 'A4']], DUR - E.VOICE_END, att=.01, rel=1.4, bright=2200), E.VOICE_END, -11)
     A('fx', shimmer([note('D5'), note('A5'), note('F#6'), note('D6')], DUR - E.VOICE_END, 1.8), E.VOICE_END, -12)
     A('fx', addl(nz(impact(2.2, 1.0, .5, .5)), nz(sub_boom(2.0, 60, 30)) * .6), E.VOICE_END, -7)
