@@ -124,11 +124,13 @@ SFX = {
 GONE, NOT, BREAK = TS(8), TS(9), TS(11)            # 7.08 knock silence, 7.80 "Not mine.", 9.28 out in the studio
 if not (len(sys.argv) > 1 and sys.argv[1] == 'mux'):
     # ---- inside the phone: small, mono, band-passed feed music
-    groove(0.0, GONE - .02, -2, sfx='_ph', arp=True)
-    for k in ('kick_ph', 'drums_ph', 'bass_ph', 'pad_ph', 'arp_ph'):
-        if k in mix.stems:
-            mix.filter_range(k, 0, GONE + .5, 'hp', 380); mix.filter_range(k, 0, GONE + .5, 'lp', 3200)
-            mix.stems[k][:] = mix.stems[k].mean(1, keepdims=True)
+    groove(0.0, GONE, -2, sfx='_ph', arp=True)
+    ph = sum(mix.stems.pop(k) for k in ('kick_ph', 'drums_ph', 'bass_ph', 'pad_ph', 'arp_ph') if k in mix.stems)
+    ph = lp(hp(ph, 380), 3200); ph[:] = ph.mean(1, keepdims=True)                  # phone speaker: small + mono
+    # "and it's GONE." -> the feed music dies with a tape stop on the word, then dead silence until "Not mine."
+    G = E.word_time('GONE', 7) or 6.65; i = T(G); ts = tape_stop(ph[i:i + T(1.2)], .55, 1.6)
+    ph[i:] = 0; ph[i:i + len(ts)] = ts[:len(ph) - i]
+    mix.bus('phone')[:] += ph * db(7)
     # ---- "Not mine.": low drone + riser into the shatter, then the full-range world
     A('drone', pad([note('E1'), note('B1'), note('E2')], BREAK - NOT + .4, att=.25, rel=.3, bright=500), NOT, -9)
     A('fx', riser(BREAK - NOT - .2, 200, 7000, 1., .5), NOT, -10, p=.9)

@@ -73,7 +73,7 @@ def _voice_islands():
     return _cache('islands', mk)
 
 # onsets measured by hand on the voice (spectrogram + 10 ms envelope) where the automatic alignment is off
-WORD_FIX = {}
+WORD_FIX = {(0, "HEY."): 0.09, (1, "YEAH,"): 0.63, (1, "YOU."): 0.98, (2, "DOWN"): 1.48, (2, "HERE."): 1.72, (3, "YOUR"): 2.28, (3, "CONTENT"): 2.52, (3, "LIVES"): 3.06, (3, "IN"): 3.32, (3, "HERE."): 3.54, (4, "TINY."): 4.1, (5, "FLAT."): 4.78, (6, "ONE"): 5.42, (6, "SWIPE..."): 5.63, (7, "AND"): 6.32, (7, "IT'S"): 6.42, (7, "GONE."): 6.65, (9, "NOT"): 7.9, (9, "MINE."): 8.09, (11, "GOOD"): 9.41, (11, "CONTENT"): 9.76, (11, "DOESN'T"): 10.4, (11, "STAY"): 10.76, (11, "ON"): 11.2, (11, "THE"): 11.28, (11, "SCREEN."): 11.38, (12, "IT"): 12.07, (12, "STAYS"): 12.17, (12, "IN"): 12.58, (12, "YOUR"): 12.68, (12, "HEAD."): 12.92, (13, "THE"): 13.39, (13, "PRODUCT"): 13.5, (13, "YOU"): 14.09, (13, "CAN"): 14.22, (13, "ALMOST"): 14.45, (13, "TOUCH."): 14.93, (14, "THE"): 15.51, (14, "VIDEO"): 15.65, (14, "YOU"): 16.34, (14, "WATCH"): 16.48, (14, "TWICE."): 16.87, (15, "THE"): 17.59, (15, "BRAND"): 17.7, (15, "YOU"): 18.29, (15, "STILL"): 18.42, (15, "REMEMBER"): 18.8, (15, "TOMORROW."): 19.34, (16, "THAT'S"): 20.06, (16, "WHAT"): 20.42, (16, "WE"): 20.57, (16, "BUILD"): 20.76, (16, "AT"): 21.11, (16, "LUMARC."): 21.23, (17, "WANT"): 22.15, (17, "YOUR"): 22.37, (17, "BRAND"): 22.69, (17, "TO"): 23, (17, "BREAK"): 23.17, (17, "OUT"): 23.46, (17, "OF"): 23.61, (17, "THE"): 23.67, (17, "FEED?"): 23.74, (18, "COMMENT"): 24.38, (18, "“LUMARC”"): 24.97, (19, "AND"): 25.74, (19, "I'LL"): 25.86, (19, "SHOW"): 25.99, (19, "YOU"): 26.23, (19, "HOW."): 26.36}
 
 def _snap_words(pages):
     """refine word onsets onto the energy dip that precedes each word (syllable estimates run late)."""
@@ -141,10 +141,13 @@ def word_time(text, seg_index=None, nth=0):
 
 # ---------------------------------------------------------------- readers
 class Reader:
-    def __init__(self, path, ss, dur, vf=None, rgba=False):
+    def __init__(self, path, ss, dur, vf=None, rgba=False, exact=False):
+        """exact=True: native frames, no constant-frame-rate padding (ffmpeg would otherwise duplicate the first frame
+        when the seek point falls between frames) -> frame i is exactly source frame (first frame at/after ss) + i."""
         self.pf = 'rgba' if rgba else 'rgb24'; self.bpp = 4 if rgba else 3
-        self.p = subprocess.Popen(['ffmpeg', '-v', 'error', '-ss', f'{max(0, ss):.3f}', '-i', path, '-t', f'{dur + .3:.3f}',
-                                   '-vf', vf or f'fps={FPS},scale={W}:{H}', '-f', 'rawvideo', '-pix_fmt', self.pf, '-'],
+        self.p = subprocess.Popen(['ffmpeg', '-v', 'error', '-ss', f'{max(0, ss):.4f}', '-i', path, '-t', f'{dur + .3:.3f}',
+                                   '-vf', vf or f'fps={FPS},scale={W}:{H}'] + (['-fps_mode', 'passthrough'] if exact else []) +
+                                  ['-f', 'rawvideo', '-pix_fmt', self.pf, '-'],
                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.n = 0; self.last = None; self.size = None
     def get(self, idx, size=(W, H)):
@@ -161,14 +164,13 @@ class Clip:
     """sequential random-ish access to another video (e.g. the SILENCE teardown film) at timeline speed."""
     def __init__(self, path, size=(W, H)): self.path, self.size, self.r, self.t0 = path, size, None, None
     def at(self, src_t):
-        idx = None
-        if self.r is not None:
-            idx = int(round((src_t - self.t0) * FPS))
-            if idx < self.r.n - 1 or idx > self.r.n + 45: self.r.close(); self.r = None
+        """frame nearest to src_t (sources are 30 fps); a pure function of src_t whatever the reader's start."""
+        k = max(0, int(math.floor(src_t * 30 + .5 + 1e-6)))
+        if self.r is not None and (k < self.t0 + self.r.n - 1 or k > self.t0 + self.r.n + 45): self.r.close(); self.r = None
         if self.r is None:
-            self.t0 = src_t; idx = 0
-            self.r = Reader(self.path, src_t, 30, vf=f'fps={FPS},scale={self.size[0]}:{self.size[1]}')
-        return self.r.get(idx, self.size)
+            self.t0 = k
+            self.r = Reader(self.path, (k - .5) / 30, 30, vf=f'scale={self.size[0]}:{self.size[1]}', exact=True)
+        return self.r.get(k - self.t0, self.size)
 _clips = {}
 def clip(path, size=(W, H)):
     k = (path, size)
@@ -208,15 +210,20 @@ def light_avatar(rgb, al):
 
 # the HeyGen take is a floating bust (body cut at y≈1600 of the source): crop 864x1536 at (108, 40) and scale x1.25 so the
 # cut lands below the frame bottom; head top ≈ y 615, eyes ≈ y 760, elbows touch the frame edges.
-AV_VF = f'fps={FPS},crop=864:1536:108:40,scale={W}:{H}:flags=bicubic'
+AV_VF = f'crop=864:1536:108:40,scale={W}:{H}:flags=bicubic'
+AV_FPS = 25                       # tight.mov is read at its native rate; frame = nearest source frame of t
 class Avatar:
     def __init__(self, t0):
-        self.t0 = t0; self.r = Reader(os.path.join(SRC, 'tight.mov'), t0, DUR - t0 + 1, vf=AV_VF)
+        self.k0 = self._k_of(t0); self.r = Reader(os.path.join(SRC, 'tight.mov'), (self.k0 - .5) / AV_FPS, DUR - t0 + 1, vf=AV_VF, exact=True)
         self._k = None
+    @staticmethod
+    def _k_of(t):
+        j = int(round(min(t, VOICE_END - .04) * FPS))             # timeline frame number (exact integer)
+        return (2 * j * AV_FPS + FPS) // (2 * FPS)                 # nearest 25 fps source frame, integer maths (no float ties)
     def frame(self, t):
-        """keyed avatar (RGBA PIL, full 1080x1920) at timeline t; holds the last frame after the voice ends."""
-        tt = min(t, VOICE_END - .04)
-        f = self.r.get(int(round((tt - self.t0) * FPS)))
+        """keyed avatar (RGBA PIL, full 1080x1920) at timeline t; holds the last frame after the voice ends.
+        Pure function of t: the source frame is the nearest 25 fps frame, whatever t the reader started at."""
+        f = self.r.get(self._k_of(t) - self.k0)
         if self._k is not None and self._k[0] is f: return self._k[1]
         rgb, al = key(f); rgb = light_avatar(rgb, al)
         a8 = Image.fromarray((al * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(.9))
@@ -361,9 +368,10 @@ def _layout(page, base):
         for it in ln: out.append((it[0], it[1], x + it[2] / 2, y0 + li * lh)); x += it[2] + base * .34
     return out
 
-def draw_captions(fr, t, cy0, base=92):
+def draw_captions(fr, t, cy0, base=92, since=None):
     for p in PAGES:
         if not (p['a'] <= t < p['z']): continue
+        if since is not None and TL[p['seg']]['t0'] < since - 1e-6: continue     # page belongs to the previous section
         for w, sz, cx, cy in _layout(p, base):
             if t < w['t0'] - .02: continue
             lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16, 1.4)
@@ -397,7 +405,7 @@ def post(img, P, t):
     if P['bright'] != 1: a = a * P['bright']
     if P['flash'] > .01: a = a + (np.array(P['flash_col'], np.float32) - a) * P['flash']
     a = a * (1 - P['vignette'] * np.clip(_R2 - .2, 0, 1))[..., None]
-    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(t * FPS) % 6], 2, 0), 2, 1) * P['grain']
+    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(round(t * FPS)) % 6], 2, 0), 2, 1) * P['grain']
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
 
 # ---------------------------------------------------------------- sections + frame
@@ -446,7 +454,7 @@ class Film:
         else: fr = self.compose_world(ctx)
         if ctx.wrap is not None: fr = ctx.wrap(fr).convert('RGBA')
         for L in ctx.screen: _paste(fr, L)
-        if ctx.captions: draw_captions(fr, t, ctx.cap_y, ctx.cap_size)
+        if ctx.captions: draw_captions(fr, t, ctx.cap_y, ctx.cap_size, since=m.START if m is not None else None)
         return post(fr.convert('RGB'), ctx.post, t)
 
 # ---------------------------------------------------------------- CLI
