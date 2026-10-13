@@ -32,7 +32,7 @@ LINES = [
     ('K', 16.08, 18.46, "I sell croissants, | not *movies!", .14),
     ('T', 12.80, 15.98, "Kevin… | your croissants | deserve a *movie.", .34),
     ('I', 30.96, 34.72, "…Oh. | *OH. | Okay… | I'm *listening.", None),     # gap = after the MOVIE insert
-    ('T', 17.86, 24.80, "If your Instagram | stopped talking | to you… | comment | *“LUMARC”. | We do | couples therapy. | For *brands.", .40),
+    ('T', 17.86, 25.92, "If your Instagram | stopped talking | to you… | comment | *“LUMARC”. | We do | couples therapy. | For *brands.", .40),
 ]
 MOVIE_AFTER = 15      # the croissant "movie" plays after this line …
 MOVIE_LEN = 3.60      # … for this long (no dialogue), then line 16 starts

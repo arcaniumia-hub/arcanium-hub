@@ -239,30 +239,50 @@ def plate(angle):
         return sharp, wrap, mean
     return _cache(('plate', angle), mk)
 
-_gx = np.linspace(-1, 1, W, dtype=np.float32)[None, :, None]
+# clean matte (from the A review; now engine-wide): hard despill, edge colour decontamination (soft-edge pixels take the
+# colour of the nearby solid interior), 1 px choke, narrow rim only on the window side, soft light wrap.
+from scipy.ndimage import minimum_filter as _minf
+_gx1 = np.linspace(-1, 1, W, dtype=np.float32)
+def _clean_consts(angle):
+    def mk():
+        A = ANGLES[angle]; sharp, wrap, mean = plate(angle)
+        lit = np.clip(.5 + .5 * A['side'] * _gx1, 0, 1)
+        mul = (1 - A['amt'] * .6 + A['amt'] * 1.2 * lit)[:, None] * np.array(A['grade'], np.float32)[None, :]
+        add = np.array(A['key'], np.float32)[None, :] * A['amt'] * .22 * lit[:, None]
+        side = np.clip(A['rside'] * _gx1 * 1.6 - .1, 0, 1)
+        return dict(mul=mul.astype(np.float32), add=add.astype(np.float32), rimL=(side * A['ramt'] * .45).astype(np.float32),
+                    rim=Image.new('RGB', (W, H), A['rim']), wrap=wrap, mean=mean.astype(np.float32),
+                    grade=np.array(A['grade'], np.float32))
+    return _cache(('clean_consts', angle), mk)
+_LUT_CORE = [255 if v >= 251 else 0 for v in range(256)]
+_LUT_W = [int(max(0, min(255, (v / 255 - .80) / .18 * 255))) for v in range(256)]
+_LUT_CHOKE = [int(max(0, min(255, (v - 31) * 255 / 224))) for v in range(256)]
 def graded(spk, src_t, angle=None):
-    """keyed take frame (RGBA 1080x1920) graded + lit for `angle` (default: the speaker's own angle)."""
-    angle = angle or spk; T_ = take(spk); f = T_.raw(src_t)
-    ck = (spk, angle, id(f))
+    """keyed take frame (RGBA 1080x1920) graded + lit for `angle` (default: the speaker's own angle), clean edge."""
+    angle = angle or spk; f = take(spk).raw(src_t)
     hit = _C.get(('graded_last', spk, angle))
     if hit is not None and hit[0] is f: return hit[1]
-    from scipy.ndimage import minimum_filter
-    A = ANGLES[angle]; sharp, wrap, mean = plate(angle)
-    rgb, al = key(f)
-    rgb = rgb * np.array(A['grade'], np.float32)
-    cm = rgb[al > .5].mean(0) if (al > .5).any() else rgb.reshape(-1, 3).mean(0)
-    rgb = rgb * (1 + .12 * (mean / (cm + 1e-3) - 1))                       # pull toward the room's light
-    lit = np.clip(.5 + .5 * A['side'] * _gx, 0, 1)
-    rgb = rgb * (1 - A['amt'] * .6 + A['amt'] * 1.2 * lit) + np.array(A['key'], np.float32) * A['amt'] * .22 * lit
-    band = np.clip(al - minimum_filter(al, size=15), 0, 1)[..., None]       # warm window rim
-    side = np.clip(.5 + A['rside'] * _gx * 1.5, 0, 1)
-    e = band * side * A['ramt'] * .8
-    rgb = rgb * (1 - e) + np.array(A['rim'], np.float32) * e
-    a8 = Image.fromarray((al * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.0)); al = np.asarray(a8, np.float32) / 255
-    edge = np.clip(al - minimum_filter(al, size=9), 0, 1)[..., None]        # light wrap from the plate
-    rgb = rgb * (1 - .40 * edge) + np.asarray(wrap, np.float32) * .40 * edge
-    out = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8)); out.putalpha(a8)
-    _C[('graded_last', spk, angle)] = (f, out); return out
+    C = _clean_consts(angle)
+    a = np.asarray(f); r = a[..., 0].astype(np.int32); g = a[..., 1].astype(np.int32); b = a[..., 2].astype(np.int32)
+    m = np.maximum(r, b); diff = g - m
+    al8 = np.clip((100 - diff) * 255 // 70, 0, 255).astype(np.uint8)              # = key() alpha
+    R, G, B = Image.fromarray(a[..., 0]), Image.fromarray(np.minimum(g, m).astype(np.uint8)), Image.fromarray(a[..., 2])
+    AL = Image.fromarray(al8)
+    small = Image.merge('RGBA', (R, G, B, AL.point(_LUT_CORE))).convert('RGBa').resize((W // 4, H // 4), Image.BOX)
+    ext = small.filter(ImageFilter.GaussianBlur(2.5)).convert('RGBA').convert('RGB').resize((W, H), Image.BILINEAR)
+    im = Image.composite(Image.merge('RGB', (R, G, B)), ext, AL.point(_LUT_W))
+    x = np.asarray(im, np.float32); msk = al8 > 128
+    cm = (x[msk].mean(0) if msk.any() else x.reshape(-1, 3).mean(0)) * C['grade']
+    lm = (1 + .12 * (C['mean'] / (cm + 1e-3) - 1)).astype(np.float32)
+    x = x * (C['mul'] * lm[None, :])[None] + C['add'][None]
+    im = Image.fromarray(np.clip(x, 0, 255).astype(np.uint8))
+    a8 = AL.point(_LUT_CHOKE).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.2)); A8 = np.asarray(a8)
+    band = (A8 - _minf(A8, size=9)).astype(np.float32) * C['rimL'][None, :]
+    im = Image.composite(C['rim'], im, Image.fromarray(band.astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5)))
+    edge = ((A8 - _minf(A8, size=5)).astype(np.uint16) * 56 // 255).astype(np.uint8)
+    im = Image.composite(C['wrap'], im, Image.fromarray(edge))
+    im.putalpha(a8)
+    _C[('graded_last', spk, angle)] = (f, im); return im
 
 def line_at(t):
     """index of the line whose PICTURE owns t (a line's shot starts at its t0 = the section/segment boundary)."""

@@ -71,8 +71,9 @@ def sad_trombone():
 def sting():
     """dramatic 'dun dun DUNNN' (low brass-ish stabs)."""
     out = np.zeros(T(2.0), np.float32)
-    for m, at, d, g in (('D2', 0, .22, .8), ('D2', .28, .22, .8), ('C#2', .58, 1.3, 1.1)):
+    for m, at, d, g in (('D2', 0, .22, .8), ('D2', .28, .22, .8), ('C#2', .58, .62, 1.1)):
         x = (reese(note(m), d) + reese(note(m) + 12, d) * .5) * g; i = T(at); out[i:i + len(x)] += x[:len(out) - i]
+    out = out[:T(1.25)]; out[T(.9):] *= np.linspace(1, 0, T(1.25) - T(.9))       # short tail: never under the next line
     return lp(out, 1400)
 def tissue():
     n = T(.45); t = tt(n); return (bp(noise(n), 2000, 7000) * np.sin(np.pi * t / .45) ** 2 * .35).astype(np.float32)
