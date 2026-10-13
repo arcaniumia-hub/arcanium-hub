@@ -91,6 +91,8 @@ if not (len(sys.argv) > 1 and sys.argv[1] == 'mux'):
       out[:T_(.3)] += hp(noise(T_(.3)), 2000) * np.exp(-np.arange(T_(.3)) / SR / .08)
       return out
   def T_(s): return int(round(s * SR))
+  def addl(a, b):
+      a, b = as_st(a), as_st(b); n = max(len(a), len(b)); return pad_to(a, n) + pad_to(b, n)
   def clock_tick(i=0):
       n = T_(.12); t = tt(n); f = 2200 if i % 2 == 0 else 1700
       return (np.sin(2 * np.pi * f * t) * np.exp(-t / .012) + .5 * noise(n) * np.exp(-t / .004)).astype(np.float32)
@@ -99,7 +101,7 @@ if not (len(sys.argv) > 1 and sys.argv[1] == 'mux'):
       'swoosh_up': lambda c: (whoosh(.55, .6, up=True), -.33, -9),
       'swipe': lambda c: (whoosh(.32, .45, up=True), -.14, -6),
       'impact': lambda c: (impact(1.8, .9, .9, .4), 0, -5),
-      'boom': lambda c: (nz(impact(2.6, 1.2, .8, .6)) + nz(braam(note('A1'), 2.2, .7)) * .5, 0, -4),
+      'boom': lambda c: (addl(nz(impact(2.6, 1.2, .8, .6)), nz(braam(note('A1'), 2.2, .7)) * .5), 0, -4),
       'tick': lambda c: (tick(2600, .05, .6), 0, -16),
       'clock': lambda c: (clock_tick(c.get('i', 0)), 0, -10),
       'glass': lambda c: (glass(.9, c.get('seed', 1)), 0, -12),
