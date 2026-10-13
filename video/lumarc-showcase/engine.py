@@ -371,8 +371,8 @@ def draw_captions(fr, t, cy0, base=92):
         if not (p['a'] <= t < p['z']): continue
         for w, sz, cx, cy in _layout(p, base):
             if t < w['t0'] - .02: continue
-            lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16)
-            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16, 1.4)
+            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.03
             img, _ = word_img(w['text'], sz, 'grad' if w['emph'] else 'white')
             if lt < .05: img = fade(img, lt / .05)
             if p['z'] - t < .06: img = fade(img, (p['z'] - t) / .06)

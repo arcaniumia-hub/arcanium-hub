@@ -21,6 +21,7 @@ START, END = E.span(3, 6)                       # 9.32 – 14.44
 T3, T4, T5, T6 = (E.TL[i]['t0'] for i in (3, 4, 5, 6))
 # word onsets measured on the voice track (caption estimates are ±80 ms off here)
 W_PAGE, W_BLURRY, W_SHAKY, W_FLYER, W_FIVE = 9.93, 10.60, 11.66, 12.85, 13.68
+W_PAGE, W_SHAKY = E.WORD_FIX[(3, 'PAGE.')], E.WORD_FIX[(5, 'SHAKY')]     # hand-measured in engine: hit + caption pop share a frame
 USER = 'yourbusiness'
 
 CUES = [
@@ -273,7 +274,7 @@ def blurry_state(t):
     x, y, w, h = tile_rect(0); tx, ty = x + w / 2, y + h / 2
     ts = 760 * .75; s0 = w / ts * 1.0          # start: card content ~ tile width
     cam = cam4(T4 + .3)
-    lx, ly = o2w(cam, 285, 870); ls = 530 / cam['z'] / 760
+    lx, ly = o2w(cam, *BLR_O); ls = BLR_W / cam['z'] / 760
     if t < T4 + .04: return None
     if t < W_BLURRY + .02:
         u = (t - T4 - .04) / (W_BLURRY + .02 - T4 - .04); k = eout(u)
@@ -290,6 +291,7 @@ def blurry_state(t):
     return None
 
 
+BLR_O, BLR_W = (222, 880), 340      # blurry card: settled centre (output px) + width — left of his ear with air
 WHIP = .42      # TL3 whip-zoom settles to exactly z=1 (1:1, crisp page UI)
 def cam3(t):
     u = clamp((t - T3) / WHIP); k = eout(u)
@@ -300,8 +302,11 @@ def cam4(t):    # medium, founder right
     lt = t - T4; z = 1.27 + .03 * smooth(lt / 1.16); return dict(z=z, x=540., y=820., dx=(z - 1) * 540 * .98, dy=40., rot=0.)
 def cam5(t):    # tighter, founder left
     lt = t - T5; z = 1.40 + .03 * smooth(lt / 1.08); return dict(z=z, x=540., y=820., dx=-(z - 1) * 540 * .98, dy=60., rot=0.)
-def cam6(t):    # low, founder bottom-right — headroom for the flyer
-    lt = t - T6; z = 1.33 + .05 * smooth(lt / 1.84); return dict(z=z, x=540., y=820., dx=(z - 1) * 540 * .98, dy=(z - 1) * 820 * .55, rot=0.)
+def cam6(t):    # low, founder bottom-right — the whole upper-left quarter is open air for the flyer + sticker
+    lt = t - T6; z = 1.31 + .05 * smooth(lt / 1.84); return dict(z=z, x=540., y=820., dx=(z - 1) * 540 * .98, dy=(z - 1) * 820 * .95, rot=0.)
+DROP6 = 150.
+FLY_O, FLY_W, FLY_RZ = (270, 560), 400, 6.      # flyer: settled centre (output px), width, tilt (+ = clockwise)
+BURST_O, BURST_S = (540, 320), .9               # 5 MIN sticker: centre (output px), scale    # TL6 sits him lower in frame (vertical only: his waist is cut by the frame bottom anyway, so no plate edge shows)
 
 
 def seg_of(t):
@@ -394,7 +399,8 @@ def draw(ctx, lt, t):
         ctx.cam = cam5(t)
         ctx.bg_img = page_view(holes, 7); ctx.bg_dim = .3
     else:
-        ctx.cam = cam6(t)
+        ctx.cam = cam6(t); ctx.avatar['y'] = DROP6
+        ctx.cap_y = 1586            # his face sits low in this framing: words go on the hoodie, never over mouth/beard
         ctx.bg_img = page_view(holes, 7); ctx.bg_dim = .5
 
     # ---- blurry photo: hunts for focus forever
@@ -463,17 +469,18 @@ def draw(ctx, lt, t):
 
     # ---- flyer: slams in crooked like a cheap sticker
     if t >= T6 + .08:
-        cam = cam6(W_FLYER); lx, ly = o2w(cam, 305, 700); ls = 470 / cam['z'] / (760 + 36)
+        # settles upper-left, leaning AWAY from his head (clockwise tilt pulls its lower-right corner off his ear)
+        cam = cam6(W_FLYER); lx, ly = o2w(cam, *FLY_O); ls = FLY_W / cam['z'] / (760 + 36)
         u = (t - T6 - .08) / (W_FLYER - T6 - .08)
         if u < 1:
             k = ein(u)
-            s = lerp(ls * 2.6, ls, k); rz = lerp(-28, -8, k); rx = lerp(-35, 0, k); ry = lerp(25, 6, k)
+            s = lerp(ls * 2.6, ls, k); rz = lerp(26, FLY_RZ, k); rx = lerp(-35, 0, k); ry = lerp(25, 6, k)
             wx, wy = lerp(lx - 150, lx, k), lerp(ly - 500, ly, k); al = clamp(u / .25); sy = 1
             vel = (0, 0)
         else:
             lt_ = t - W_FLYER
             wob = math.exp(-lt_ * 7) * math.sin(lt_ * 2 * math.pi * 4.2)      # boing
-            s = ls * (1 + .07 * wob); rz = -8 + 4 * wob; rx = 0; ry = 6 + 2 * math.sin(lt_ * 1.4); wx, wy = lx, ly + 3 * math.sin(lt_ * 1.6); al = 1
+            s = ls * (1 + .07 * wob); rz = FLY_RZ + 4 * wob; rx = 0; ry = 6 + 2 * math.sin(lt_ * 1.4); wx, wy = lx, ly + 3 * math.sin(lt_ * 1.6); al = 1
             vel = (0, 0)
             sh_ = 16 * math.exp(-lt_ * 10) * math.sin(lt_ * 2 * math.pi * 7)          # the camera takes the hit
             ctx.cam['dx'] += sh_; ctx.cam['dy'] += sh_ * .7
@@ -481,9 +488,9 @@ def draw(ctx, lt, t):
         put_card(ctx, 'front', flyer_card(), wx, wy, rx, ry, rz, s, vel, al)
         if t >= W_FIVE:     # 5 MIN sticker on the flyer's corner
             lt_ = t - W_FIVE; k = back(lt_ / .22, 3.0)
-            b = starburst(); sc = 1.0 * k
+            b = starburst(); sc = BURST_S * k
             if sc > .02:
                 im = b.rotate(lerp(-40, 14, eout(lt_ / .25)) + 2 * math.sin(lt_ * 5), Image.BICUBIC, expand=True)
                 im = im.resize((max(1, int(im.width * sc)), max(1, int(im.height * sc))), Image.BILINEAR)
-                bx, by = o2w(cam, 530, 380)
+                bx, by = o2w(cam, *BURST_O)      # over the card's top-right corner, in the air above his crown
                 ctx.add('front', im, bx, by, alpha=clamp(lt_ / .05))

@@ -132,13 +132,16 @@ if not (len(sys.argv) > 1 and sys.argv[1] == 'mux'):
 def mux():
     out = os.path.join(E.OUT, 'lumarc-showcase.mp4')
     af = ('[0:a]aresample=48000,highpass=f=80,equalizer=f=3200:t=q:w=1.2:g=2.5,acompressor=threshold=-22dB:ratio=3:attack=6:release=90:makeup=3,'
-          'apad=whole_dur=%.2f,asplit=2[v][key];[1:a]volume=0.42[m];[m][key]sidechaincompress=threshold=0.05:ratio=4:attack=25:release=320[md];'
+          'apad=whole_dur=%.2f,asplit=2[v][key];[1:a]volume=0.30[m];[m][key]sidechaincompress=threshold=0.035:ratio=8:attack=15:release=300[md];'
           '[v][md]amix=inputs=2:normalize=0,loudnorm=I=-14:TP=-1.2:LRA=11[a]' % DUR)
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(E.SRC, 'tight.mov'), '-i', os.path.join(HERE, 'music.wav'), '-filter_complex', af,
                     '-map', '[a]', '-c:a', 'pcm_s16le', '-ar', '48000', os.path.join(E.OUT, 'mix.wav')], check=True)
-    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(E.OUT, 'video.mp4'), '-i', os.path.join(E.OUT, 'mix.wav'), '-map', '0:v', '-map', '1:a',
-                    '-c:v', 'libx264', '-preset', 'slow', '-crf', '20', '-maxrate', '6M', '-bufsize', '12M', '-pix_fmt', 'yuv420p',
-                    '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '192k', '-t', f'{DUR:.3f}', out], check=True)
+    kb = int(28.6 * 8 * 1024 / DUR) - 192                                  # 2-pass to land under the 30 MB chat limit
+    for ps in (1, 2):
+        cmd = ['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(E.OUT, 'video.mp4'), '-i', os.path.join(E.OUT, 'mix.wav'), '-map', '0:v', '-map', '1:a',
+               '-c:v', 'libx264', '-preset', 'slow', '-b:v', f'{kb}k', '-pass', str(ps), '-passlogfile', os.path.join(E.OUT, 'x264'),
+               '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '192k', '-t', f'{DUR:.3f}']
+        subprocess.run(cmd + (['-f', 'mp4', '/dev/null'] if ps == 1 else [out]), check=True)
     print(out, os.path.getsize(out) / 1e6, 'MB')
 
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == 'mux':

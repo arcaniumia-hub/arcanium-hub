@@ -26,6 +26,7 @@ START, END = E.span(0, 1)
 T_TWO, T_SEC, T_YOU, T_THIS, T_IS, T_YOUR, T_TIME = 0.70, 0.89, 1.66, 2.20, 2.93, 3.47, 3.60
 T_CD = E.TL[1]['t0']            # 4.04
 T_HIT = END                      # 6.04
+T_CAP_OUT, T_DIVE = 3.87, 3.84   # hand-off: last caption line drops out word by word 3.87-3.97 as the stopwatch card dives
 TICKS = [4.04, 4.54, 5.00, 5.40, 5.70, 5.90]
 
 CUES = [(0.0, 'boom', {}), (0.02, 'whoosh', {}), (0.08, 'shimmer', {}),
@@ -250,6 +251,43 @@ def cd_panel_base(w, h):
         return im
     return E.cached(('a_cdp', w, h), mk)
 
+
+def mblur(im, vx, vy):
+    """directional motion blur (180-degree shutter): smear im along -(vx, vy) px (the path it just travelled).
+    Premultiplied, dense integer taps -> a smooth streak, never stacked copies. Returns (img, ox, oy): the offset to
+    add to the image's centre so the sharp leading edge stays where the object is now."""
+    L = math.hypot(vx, vy)
+    if L < 1.5: return im, 0.0, 0.0
+    n = int(min(18, max(3, L / 2.4)))
+    a = np.asarray(im, np.float32).copy(); a[..., :3] *= a[..., 3:] / 255.
+    h, w = a.shape[:2]; px, py = int(math.ceil(abs(vx))), int(math.ceil(abs(vy)))
+    acc = np.zeros((h + py, w + px, 4), np.float32)
+    x0, y0 = (px if vx > 0 else 0), (py if vy > 0 else 0)                 # where the zero-offset (current) copy sits
+    for i in range(n):
+        f = i / (n - 1); ox, oy = int(round(x0 - vx * f)), int(round(y0 - vy * f))
+        acc[oy:oy + h, ox:ox + w] += a
+    acc /= n
+    rgb = np.where(acc[..., 3:] > .5, acc[..., :3] * 255. / np.maximum(acc[..., 3:], 1e-3), 0)
+    out = Image.fromarray(np.clip(np.dstack([rgb, acc[..., 3:]]), 0, 255).astype(np.uint8), 'RGBA')
+    return out, (acc.shape[1] / 2 - x0 - w / 2), (acc.shape[0] / 2 - y0 - h / 2)
+
+CAP_LAG, CAP_DUR = .02, .08
+def _cap_drop(t, wi):
+    """exit progress k (0..1) of word wi of the last page + its drop speed (px per half frame, for the smear)."""
+    t0 = T_CAP_OUT + CAP_LAG * wi
+    k = clamp((t - t0) / CAP_DUR)
+    v = 130 * 2 * k / CAP_DUR / (2 * E.FPS) if 0 < k < 1 else 0.0
+    return k, v
+
+def _card_path(t):
+    """stopwatch card hand-off dive 3.84 -> 4.04 (6 frames): (cx, cy, s2, u). It drops down the right side, its bottom
+    edge always above the caption that is dropping out under it, and only swings to centre once its top edge is below
+    his jaw -> never over his face/beard, never text on text, landing where the countdown panel opens."""
+    u = clamp((t - T_DIVE) / (T_CD - T_DIVE))
+    fy = 4 * math.sin((t - (T_TIME - .14)) * 3)
+    my = eio(u); mx = eio((u - .74) / .26)
+    return lerp(836, 556, mx), lerp(640 + fy, 1468, my), 1 + .5 * u ** 3, u
+
 # ---------------------------------------------------------------- draw
 def draw(ctx, lt, t):
     P = ctx.post
@@ -285,15 +323,19 @@ def _captions(ctx, t):
     for p in _pages():
         if not (p['a'] <= t < p['z']): continue
         last = p['z'] >= T_CD - .001
-        for w, sz, cx, cy in p['layout']:
+        for wi, (w, sz, cx, cy) in enumerate(p['layout']):
             if t < w['t0'] - .02: continue
             lt = t - w['t0'] + .02; s = .72 + .28 * E.back(lt / .16)
             if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
             img = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')[0]
-            a = clamp(lt / .05)
-            if last: a *= clamp((T_CD - .02 - t) / .08)          # the final page dissolves into the countdown cut
+            a = clamp(lt / .05); dy = 0.0; vy = 0.0
+            if last:                                             # "TIME." ends on the voice (~3.95): the line drops out
+                k, vy = _cap_drop(t, wi)                         # word by word (YOUR leads), clear before the card dives
+                if k >= 1: continue
+                g = 1 - .16 * k; a *= 1 - k ** 1.5; s *= g; cx *= 1 - .10 * k; dy = 130 * k * k
             if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
-            ctx.add('screen', img, W / 2 + cx, ctx.cap_y + cy, alpha=a)
+            if vy > 2: img, ox, oy = mblur(img, 0, vy); cx += ox; dy += oy
+            ctx.add('screen', img, W / 2 + cx, ctx.cap_y + cy + dy, alpha=a)
 
 PLATE_FLOOR = 1665          # last plate row with full-width alpha
 def _floor(ctx, zmin):
@@ -362,15 +404,18 @@ def _speech(ctx, t, P):
             prog = eout((t - T_TIME) / .3) if t > T_TIME else 0.0
             card = stopwatch_card(prog)
             ci = card.resize((max(1, int(card.width * s)), max(1, int(card.height * s))), Image.BILINEAR) if abs(s - 1) > .01 else card
-            fy = 4 * math.sin(lc * 3)
-            # into the cut: the card dives towards where the big countdown panel will land
-            m = E.ein(clamp((t - 3.90) / (T_CD - 3.90)))
-            cx, cy = lerp(836, 540, m), lerp(640 + fy, 1462, m); s2 = 1 + .9 * m
-            if m > 0: ci = ci.resize((int(ci.width * s2), int(ci.height * s2)), Image.BILINEAR); P['zoom_blur'] = max(P['zoom_blur'], .5 * m)
+            cx, cy, s2, u = _card_path(t)
+            if u > 0:
+                ci = ci.resize((int(ci.width * s2), int(ci.height * s2)), Image.BILINEAR)
+                P['zoom_blur'] = max(P['zoom_blur'], .14 * E.ein(u))       # a whisper of zoom; the real blur is the card's own
+                px, py, _, _ = _card_path(t - .25 / E.FPS)           # 90-degree shutter, capped: a streak, not mush
+                vx, vy = cx - px, cy - py; vl = math.hypot(vx, vy); kk = min(1.0, 40 / vl) if vl > 0 else 1
+                ci, ox, oy = mblur(ci, vx * kk, vy * kk)
+            else: ox = oy = 0.0
             sh = E.cached('a_sw_sh', lambda: _shadow_only(330, 410))
             shi = sh if abs(s * s2 - 1) < .01 else sh.resize((int(sh.width * s * s2), int(sh.height * s * s2)), Image.BILINEAR)
             ctx.add('screen', shi, cx, cy + 16 * s * s2, alpha=clamp(lc / .08) * .9)
-            ctx.add('screen', ci, cx, cy, glass=14, alpha=clamp(lc / .08))
+            ctx.add('screen', ci, cx + ox, cy + oy, glass=14, alpha=clamp(lc / .08))
 
 def _two(ctx, lt, alpha, pos, extra_s=0.0):
     im, m = big_two()

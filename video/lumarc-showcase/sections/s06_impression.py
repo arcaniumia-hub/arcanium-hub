@@ -42,6 +42,15 @@ COLD = (.6, .92, (.92, .98, 1.1))
 def C(k, fn): return E.cached(('s06',) + (k if isinstance(k, tuple) else (k,)), fn)
 
 
+def cap_scrim():
+    """soft night-blue capsule shadow that sits behind the caption line during the shatter."""
+    def mk():
+        w, h = 980, 330; m = Image.new('L', (w, h))
+        ImageDraw.Draw(m).rounded_rectangle((150, 115, w - 150, h - 115), 50, fill=235)
+        im = Image.new('RGBA', (w, h), (6, 5, 16, 0)); im.putalpha(m.filter(ImageFilter.GaussianBlur(42))); return im
+    return C('capscrim', mk)
+
+
 # ================================================================ fracture geometry
 IMPACT = (540., 760.)
 SS = 4                                        # supersampling for anti-aliased shard masks
@@ -156,20 +165,23 @@ def crack_art():
     return C('crack', mk)
 
 
-def pane_layer():
+def pane_layer(lab=0):
     """the s05 triptych at its final (END) state as a static RGBA layer (panes drawn over the cold, dimmed studio;
-    alpha = the anti-aliased pane mask). Static, so the shards' content can be cached."""
+    alpha = the anti-aliased pane mask). Static, so the shards' content can be cached. lab=1 keeps the sense labels
+    (s05 dissolves them over P5.LAB_OUT, so the flying shards carry none: "THEY" is the only text once it pops)."""
     def mk():
         bg = Image.blend(E.studio(), Image.new('RGB', (W, H), (0, 0, 0)), .2)
         bg = graded(bg, COLD[0], COLD[1], COLD[2]).convert('RGBA')
         st = [(k, x, y, w, h, 0., 0., land) for k, x, y, w, h, vx, vy, land in P5.pane_states(P5.END - 1e-3)]
-        P5.draw_panes(bg, P5.END - 1e-3, states=st)
+        P5.draw_panes(bg, P5.END - 1e-3, states=st, lab_a=float(lab))
         bg.putalpha(Image.fromarray(pane_mask_full())); return bg
-    return C('players', mk)
+    return C(('players', lab), mk)
 
 
-def triptych_frame(fr):
-    tf = fr.copy(); tf.alpha_composite(pane_layer()); return tf
+def triptych_frame(fr, t):
+    a = P5.label_alpha(t)
+    L = pane_layer(0) if a <= .004 else Image.blend(pane_layer(0), pane_layer(1), a)
+    tf = fr.copy(); tf.alpha_composite(L); return tf
 
 
 def cracked(src, t):
@@ -254,7 +266,7 @@ def affine2(img, sx, sy, ang_deg):
 
 def shatter(fr, t):
     """fr = the revealed world (graded). returns the frame with cracks (before TS) or flying shards."""
-    if t < TS: return cracked(triptych_frame(fr), t)
+    if t < TS: return cracked(triptych_frame(fr, t), t)
     src = pane_layer()
     u = t - TS
     out = fr.copy(); half = None
@@ -389,13 +401,19 @@ def bgz(t):
     return a
 
 
+def _zoom_box(im, z, ax, ay, size):
+    """im scaled by z around (ax, ay) (in im's own pixels) -> `size`; a box resize (3x faster than an affine)."""
+    w, h = im.size; bw, bh = w / z, h / z; x0, y0 = ax - ax / z, ay - ay / z
+    return im.resize(size, Image.BILINEAR, box=(x0, y0, x0 + bw, y0 + bh))
+
+
 def dolly_bg(z, speed):
     st = sharp_plate()
-    im = E.zoom(st, z, (540, 700))
+    im = _zoom_box(st, z, 540, 700, (W, H))
     if speed > .15:   # a touch of radial motion blur on the background only (the smeared copy is built at half res)
-        a = 1 / (z * (1 + min(.03, speed * .02)))
+        z2 = z * (1 + min(.03, speed * .02))
         sm = C('plate_half', lambda: st.resize((W // 2, H // 2), Image.BOX))
-        im2 = sm.transform((W // 2, H // 2), Image.AFFINE, (a, 0, (540 - a * 540) / 2, 0, a, (700 - a * 700) / 2), Image.BILINEAR)
+        im2 = _zoom_box(sm, z2, 270, 350, (W // 2, H // 2))
         im = Image.blend(im, im2.resize((W, H), Image.BILINEAR), .5)
     return im
 
@@ -431,20 +449,23 @@ def edge_mask():
     return C('edge', mk)
 
 
+def edge_mask_img(half):
+    def mk():
+        m = Image.fromarray((edge_mask() * 255).astype(np.uint8))
+        return m if half else m.resize((W, H), Image.BILINEAR)
+    return C(('edge_img', half), mk)
+
+
 def edge_zoom_blur(fr, amt):
+    """radial zoom smear on the frame edges (half res, PIL-only: 3 scaled copies averaged, masked by the edge ramp)."""
     if amt < .03: return fr
-    sm = fr.convert('RGB').resize((W // 2, H // 2), Image.BILINEAR)
-    acc = np.asarray(sm, np.float32).copy()
-    for i in (1, 2, 3):
-        s = 1 + amt * .035 * i; w, h = sm.size
-        z = sm.transform((w, h), Image.AFFINE, (1 / s, 0, 270 - 270 / s, 0, 1 / s, 380 - 380 / s), Image.BILINEAR)
-        acc += np.asarray(z, np.float32)
-    acc /= 4
-    m = edge_mask()[..., None] * min(1, amt)
-    small = np.asarray(sm, np.float32) * (1 - m) + acc * m
-    blur = Image.fromarray(small.astype(np.uint8)).resize((W, H), Image.BILINEAR)
-    mm = Image.fromarray((edge_mask() * min(1, amt) * 255).astype(np.uint8)).resize((W, H), Image.BILINEAR)
-    out = fr.convert('RGB').copy(); out.paste(blur, (0, 0), mm); return out.convert('RGBA')
+    sm = fr.convert('RGB').resize((W // 2, H // 2), Image.BILINEAR); w, h = sm.size
+    z = [_zoom_box(sm, 1 + amt * .035 * i, 270, 380, (w, h)) for i in (1, 2, 3)]
+    acc = Image.blend(Image.blend(sm, z[0], .5), Image.blend(z[1], z[2], .5), .5)
+    a = min(1., amt); lut = [int(v * a + .5) for v in range(256)]
+    small = Image.composite(acc, sm, edge_mask_img(True).point(lut))
+    out = fr.convert('RGB'); out.paste(small.resize((W, H), Image.BILINEAR), (0, 0), edge_mask_img(False).point(lut))
+    return out                                       # the engine converts the wrap result to RGBA
 
 
 # ================================================================ FIRST IMPRESSION type
@@ -500,7 +521,10 @@ def _draw(ctx, lt, t):
             k = clamp(1 - u / .25)
             ctx.cam['dx'] += 16 * k * math.sin(u * 90); ctx.cam['dy'] += 9 * k * math.cos(u * 70)
             P['bright'] = 1 + .3 * clamp(1 - u / .12) ** 2
-        ctx.captions = t >= TS + .25                        # THEY ONLY appears once the burst has cleared the centre
+        # "THEY" pops on the voice (25.29) right over the breaking glass; a soft dark scrim behind the caption line
+        # keeps it legible while the shards stream through, and dissolves once they have cleared
+        sk = clamp((t - TS + .07) / .06) * clamp(1 - (t - TS - .42) / .25)
+        if sk > .01: ctx.add('screen', cap_scrim(), 540, ctx.cap_y + 4, alpha=.9 * sk)
         if t >= P5.page_end(16, 0): ctx.cap_y = 1546        # 'YOUR CONTENT.' page sits under the post card (glyphs ≈1506–1590)
         def wrap(fr):
             fr = graded(fr, sat, br, tint).convert('RGBA')

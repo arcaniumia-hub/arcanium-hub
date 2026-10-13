@@ -239,7 +239,7 @@ def specular(w, h, pos, amp):
     return a
 
 
-def draw_pane(fr, blur, key, x, y, w, h, t, vx=0., vy=0., land=0., label_k=0., sub_k=0., spec=None, flash=0., par=(0., 0.)):
+def draw_pane(fr, blur, key, x, y, w, h, t, vx=0., vy=0., land=0., label_k=0., sub_k=0., spec=None, flash=0., par=(0., 0.), lab_a=1.):
     """composite one glass pane onto output frame `fr` (RGBA, in place). blur = frosted version of fr."""
     name, word, sub, fx, fy = PANES[key]
     x, y, w, h = int(round(x)), int(round(y)), int(round(w)), int(round(h))
@@ -271,14 +271,14 @@ def draw_pane(fr, blur, key, x, y, w, h, t, vx=0., vy=0., land=0., label_k=0., s
     if flash > .01: ph = Image.blend(ph, Image.new('RGB', ph.size, (255, 246, 236)), flash * .55)
     ph = ph.convert('RGBA'); ph.alpha_composite(label_grad(iw, ih))
     # label
-    if label_k > 0:
+    if label_k > 0 and lab_a > .01:
         lab, split = label_art(word, sub)
         lab = lab.copy()
         if sub_k < 1:   # sub line reveals on its own words
             a = np.asarray(lab.getchannel('A')).copy(); a[split:] = (a[split:] * clamp(sub_k)).astype(np.uint8)
             lab.putalpha(Image.fromarray(a))
         k = eout(label_k); off = int(46 * (1 - k))
-        if k < 1: lab = E.fade(lab, clamp(label_k * 2))
+        if k < 1 or lab_a < 1: lab = E.fade(lab, clamp(label_k * 2) * clamp(lab_a))
         lx = (iw - lab.width) // 2; ly = ih - lab.height - 70 + off
         ph.alpha_composite(lab, (lx, max(0, ly)))
     im = rrect_mask(iw, ih, R_IN)
@@ -294,9 +294,9 @@ def draw_pane(fr, blur, key, x, y, w, h, t, vx=0., vy=0., land=0., label_k=0., s
 
 def frosted(fr):
     """cheap frosted-glass version of the whole frame (blur at quarter res, lifted + cooled)."""
-    s = fr.convert('RGB').resize((W // 4, H // 4), Image.BOX).filter(ImageFilter.GaussianBlur(5)).resize((W, H), Image.BILINEAR)
-    a = np.asarray(s, np.float32) * .78 + np.array([44, 44, 62], np.float32)
-    return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).convert('RGBA')
+    s = fr.convert('RGB').resize((W // 4, H // 4), Image.BOX).filter(ImageFilter.GaussianBlur(5))
+    s = s.point(E.cached('s05_frost_lut', lambda: [min(255, int(v * .78 + o + .5)) for o in (44, 44, 62) for v in range(256)]))
+    return s.resize((W, H), Image.BILINEAR)        # lift + cool at quarter res (a LUT), then upscale (RGB; pasted by mask)
 
 
 # ---------------------------------------------------------------- pane choreography
@@ -339,8 +339,16 @@ def pane_states(t):
     return out
 
 
-def draw_panes(fr, t, states=None, sweep_t=None):
+LAB_OUT = (25.17, 25.30)       # the sense labels dissolve as s06 cracks the triptych (gone before "THEY" pops)
+
+
+def label_alpha(t):
+    return 1 - smooth((t - LAB_OUT[0]) / (LAB_OUT[1] - LAB_OUT[0]))
+
+
+def draw_panes(fr, t, states=None, sweep_t=None, lab_a=None):
     blur = frosted(fr)
+    lab_a = label_alpha(t) if lab_a is None else lab_a
     sub_on = dict(food=W_YOURFOOD, service=W_YOURSERV, skill=W_YOURSKILL)
     for key, x, y, w, h, vx, vy, land in (states if states is not None else pane_states(t)):
         lt = t - land
@@ -354,7 +362,7 @@ def draw_panes(fr, t, states=None, sweep_t=None):
         fl = .6 * clamp(1 - (lt + .02) / .16) if lt > -.02 else 0
         par = (-vx * 2.2 + 18 * math.sin(t * .7 + x * .02), -vy * .6 + 14 * math.sin(t * .5))
         draw_pane(fr, blur, key, x, y, w, h, t, vx, vy, land, label_k=(t - (land - SLIDE + .1)) / .3,
-                  sub_k=(t - sub_on[key]) / .16, spec=(pos, amp), flash=fl, par=par)
+                  sub_k=(t - sub_on[key]) / .16, spec=(pos, amp), flash=fl, par=par, lab_a=lab_a)
 
 
 # ---------------------------------------------------------------- warm light (work / amazing)
@@ -443,72 +451,167 @@ def bokeh_field():
 
 
 # ---------------------------------------------------------------- screen glass (online)
-def grid_tex():
-    """screen-door pixel grid (multiplier, 6 % darker lines every 5 px)."""
+# A whole pane of glass (a phone / monitor screen seen edge-on to us) slides in from the right on "online" and holds
+# over the full frame: rounded bevel with thickness (refracted, prism-split rim), cool tint + haze, frosted margins,
+# a slight lens magnification of him, drifting room reflections and a landing glint. Screen space, so the TL13 cut
+# happens BEHIND the glass. On TASTE the first sense pane shoves it off to the right.
+SG_M, SG_R, SG_BEV = 30, 74, 24                 # inset from the frame edge, corner radius, bevel thickness
+
+
+def _sg_rr(inset, r, blur=0, val=255, S=2):
+    m = Image.new('L', (W // S, H // S))
+    ImageDraw.Draw(m).rounded_rectangle((inset / S, inset / S, (W - inset) / S - 1, (H - inset) / S - 1), r / S, fill=val)
+    m = m.resize((W, H), Image.BILINEAR)
+    return m.filter(ImageFilter.GaussianBlur(blur)) if blur else m
+
+
+def sg_masks():
+    """pane mask, bevel band, frosted-margin falloff, outer contact shadow (all L, pane resting at offset 0)."""
     def mk():
-        g = np.ones((H, W), np.float32); g[::5] *= .94; g[:, ::5] *= .94
-        return g[..., None]
-    return E.cached('s05_grid', mk)
+        pane = _sg_rr(SG_M, SG_R, S=1)
+        inner = _sg_rr(SG_M + SG_BEV, SG_R - SG_BEV + 6, blur=1.2, S=1)
+        band = ImageChops.subtract(pane, inner)
+        deep = _sg_rr(SG_M + 120, SG_R + 40, blur=55)
+        frost = Image.fromarray((np.clip(np.asarray(pane, np.float32) - np.asarray(deep, np.float32), 0, 255) * .8).astype(np.uint8))
+        sh = _sg_rr(SG_M - 6, SG_R + 6, blur=16)
+        shadow = Image.fromarray((np.clip(np.asarray(sh, np.float32) - np.asarray(pane, np.float32), 0, 255) * .75).astype(np.uint8))
+        return pane, band, frost, shadow
+    return E.cached('s05_sgm', mk)
 
 
-def tint_grid():
-    """multiplier image (255 = x1): cool tint (.86, .93, 1.0) x screen-door grid."""
+def sg_art():
+    """static overlay: cool fill, top-left sheen, lit bevel (bright outer rim + dark inner step + inner glint), corner glints."""
     def mk():
-        g = grid_tex() * np.array([.86, .93, 1.0], np.float32) * 255
-        return Image.fromarray(np.clip(g + .5, 0, 255).astype(np.uint8))
-    return E.cached('s05_tg', mk)
+        pane, band, frost, _ = sg_masks()
+        yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
+        P = np.asarray(pane, np.float32) / 255
+        u = (xx / W * .55 + yy / H * .45)                                   # 0 top-left .. 1 bottom-right
+        sheen = (np.clip(1 - u * 1.5, 0, 1) ** 2 * .16 + .035) * P          # frosted sheen, strongest top-left
+        col = np.zeros((H, W, 4), np.float32); col[..., :3] = (226, 236, 255); col[..., 3] = sheen * 255
+        out = Image.fromarray(col.astype(np.uint8), 'RGBA')
+        lit = np.clip(1.05 - u * 1.1, .28, 1)                               # light from the top-left
+        def ring(inset, r, width, alpha, rgb, blur):
+            m = Image.new('L', (W, H)); ImageDraw.Draw(m).rounded_rectangle((inset, inset, W - inset - 1, H - inset - 1), r, outline=255, width=width)
+            if blur: m = m.filter(ImageFilter.GaussianBlur(blur))
+            a = np.asarray(m, np.float32) * alpha * (lit if rgb[0] > 128 else (1.25 - lit))
+            L = Image.new('RGBA', (W, H), rgb + (0,)); L.putalpha(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))); return L
+        out.alpha_composite(ring(SG_M + 1, SG_R, 9, .30, (235, 242, 255), 4))           # soft bloom of the rim
+        out.alpha_composite(ring(SG_M + 1, SG_R, 3, .95, (255, 255, 255), .7))          # outer specular rim
+        out.alpha_composite(ring(SG_M + 5, SG_R - 4, 2, .55, (120, 210, 255), .8))      # cyan prism fringe
+        out.alpha_composite(ring(SG_M + SG_BEV - 2, SG_R - SG_BEV + 2, 3, .55, (6, 8, 22), 1.2))   # inner step (shadow side)
+        out.alpha_composite(ring(SG_M + SG_BEV + 1, SG_R - SG_BEV - 1, 2, .45, (255, 236, 250), .8))   # inner glint
+        # corner catch-lights (top-left strong, bottom-right faint)
+        g = Image.new('L', (W, H)); d = ImageDraw.Draw(g)
+        d.arc((SG_M, SG_M, SG_M + 2 * SG_R, SG_M + 2 * SG_R), 190, 260, fill=255, width=5)
+        d.arc((W - SG_M - 2 * SG_R, H - SG_M - 2 * SG_R, W - SG_M, H - SG_M), 10, 80, fill=120, width=4)
+        gl = Image.new('RGBA', (W, H), (255, 255, 255, 0)); gl.putalpha(g.filter(ImageFilter.GaussianBlur(3))); out.alpha_composite(gl)
+        return out
+    return E.cached('s05_sga', mk)
 
 
-def refl_rgb():
+def sg_streaks():
+    """room reflections: two soft diagonal bands + a crisp thin one (RGB, additive), wider than the frame to drift."""
     def mk():
-        a = np.asarray(refl_tex(), np.float32)[..., None] * np.array([.85, .9, 1.0], np.float32)
-        return Image.fromarray(np.clip(a + .5, 0, 255).astype(np.uint8))
-    return E.cached('s05_rrgb', mk)
+        S = 4; ww = W + 1400
+        yy, xx = np.mgrid[0:H // S, 0:ww // S].astype(np.float32) * S
+        u = xx * .82 + yy * .42
+        a = (np.exp(-((u - 1150) / 150) ** 2) * 21 + np.exp(-((u - 1370) / 26) ** 2) * 26 +
+             np.exp(-((u - 1440) / 9) ** 2) * 22 + np.exp(-((u - 2350) / 220) ** 2) * 16)
+        a = a * (.75 + .25 * np.cos(yy / H * 3.1))
+        rgb = a[..., None] * np.array([.86, .92, 1.0], np.float32)
+        return Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8)).resize((ww, H), Image.BILINEAR)
+    return E.cached('s05_sgs', mk)
 
 
-def refl_tex():
-    def mk():
-        S = 4; yy, xx = np.mgrid[0:H // S, 0:(W + 900) // S].astype(np.float32) * S
-        u = xx * .8 + yy * .6
-        a = np.exp(-((u - 1200) / 170) ** 2) * 30 + np.exp(-((u - 1480) / 36) ** 2) * 22
-        return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).resize((W + 900, H), Image.BILINEAR)
-    return E.cached('s05_refl', mk)
+def _solid(rgb):
+    return E.cached(('s05_solid', rgb), lambda: Image.new('RGB', (W, H), rgb))
 
 
-def screen_glass(fr, edge, vel, t):
-    """pane of glass whose leading (left) edge sits at output x=edge; everything right of it is 'behind the screen'.
-    Blacks are preserved (multiply tint + screen-door grid); the edge is a refractive prism strip with a specular line."""
-    e = int(round(edge))
-    if e >= W: return fr
-    e0 = max(0, e)
-    out = fr.copy()
-    reg = fr.convert('RGB').crop((e0, 0, W, H)).filter(ImageFilter.BoxBlur(1))
-    # cool tint x screen-door grid as one cached multiply, then a slow drifting reflection (additive)
-    reg = ImageChops.multiply(reg, tint_grid().crop((e0, 0, W, H)))
-    off = int(450 + 380 * math.sin(t * .8)) - (e0 - e if e < 0 else 0)
-    rf = refl_rgb().crop((off, 0, off + W - e0, H))
-    out.paste(ImageChops.add(reg, rf), (e0, 0))
-    # refractive leading strip: 10 px showing a squeezed, displaced, chromatically split slice of the world
-    SW = 16
-    if e + SW > 0:
-        sx0 = max(0, e - 60)
-        src = fr.convert('RGB').crop((sx0, 0, sx0 + 76, H)).resize((SW, H), Image.BILINEAR)
-        s_ = np.asarray(src, np.float32)
-        r = np.roll(s_[..., 0], -2, 1); b = np.roll(s_[..., 2], 2, 1)
-        s_ = np.dstack([r, s_[..., 1], b]) * 1.12 + 10
-        strip = Image.fromarray(np.clip(s_, 0, 255).astype(np.uint8))
-        E._paste(out, dict(img=strip.convert('RGBA'), xy=(e, 0), glass=0))
-    lay = Image.new('RGBA', (60, H), (0, 0, 0, 0)); d = ImageDraw.Draw(lay)
-    d.line([(19, 0), (19, H)], fill=(0, 0, 0, 140), width=3)               # contact shadow outside
-    d.line([(21, 0), (21, H)], fill=(255, 120, 70, 190), width=2)          # warm prism fringe
-    d.line([(25, 0), (25, H)], fill=(255, 255, 255, 245), width=2)         # specular line
-    d.line([(31, 0), (31, H)], fill=(90, 200, 255, 180), width=2)          # cyan prism fringe
-    d.line([(37, 0), (37, H)], fill=(10, 10, 30, 110), width=3)            # inner edge of the bevel
-    gl = Image.new('RGBA', (60, H), (210, 225, 255, 0)); gm = Image.new('L', (60, H)); ImageDraw.Draw(gm).line([(25, 0), (25, H)], fill=150, width=6)
-    gl.putalpha(gm.filter(ImageFilter.GaussianBlur(7))); gl.alpha_composite(lay); lay = gl
-    lay = lay.filter(ImageFilter.GaussianBlur(.6 + min(5, abs(vel) * .04)))
-    E._paste(out, dict(img=lay, xy=(e - 20, 0), glass=0))
+def _shift(img, off):
+    if off == 0: return img
+    out = Image.new(img.mode, img.size, 0); out.paste(img, (off, 0)); return out
+
+
+def _lens(fr, s, cx, cy, ca):
+    """frame magnified by s around (cx, cy) with a chromatic split of ca px (R out, B in)."""
+    cx, cy = clamp(cx, 0, W), clamp(cy, 0, H)
+    bw, bh = W / s, H / s; box = (cx - bw * cx / W, cy - bh * cy / H)
+    im = fr.resize((W, H), Image.BILINEAR, box=(box[0], box[1], box[0] + bw, box[1] + bh))
+    if ca:
+        r, g, b = im.split(); im = Image.merge('RGB', (ImageChops.offset(r, ca, 0), g, ImageChops.offset(b, -ca, 0)))
+    return im
+
+
+def screen_glass(fr, off, vel, t, glint=None):
+    """composite the screen pane at horizontal offset `off` (0 = resting over the full frame). vel in px/frame."""
+    off = int(round(off))
+    if off >= W - SG_M: return fr
+    pane, band, frost, shadow = sg_masks()
+    mb = min(90., abs(vel) * .35)
+    if mb > 6:   # horizontal motion blur of the glass body / frost / bevel masks while it travels (soft leading edge)
+        def smear(m, k=max(1, int(W / mb))): return m.resize((k, H), Image.BILINEAR).resize((W, H), Image.BILINEAR)
+        pane, band, frost = smear(pane), smear(band), smear(frost)
+    rgb = fr.convert('RGB'); cx = off + W / 2
+    # body: slight magnification (thick glass), faint chroma, cool tint, haze lift, frosted margins
+    body = _lens(rgb, 1.022, cx, 900, 0)
+    body = ImageChops.add(ImageChops.multiply(body, _solid((228, 238, 255))), _solid((5, 7, 16)))
+    fb = body.resize((W // 4, H // 4), Image.BOX).filter(ImageFilter.GaussianBlur(4)).resize((W, H), Image.BILINEAR)
+    bev = fb.point(lambda v: min(255, int(v * 1.25 + 30)))             # bevel: thick frosted edge catching light
+    fb = ImageChops.add(fb, _solid((10, 12, 20)))
+    body = Image.composite(fb, body, _shift(frost, off))
+    so = int(380 + 160 * math.sin(t * .7)) + 700 - int(off * .35)        # reflections drift (and lag the moving pane)
+    so = max(0, min(sg_streaks().width - W, so))
+    body = ImageChops.add(body, sg_streaks().crop((so, 0, so + W, H)))
+    if glint is not None and glint[1] > .01:                            # landing glint: one bright diagonal sweep
+        a = specular(W, H, glint[0], glint[1])
+        body.paste(_solid((255, 252, 246)), (0, 0), a.point(lambda v: int(v * .55)))
+    body = Image.composite(bev, body, _shift(band, off))
+    out = fr.convert('RGBA')
+    out.paste((0, 0, 0, 255), (0, 0), _shift(shadow, off))
+    out.paste(body, (0, 0), _shift(pane, off))
+    art = sg_art()
+    sm = abs(vel)
+    if sm > 6:   # motion smear on the rim / sheen while it travels
+        k = min(14., sm / 7)
+        art = art.resize((int(W / k), H), Image.BILINEAR).resize((W, H), Image.BILINEAR)
+    if off: art = _shift(art, off)
+    out.alpha_composite(art)
     return out
+
+
+def _sg_push(t):
+    """where the TASTE pane's right edge pushes the screen pane's left rim (offset units)."""
+    tk, _ = slide(t, TA0); return lerp(-560, SLOTS[0], tk) + 480 + 26 - SG_M
+
+
+def sg_contact():
+    """(time, velocity px/s) at which the incoming TASTE pane reaches the screen pane's left rim."""
+    def mk():
+        a, b = TA0, TA0 + SLIDE
+        for _ in range(40):
+            m = (a + b) / 2
+            if _sg_push(m) < 0: a = m
+            else: b = m
+        return b, (_sg_push(b + .004) - _sg_push(b - .004)) / .008
+    return E.cached('s05_sgc', mk)
+
+
+SG_KICK, SG_BOUNCE = 16000., 1.3                  # struck screen: leaves faster than the striker, keeps accelerating
+
+
+def sg_offset(t):
+    """pane offset: flies in from the right on "online" (expo, crosses his face in ~2 frames, tiny settle) and is
+    STRUCK by the TASTE pane: from the moment of contact it carries the pane's speed and keeps accelerating
+    (ballistic, monotonic), so it clears his face in ~4 frames and never stalls on it while TASTE settles."""
+    if t < TA0:
+        u = (t - W_ONLINE + .05) / .5
+        if u <= 0: return W + 40.
+        k = expo(u) + .012 * math.sin(clamp(u) * math.pi * 1.0) * (1 - clamp(u))
+        return lerp(W + 40, 0, k)
+    tc, v0 = sg_contact()
+    if t < tc: return 0.
+    d = t - tc
+    return max(_sg_push(t), SG_BOUNCE * v0 * d + .5 * SG_KICK * d * d)
 
 
 TAPS = [(21.60, 300, 1010), (21.96, 850, 450)]      # "NO-body can" — fingers tap the screen; it doesn't reach him
@@ -645,8 +748,7 @@ def _draw(ctx, lt, t):
             ctx.avatar['bright'] = 1 + .03 * g
         def wrap(fr, g=g):
             if g <= .005: return fr
-            a = np.asarray(fr.convert('RGB'), np.float32) * np.array([1 + .05 * g, 1 + .015 * g, 1 - .04 * g], np.float32)
-            return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).convert('RGBA')
+            return graded(fr, 1., 1., (1 + .05 * g, 1 + .015 * g, 1 - .04 * g))       # warm tint via a per-channel LUT
         ctx.wrap = wrap
         P['sat'] = 1 + .1 * g
         return
@@ -658,22 +760,20 @@ def _draw(ctx, lt, t):
             u = (t - T12) / (T13 - T12)
             ctx.cam = cam_for_face(lerp(1.3, 1.36, smooth(u)), 470, 700)
             ctx.bg_dim = .18
-            k = eout((t - W_ONLINE + .05) / .5)
-            edge = lerp(W + 50, 64, k); vel = (lerp(W + 50, 64, eout((t - W_ONLINE + .05 - 1 / 30) / .5)) - edge)
             drain = clamp((t - T12) / .25)
-            on = t >= W_ONLINE - .05
         else:   # cut wider: he is stuck behind the glass; on TASTE the first pane shoves the screen away
             ctx.cam = cam_for_face(lerp(1.16, 1.19, smooth((t - T13) / 1.6)), 770, 690)
             ax = ax_for(t)
             if ax > .5: ctx.avatar['x'] = ax; plate_feather(ctx, ax, .2)
-            ctx.bg_dim = .2
-            f = lambda tt: lerp(64, W + 80, ein(clamp((tt - TA0) / SEE_OFF)) ** .8) if tt > TA0 else 64
-            edge = f(t); vel = f(t) - f(t - 1 / 30); drain = 1; on = True
+            ctx.bg_dim = .2; drain = 1
+        edge = sg_offset(t); vel = sg_offset(t) - sg_offset(t - 1 / 30); on = edge < W - SG_M
+        gl = (t - W_ONLINE - .42) / .75                                   # glint sweeps the pane once it has landed
+        glint = (clamp(gl), .85 * math.sin(math.pi * clamp(gl))) if 0 < gl < 1 else None
         sat = lerp(1.0, cold['sat'], drain); br = lerp(1, cold['br'], drain)
         tint = tuple(lerp(1, c, drain) for c in cold['tint'])
         def wrap(fr):
             fr = graded(fr, sat, br, tint).convert('RGBA')
-            if on: fr = screen_glass(fr, edge, vel, t)
+            if on: fr = screen_glass(fr, edge, vel, t, glint)
             if t >= T13 and t < TA0:
                 for tt, tx, ty in TAPS: fr = tap_ripple(fr, tx, ty, t - tt)
             if t >= TA0: draw_panes(fr, t, sweep_t=LOCK - .05)

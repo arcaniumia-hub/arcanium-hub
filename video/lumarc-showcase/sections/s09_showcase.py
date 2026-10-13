@@ -1117,15 +1117,25 @@ def _cap_pages():
         ws = []
         for j, (tx, t0) in enumerate(pg):
             t1 = pg[j + 1][1] if j + 1 < len(pg) else t0 + .42
-            ws.append(dict(text=tx.strip('*'), emph=tx.startswith('*'), t0=t0, t1=t1))
+            ws.append(dict(text=tx.strip('*'), emph=tx.startswith('*'), t0=t0, t1=t1, p=t0 - .02))   # p = pop time
         pages.append(dict(words=ws))
+    cuts = (T23, T24, T25)
+    for i, p in enumerate(pages[1:], 1):
+        # a page opening just after a jump cut pops its first word ON the cut (<= 3 frames early) so the caption
+        # changes with the picture instead of leaving the new framing caption-less for 1-2 frames
+        w0, prev = p['words'][0], pages[i - 1]['words'][-1]['p']
+        for c in cuts:
+            if prev < c <= w0['p'] and w0['p'] - c <= .1: w0['p'] = c
     for i, p in enumerate(pages):
-        p['a'] = p['words'][0]['t0'] - .04
-        nxt = pages[i + 1]['words'][0]['t0'] - .04 if i + 1 < len(pages) else END
-        last = p['words'][-1]['t0']
-        p['z'] = min(END, nxt - .02 if nxt - last < 1.0 else last + .75)
-        cut = min([c for c in (T23, T24, T25, END) if c > p['a']])
-        p['z'] = min(p['z'], cut - 1e-3)      # never carry a page across a jump cut (no 1-frame ghost at the new cap_y)
+        p['a'] = min(p['words'][0]['p'], p['words'][0]['t0'] - .04)
+        last = p['words'][-1]['p']
+        if i + 1 < len(pages):
+            nxt = pages[i + 1]['words'][0]['p']        # hand off EXACTLY when the next page's first word pops
+            p['z'] = nxt if nxt - last < 1.0 else last + .75
+        else:
+            p['z'] = END
+        cut = min([c for c in (*cuts, END) if c > p['a']])
+        p['z'] = min(p['z'], cut)             # never carry a page across a jump cut (no 1-frame ghost at the new cap_y)
     return pages
 CAP_PAGES = _cap_pages()
 
@@ -1136,12 +1146,12 @@ def draw_caps(ctx, t, cy0, base=92):
     for p in CAP_PAGES:
         if not (p['a'] <= t < p['z']): continue
         for w, sz, cx, cy in E._layout(p, base):
-            if t < w['t0'] - .02: continue
-            lt = t - w['t0'] + .02; s = .72 + .28 * back(lt / .16)
-            if w['t0'] - .02 <= t < w['t1'] + .04: s *= 1.06
+            if t < w['p']: continue
+            lt = t - w['p']; s = .72 + .28 * back(lt / .16)
+            if w['p'] <= t < w['t1'] + .04: s *= 1.06
             img, _ = E.word_img(w['text'], sz, 'grad' if w['emph'] else 'white')
-            if lt < .05: img = E.fade(img, lt / .05)
-            if p['z'] - t < .06: img = E.fade(img, (p['z'] - t) / .06)
+            if lt < .05: img = E.fade(img, max(.45 if w is p['words'][0] else 0, lt / .05))   # page opener: visible on frame 1
+            if p['z'] - t < .06: img = E.fade(img, max(.35, (p['z'] - t) / .06))   # soft hand-off, never a dead frame
             if abs(s - 1) > .01: img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BILINEAR)
             ctx.add('screen', img, int(W / 2 + cx - img.width / 2), int(cy0 + cy - img.height / 2), center=False)
 
