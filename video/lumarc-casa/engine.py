@@ -382,6 +382,7 @@ def draw_captions(fr, t, cy0, base=92, since=None):
             fr.alpha_composite(img, (int(W / 2 + cx - img.width / 2), int(cy0 + cy - img.height / 2)))
 
 # ---------------------------------------------------------------- post FX
+GRAIN_K = float(os.environ.get('GRAIN_K', '1'))     # delivery renders use less synthetic grain (30 MB encode)
 _grain = [np.random.default_rng(i).normal(0, 6.5, (H // 2, W // 2, 1)).astype(np.float32) for i in range(6)]
 _yy, _xx = np.mgrid[0:H, 0:W].astype(np.float32)
 _R2 = (((_xx - W / 2) / (W * .7)) ** 2 + ((_yy - H * .45) / (H * .7)) ** 2)
@@ -404,7 +405,7 @@ def post(img, P, t):
     if P['bright'] != 1: a = a * P['bright']
     if P['flash'] > .01: a = a + (np.array(P['flash_col'], np.float32) - a) * P['flash']
     a = a * (1 - P['vignette'] * np.clip(_R2 - .2, 0, 1))[..., None]
-    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(round(t * FPS)) % 6], 2, 0), 2, 1) * P['grain']
+    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(round(t * FPS)) % 6], 2, 0), 2, 1) * P['grain'] * GRAIN_K
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
 
 # ---------------------------------------------------------------- sections + frame

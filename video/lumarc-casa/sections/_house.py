@@ -16,24 +16,35 @@ API
     img = HS.render(st, cam, size=(900, 900), t=t)          # -> PIL RGBA, transparent bg, own soft shadow
     xy  = HS.anchor('door', st, cam, size=(900, 900))        # screen (x, y) of a named 3-D point (labels, pointers)
     HS.BUILD_CUES                           # [(t, kind, params)] one sound cue per build hit — copy those in your span
+    HS.W_PAREDES ...                        # the measured word onsets (below), to key your own effects on
+    HS.prewarm()                            # optional: build the disk caches now (else built on first use)
 
     cam = dict(yaw=deg, pitch=deg, dist=m, fov=deg, target=(x, y, z), roll=deg, shift=(fx, fy))
         yaw 0 = looking at the front door (front faces +z), yaw > 0 = camera moves to the house's right; pitch > 0 =
         looking down.  The target lands on the image centre (+ shift * size).  World unit = metre: lot 15 x 15 m
-        (top at y = 0, 1.1 m thick), house 7.2 x 8.4 m, walls to y 3.4, ridge y 5.7.  Good framings:
-            hero (3/4)    HS.hero_cam(t)                                   ~ dict(yaw=32, pitch=24, dist=34, fov=30)
+        (top at y = 0, 1.1 m thick), house 7.2 x 8.4 m, walls to y 3.4, ridge y 5.7.  Verified framings (every 0.25 s
+        of the build, 900 x 900):
+            hero (3/4)    HS.hero_cam(t)        yaw 24 -> 46 over the film, pitch ~23-25, dist ~34.5, fov 30
             front         dict(yaw=0, pitch=12, dist=30, fov=30, target=(0, 2.2, 0))
-            door close-up dict(yaw=14, pitch=8, dist=11, fov=30, target=(0, 1.6, 3.6))
+            door close-up dict(yaw=14, pitch=8, dist=11, fov=30, target=(0, 1.6, 3.6))   (windows switch to 2x films)
             top-down-ish  dict(yaw=35, pitch=55, dist=34, fov=30, target=(0, 0, 0))
+        A piece crossing the camera plane (< 0.35 m) is skipped, so fly-throughs are safe.
     render(state, cam, size=(w, h), t=None, ss=2, shadow=True, gap=0.6, glow=1.0, people=True)
-        ss     supersampling factor (2 = 2x2 AA; 1 for a cheap preview)
+        ss     integer supersampling of the house layer (2 = 2x2 AA; 1 = cheap preview).  The ground (lot, soil, house
+               shadow, dust) is built at output resolution with supersampled polygon edges.
         shadow soft shadow of the floating lot on a virtual ground `gap` m below the lot (gap=0: contact shadow, e.g.
                a model standing on his desk); the house also shadows its own lot (key light from upper-left-front)
-        glow   multiplier on the bloom (windows, LEDs, outline trace)
-        t      timeline time (video frames in the windows, LED breathing) — defaults to state['t']
-    Cost: ~0.12-0.2 s per 900x900 frame at ss=2 (geometry is static and cached; per frame only transforms).
+        glow   multiplier on the bloom (windows, LEDs, outline trace, light pools)
+        t      timeline time (video frames in the windows) — defaults to state['t']
+        Output is premultiplied-correct straight RGBA; a pure function of (state, cam, size, t, flags): byte-identical
+        whatever was rendered before, in any process (prender chunks).
+    Cost (measured, one process, sequential, every frame 3.8-40.56 s, 900 x 900, ss=2): hero mean 0.13 s / p95 0.17 /
+        max 0.22 s; door close-up mean 0.16 / p95 0.23 / max 0.28 s.  Cold (first render in a fresh process, caches
+        on disk) <= 0.2 s.  The very first use on a machine decodes the window films once (~9 s, 4 in parallel) into
+        out/house/cache (~180 MB, gitignored) — run `python3 sections/_house.py prewarm` before a prender.
+        In the engine (1080x1920 frame, 1000x1000 house layer + avatar + captions + post): ~0.53 s/frame.
     anchor names: 'door', 'step', 'lot_front', 'lot_center', 'slab', 'roof_peak', 'chimney', 'sign', 'win0'..'win3',
-                  'wall_front', 'wall_right'.
+                  'wall_front', 'wall_right'  (they follow the lot's rise; same size argument as the render).
 
 state_at(t) keys (all pure functions of t; arrays are per piece, see PIECES):
     t, lot (dict a, dy, s), outline (0..1 trace), outline_a, slab (height 0..~1.04), led (slab LED 0..1),
@@ -41,50 +52,55 @@ state_at(t) keys (all pure functions of t; arrays are per piece, see PIECES):
     win[7] (window light 0..1; 0..3 = hero windows), vid[7] (video in window 0..1), lights (interior master 0..1),
     door_a, door_ang (deg, 0 closed, ~100 open outward), cta (door CTA light 0..1), sheen (-1 or 0..1 sweep),
     fly (per-piece 0..1: 0 in place, 1 blown away — vanish/return), sink (slab sink 0..1), wind (0..1),
-    people_t (s since "pessoas" or -1), logo (0..1), dust [(x, z, age, scale)], phase (str).
+    people_t (s since "pessoas" or -1), logo (0..1), dust [(x, z, age, scale, 'ground'|'eaves')], phase (str).
 
-Canonical build (measured onsets, edit timeline s — see W_* below):
+Canonical build (onsets measured on src/tight16k.raw, edit timeline s — see W_* below):
     3.89 OLHA     the lot rises from below (expo-out), settles on 4.08 SÓ
     6.40 CASA     the house is traced in glowing light lines (wireframe), stays as a ghost guide until the walls are up
-    6.99 ALICERCE the concrete plinth extrudes up out of the lot (stone + dust ring); 8.36 POSICIONAMENTO its purple
-                  LED edge ignites
-    9.57 PAREDES  wall blocks drop row by row (6 rows, 0.13 s apart, each lands with a tiny settle) — row 0 lands ON
-                  the word; 10.73 CONTEÚDO the content panels (LUMARC posts) flash in as a ripple; 11.22 the roof
-                  (gables + slate panels + chimney) falls and lands (thud + dust)
-    11.59 JANELAS hero windows switch on one by one (11.59, 11.80, 12.02, 12.24) — warm interiors
+    6.99 ALICERCE the concrete plinth extrudes up out of the lot (stone + soft dust ring); 8.36 POSICIONAMENTO its
+                  purple LED edge ignites
+    9.56 PAREDES  wall blocks drop row by row (6 rows, 0.13 s apart, each lands with a tiny settle) — the first block
+                  lands ON the word; 10.72 CONTEÚDO the content panels (LUMARC posts) flash in as a ripple; 11.22 the
+                  roof (gables + slate panels + ridge + chimney) drops and lands (whoosh, thud, dust out of the eaves)
+    11.59 JANELAS hero windows switch on one by one (11.59, 11.80 -NE-, 12.02, 12.24) — warm interiors
     12.85 VÍDEOS  the four hero windows start playing LUMARC films (SILENCE ONE, croissant pull, teardown)
-    13.70 PORTA   the door swings in from wide open and slams shut on the word (rebound)
-    15.42 AÇÃO    the door's CTA light (purple LED handle + outline) ignites
-    16.34 REPARA  a slow light sheen sweeps across the finished house
-    28.37 SEM     lights cut, the wind takes the house piece by piece (roof first, right to left, top down) — the plinth
-                  sinks into the lot exactly on 30.29 VAZIO -> empty lot (wind keeps blowing through seg 16)
-    32.87 COM     plinth pops back; 32.98 EDIÇÃO every piece rewinds into place (bottom first); 33.40 (-ÇÃO) all lights on
-    34.29 PESSOAS the door swings open (warm light spills on the path), 5 maquette figures appear and walk in;
-                  34.70 ENTRAM the first one steps through the door (then every 0.14 s)
+    13.70 PORTA   the door swings in from wide open (13.40) and slams shut on the word (rebound)
+    15.42 AÇÃO    the door's CTA light (purple LED handle + outline) flickers on, full on the -ÃO vowel (15.54)
+    16.34 REPARA  a slow light sheen sweeps across the finished house (house only, not the lot)
+    28.37 SEM     lights cut, the wind takes the house piece by piece (roof first, then the walls downwind, right to
+                  left, top down) — the plinth sinks into the lot exactly on 30.28 VAZIO -> empty lot (wind keeps
+                  blowing through seg 16)
+    32.86 COM     plinth pops back; 32.98 EDIÇÃO every piece rewinds into place (bottom first, roof last 33.54);
+                  33.38 (-ÇÃO) all lights back on
+    34.27 PESSOAS the door swings open (warm light spills on the path), 5 maquette figures pop up and walk in —
+                  backlit silhouettes against the doorway; 34.70 ENTRAM the first one steps through (then every 0.14 s)
     37.20 LUMARC  the LUMARC sign above the door lights up (sweep + glow)
 """
-import math, os
+import math, os, sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageChops
+_PROJ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _PROJ not in sys.path: sys.path.insert(0, _PROJ)          # also runnable as `python3 sections/_house.py ...`
 import engine as E
 
 V = E.V
 
 # ---------------------------------------------------------------------------------------------- measured word onsets
-# measured on src/tight16k.raw (edit timeline): 10 ms RMS + 80-900 Hz / >3.5 kHz band envelopes + spectrogram
-# (onset = consonant burst / fricative start; stressed syllable noted where an effect lands on it)
-W_OLHA, W_SO = 3.89, 4.08
-W_CASA = 6.40
-W_ALICERCE, W_CER = 6.99, 7.36                 # "O a|li|CER|ce": word onset / stressed syllable
-W_POSIC = 8.36                                  # "posicionamento"
-W_PAREDES, W_CONTEUDO, W_UDO = 9.57, 10.73, 10.97
-W_JANELAS, W_NE, W_VIDEOS = 11.59, 11.80, 12.85
-W_PORTA, W_ACAO = 13.70, 15.42
-W_REPARA = 16.34
-W_SEM, W_EDICAO15, W_TERRENO, W_VAZIO = 28.37, 28.55, 29.92, 30.29
-W_COM, W_EDICAO, W_CAO = 32.87, 32.98, 33.40   # "Com e|di|ÇÃO": the -ÇÃO vowel at 33.40
-W_PESSOAS, W_ENTRAM = 34.29, 34.70
-W_LUMARC = 37.20
+# measured on src/tight16k.raw (edit timeline; 5 ms-hop spectrogram + RMS / 80-900 Hz / 1-3 kHz / >3.5 kHz band
+# envelopes, re-verified by the kit finisher).  onset = plosive burst after its closure silence, fricative start, or
+# vowel onset after a voiced consonant; the stressed syllable is noted where an effect lands on it.
+W_OLHA, W_SO = 3.89, 4.08                      # O 3.885 (after silence) | S of "só" 4.08 (vowel 4.17)
+W_CASA = 6.40                                   # k burst 6.39
+W_ALICERCE, W_CER = 6.99, 7.34                 # "O a|li|CER|ce": the "a" after "O" 6.99 / -CER- vowel 7.335 (its s 7.16)
+W_POSIC = 8.36                                  # "posicionamento": p burst 8.36
+W_PAREDES, W_CONTEUDO, W_UDO = 9.56, 10.72, 10.95   # p burst 9.555 | k burst 10.715 | -TEÚ- t burst 10.94
+W_JANELAS, W_NE, W_VIDEOS = 11.59, 11.80, 12.85     # "ja" vowel 11.60 | -NE- 11.79 | v 12.84 (í 12.87)
+W_PORTA, W_ACAO = 13.70, 15.42                  # p burst 13.705 | ç of "a|ÇÃO" 15.42 (vowel -ÃO 15.545)
+W_REPARA = 16.34                                # r 16.335
+W_SEM, W_EDICAO15, W_TERRENO, W_VAZIO = 28.37, 28.50, 29.92, 30.28   # s 28.375 | e 28.50 | t 29.92 | va 30.28 (-ZI- 30.37)
+W_COM, W_EDICAO, W_CAO = 32.86, 32.98, 33.38   # k 32.85 | "Com e|di|ÇÃO": e ~32.98, -ÇÃO vowel 33.375 (its ç 33.25)
+W_PESSOAS, W_ENTRAM = 34.27, 34.70              # p burst 34.27 | "en" vowel 34.69
+W_LUMARC = 37.20                                # "LU" 37.19 after "comen|ta" (stressed -MAR- 37.48)
 
 # build choreography derived from the onsets
 LOT_T0 = W_OLHA
@@ -143,9 +159,52 @@ WIND = _nrm([1.0, 0.0, -0.30])
 
 # ---------------------------------------------------------------------------------------------- assets
 _TX = {}
+_PERSIST = set()                  # ids of cached (immortal) textures: only those may key the mip cache
 def _tx(key, fn):
-    if key not in _TX: _TX[key] = fn()
+    if key not in _TX:
+        v = fn(); _TX[key] = v
+        if isinstance(v, Image.Image): _PERSIST.add(id(v))
     return _TX[key]
+
+# ---------------------------------------------------------------------------------------------- disk caches
+# Static textures (decoded posts, grass, soil) and the window films (pre-decoded, graded, at pane resolution) live in
+# out/house/cache so a cold render (fresh process, e.g. one of the prender chunks) costs < 1 s.  Built once on demand,
+# atomically, under a file lock (4 prender processes may start together).  Keys hash every input, so a changed source
+# or recipe rebuilds automatically.  Delete the folder to force a rebuild.
+CACHE = os.path.join(E.HERE, 'out', 'house', 'cache')
+_CACHE_V = 3
+
+def _ckey(*parts):
+    import hashlib
+    h = hashlib.md5(repr((_CACHE_V,) + parts).encode()).hexdigest()[:12]
+    return h
+
+def _src_sig(p):
+    try: s = os.stat(p); return (os.path.basename(p), s.st_size, int(s.st_mtime))
+    except OSError: return (os.path.basename(p), -1, -1)
+
+class _Lock:
+    def __init__(self, name): self.p = os.path.join(CACHE, name + '.lock')
+    def __enter__(self):
+        import fcntl
+        os.makedirs(CACHE, exist_ok=True); self.f = open(self.p, 'w'); fcntl.flock(self.f, fcntl.LOCK_EX); return self
+    def __exit__(self, *a):
+        import fcntl
+        fcntl.flock(self.f, fcntl.LOCK_UN); self.f.close()
+
+def _disk(name, key, build):
+    """np.ndarray cached at out/house/cache/<name>_<key>.npy (memory-mapped read)."""
+    p = os.path.join(CACHE, f'{name}_{key}.npy')
+    if not os.path.exists(p):
+        with _Lock(name):
+            if not os.path.exists(p):
+                a = np.ascontiguousarray(build()); tmp = p + f'.tmp{os.getpid()}.npy'
+                np.save(tmp, a); os.replace(tmp, p)
+                for q in os.listdir(CACHE):                          # drop stale versions of this entry
+                    if q.startswith(name + '_') and q.endswith('.npy') and os.path.join(CACHE, q) != p:
+                        try: os.remove(os.path.join(CACHE, q))
+                        except OSError: pass
+    return np.load(p, mmap_mode='r')
 
 POSTS = [os.path.join(V, p) for p in (
     'lumarc-showcase/src/assets/carousel_1.png', 'lumarc-therapy/src/assets/croissant_hero.jpg',
@@ -158,7 +217,7 @@ POSTS = [os.path.join(V, p) for p in (
     'lumarc-breakout/src/assets/loc4.png', 'lumarc-breakout/src/assets/loc6.png')]
 CROISSANT = os.path.join(V, 'lumarc-therapy/src/assets/croissant_pull.mp4')
 # hero windows 0..3 play: (path, offset s, loop s)
-WIN_VIDS = [(E.HYPER, 2.0, 7.5), (CROISSANT, 0.0, 3.9), (E.TEARDOWN, 9.0, 7.5), (E.HYPER, 13.0, 7.5)]
+WIN_VIDS = [(E.HYPER, 6.5, 7.5), (CROISSANT, 0.0, 3.9), (E.TEARDOWN, 9.0, 7.5), (E.HYPER, 13.0, 7.5)]
 
 def _cover(im, w, h):
     im = im.convert('RGB'); s = max(w / im.width, h / im.height)
@@ -176,8 +235,9 @@ def _post_tex(i, w, h):
         yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
         vig = 1 - .18 * (((xx - w / 2) / (w / 2)) ** 2 + ((yy - h / 2) / (h / 2)) ** 2)
         a[..., :3] *= vig[..., None]
-        return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
-    return _tx(('post', i, w, h), mk)
+        return np.clip(a, 0, 255).astype(np.uint8)
+    p_ = POSTS[i % len(POSTS)]
+    return _tx(('post', i, w, h), lambda: Image.fromarray(np.array(_disk(f'post{i}-{w}x{h}', _ckey(_src_sig(p_), w, h), mk))))
 
 def _noise(n, m, cells, seed):
     r = np.random.default_rng(seed)
@@ -215,8 +275,8 @@ def _lot_top_tex():
             z = zz + 0.09; k += 1
         a = np.asarray(im, np.float32)
         a[..., :3] *= (1 + (_noise(n, n, 3, 11) - .5) * .10)[..., None]
-        return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
-    return _tx('lot_top', mk)
+        return np.clip(a, 0, 255).astype(np.uint8)
+    return _tx('lot_top', lambda: Image.fromarray(np.array(_disk('lottop', _ckey('lot_top', LOT), mk))))
 
 def _lot_side_tex():
     """soil strata with a grass fringe folding over the top edge."""
@@ -239,8 +299,8 @@ def _lot_side_tex():
             g = int(r.uniform(-12, 12))
             d.line((x, 0, x, f), fill=(70 + g, 98 + g, 58 + g // 2, 255))
         d.line((0, 0, w, 0), fill=(120, 140, 92, 255), width=2)
-        return im
-    return _tx('lot_side', mk)
+        return np.asarray(im)
+    return _tx('lot_side', lambda: Image.fromarray(np.array(_disk('lotside', _ckey('lot_side'), mk))))
 
 def _glass_tex(w, h):
     def mk():
@@ -444,8 +504,13 @@ class _Geo:
                 A = np.stack([sd * (L / 2), [0, 0, seg / 2 - .012], nn * (RT / 2)], 1)
                 k = add('roof', c, A, [SLATE] * 6, group='roof', side=side, j=j)
                 self.roof.append(k)
-        k = add('ridge', (0, YR + RT * .95, ZH), np.diag([.17, .085, zlen + .02]), [SLATE_E] * 6, group='roof')
-        self.roof.append(k); self.ridge = k
+        # ridge cap: one segment per slate column (a single 9 m bar would spin into a long pole when the wind takes it)
+        self.ridges = []
+        for j in range(nz):
+            zc = ZH - zlen + seg * (j + .5); hl = seg / 2 + (.011 if 0 < j < nz - 1 else .02)
+            k = add('ridge', (0, YR + RT * .95, zc), np.diag([.17, .085, hl]), [SLATE_E] * 6, group='roof', j=j)
+            self.roof.append(k); self.ridges.append(k)
+        self.ridge = self.ridges[nz // 2]
         ych = YR - 1.8 * math.tan(TH) + RT / math.cos(TH)
         self.chim = add('chim', (1.8, (ych - .25 + YR + .55) / 2, ZH - 2.3), np.diag([.32, (YR + .55 - (ych - .25)) / 2, .32]),
                         [CREAM * .97] * 6, group='roof')
@@ -466,6 +531,7 @@ class _Geo:
             vs = np.array([[-HX, YW, z0], [HX, YW, z0], [0, YR, z0], [-HX, YW, z1], [HX, YW, z1], [0, YR, z1]], float)
             faces = [[0, 1, 2], [3, 5, 4], [0, 3, 4, 1], [1, 4, 5, 2], [2, 5, 3, 0]]
             self.gables.append(dict(v=vs, faces=faces, c=vs.mean(0), outer=(0 if z1 == FRONT else 1)))
+        self.gable_ref = [self.ridges[-1], self.ridges[0]]          # each gable flies with the ridge segment above it
         # panes: windows + doorway interior, with the blocks around each opening (drawn before them)
         self.panes = []
         for wall in WALL_ORDER:
@@ -534,7 +600,8 @@ class _Geo:
                 if p['kind'] == 'door' and i == 3: continue
                 seg(q[i], q[(i + 1) % 4], .60 + .035 * k, .78 + .035 * k, .8)
             k += 1
-        return E_
+        m = max(e[3] for e in E_)                       # every edge must finish by outline = 1 (else its head dot
+        return [(a, b, t0 / m, t1 / m, w) for (a, b, t0, t1, w) in E_]      # would hang there as a stray sparkle)
 
 G = _Geo()
 PIECES = G.P
@@ -637,8 +704,9 @@ def state_at(t):
     s['logo'] = _ss(W_LUMARC, W_LUMARC + .35, t)
     # dust puffs (x, z, age, scale): plinth landing, roof landing, lot landing
     dust = []
-    for (x, z, t0, sc) in ((0, ZH, SLAB_T0 + .08, 1.0), (0, ZH, ROOF_LAND, 0.8), (0, ZH, W_COM + .08, .7)):
-        if 0 <= t - t0 < 1.2: dust.append((x, z, t - t0, sc))
+    for (x, z, t0, sc, kind) in ((0, ZH, SLAB_T0 + .08, 1.0, 'ground'), (0, ZH, ROOF_LAND, 1.0, 'eaves'),
+                                 (0, ZH, W_COM + .08, .7, 'ground')):
+        if 0 <= t - t0 < 1.2: dust.append((x, z, t - t0, sc, kind))
     s['dust'] = dust
     s['pa'] = pa
     # phase name (debug / sections)
@@ -651,34 +719,37 @@ def state_at(t):
     return s
 
 # ---------------------------------------------------------------------------------------------- sound cues
-BUILD_CUES = [
-    (W_OLHA, 'swoosh_up', {'gain': -6}),                     # the lot rises
-    (W_SO, 'thud', {'gain': -9}),                            # ...and settles
+BUILD_CUES = [            # t = the hit (sound.py aligns whoosh / swoosh peaks to t); every build hit has one
+    (W_OLHA + .05, 'swoosh_up', {'gain': -6}),               # the lot rises (peak mid-rise)
+    (W_SO, 'thud', {'gain': -9}),                            # ...and settles on "SÓ"
     (W_CASA, 'shimmer', {'gain': -3}),                       # light-line trace of the house
     (W_CASA + .05, 'swoosh_up', {'gain': -12}),
-    (W_ALICERCE + .03, 'stone', {}),                         # plinth extrudes (heavy)
+    (W_ALICERCE + .03, 'stone', {}),                         # plinth extrudes (heavy) + dust ring
     (W_POSIC, 'switch', {'gain': -9}),                       # plinth LED edge
 ] + [(round(W_PAREDES + r * ROW_DT, 3), 'block', {'seed': r, 'gain': -2 - r * .5}) for r in range(NR)] + [
     (W_CONTEUDO, 'flick', {'gain': -5}),                     # content panels ripple in
     (W_CONTEUDO + .12, 'pop', {'gain': -12}),
-    (ROOF_LAND, 'thud', {}),                                 # roof lands
+    (ROOF_LAND - .06, 'whoosh', {'gain': -13}),              # roof drops (peak just before it lands)
+    (ROOF_LAND, 'thud', {}),                                 # roof lands + dust under the eaves
     (ROOF_LAND + .02, 'stone', {'gain': -10}),
 ] + [(WIN_T[i], 'switch', {'seed': i, 'gain': -3 - i, 'pan': (-.3, .2, .45, .6)[i]}) for i in range(4)] + [
     (W_VIDEOS, 'flick', {'gain': -4}),                       # windows start playing films
-    (W_PORTA, 'door', {}),                                   # door slams shut ON "porta"
+    (W_PORTA - .12, 'swipe', {'gain': -13}),                 # the door swings in...
+    (W_PORTA, 'door', {}),                                   # ...and slams shut ON "porta"
     (W_ACAO, 'switch', {'gain': -4}),                        # CTA light
     (W_ACAO + .02, 'shimmer', {'gain': -10}),
     (W_REPARA, 'shimmer', {'gain': -16}),                    # sheen (score is silent here: keep it whisper-quiet)
     (W_SEM, 'switch', {'gain': -6}),                         # lights cut
     (W_SEM, 'wind', {'dur': 4.45}),                          # the wind takes the house (through seg 16)
-    (W_VAZIO - .1, 'whoosh', {'gain': -14}),                 # plinth sinks
-    (W_COM, 'rewind', {'gain': -3}),                         # the house rewinds back
+    (VAN_T0 + .12, 'whoosh', {'gain': -9}),                  # the roof is torn off
+    (W_VAZIO - .04, 'whoosh', {'gain': -14}),                # plinth sinks: empty lot on "VAZIO"
+    (W_COM, 'rewind', {'gain': -3}),                         # plinth pops back, the house rewinds
     (W_EDICAO + .10, 'block', {'seed': 11, 'gain': -6}),
     (W_EDICAO + .24, 'block', {'seed': 12, 'gain': -6}),
-    (W_CAO - .03, 'thud', {'gain': -4}),
+    (W_CAO - .03, 'thud', {'gain': -4}),                     # roof back in place
     (W_CAO, 'switch', {}),                                   # all lights back on
     (W_PESSOAS - .06, 'door', {'gain': -9}),                 # door swings open
-    (W_PESSOAS, 'murmur', {'dur': 2.2}),                     # people arriving
+    (W_PESSOAS, 'murmur', {'dur': 2.2}),                     # people arriving (first one in on "ENTRAM")
     (W_LUMARC, 'switch', {'gain': -5}),                      # LUMARC sign lights
     (W_LUMARC + .03, 'shimmer', {'gain': -6}),
 ]
@@ -725,40 +796,60 @@ def _shade(alb, n, cam, ao=1.0):
 
 # ---------------------------------------------------------------------------------------------- raster helpers
 class _Cv:
-    """internal canvas: premultiplied colour + coverage, both RGB so that PIL blends RGBA ink 'over' correctly
-    (ImageDraw on an RGBA image overwrites instead of blending)."""
+    """internal canvas: premultiplied colour (RGB) + coverage (L).  Opaque ink is filled directly (3-6x cheaper than
+    PIL's blending path); translucent ink blends 'over' (RGBA ink on the RGB colour image; on the coverage through a
+    small local mask), since ImageDraw on an RGBA / L image overwrites instead of blending."""
     def __init__(self, W, H):
         self.W, self.H = W, H
-        self.c = Image.new('RGB', (W, H)); self.a = Image.new('RGB', (W, H)); self.redraw()
+        self.c = Image.new('RGB', (W, H)); self.a = Image.new('L', (W, H)); self.redraw(); self.used = False
     def redraw(self):
-        self.dc = ImageDraw.Draw(self.c, 'RGBA'); self.da = ImageDraw.Draw(self.a, 'RGBA')
-    def polygon(self, pts, fill, cover=True):
+        self.dc = ImageDraw.Draw(self.c, 'RGBA'); self.ds = ImageDraw.Draw(self.c); self.da = ImageDraw.Draw(self.a)
+    def _draw(self, kind, geom, fill, width=None, cover=True):
         A = fill[3] if len(fill) > 3 else 255
         if A <= 0: return
-        self.dc.polygon(pts, fill=fill)
-        if cover: self.da.polygon(pts, fill=(255, 255, 255, A))
-    def line(self, pts, fill, width=1, cover=True):
-        A = fill[3] if len(fill) > 3 else 255
-        if A <= 0: return
-        self.dc.line(pts, fill=fill, width=width)
-        if cover: self.da.line(pts, fill=(255, 255, 255, A), width=width)
-    def ellipse(self, box, fill, cover=True):
-        A = fill[3] if len(fill) > 3 else 255
-        if A <= 0: return
-        self.dc.ellipse(box, fill=fill)
-        if cover: self.da.ellipse(box, fill=(255, 255, 255, A))
-    def rectangle(self, box, fill, cover=True):
-        A = fill[3] if len(fill) > 3 else 255
-        if A <= 0: return
-        self.dc.rectangle(box, fill=fill)
-        if cover: self.da.rectangle(box, fill=(255, 255, 255, A))
+        self.used = True
+        kw = {} if width is None else {'width': width}
+        if A >= 255: getattr(self.ds, kind)(geom, fill=tuple(fill[:3]), **kw)
+        else: getattr(self.dc, kind)(geom, fill=tuple(fill), **kw)
+        if not cover: return
+        if A >= 255: getattr(self.da, kind)(geom, fill=255, **kw); return
+        P = np.asarray(geom, float).reshape(-1, 2); pad = (width or 1) + 2
+        x0, y0 = max(0, int(math.floor(P[:, 0].min() - pad))), max(0, int(math.floor(P[:, 1].min() - pad)))
+        x1, y1 = min(self.W, int(math.ceil(P[:, 0].max() + pad)) + 1), min(self.H, int(math.ceil(P[:, 1].max() + pad)) + 1)
+        if x1 <= x0 or y1 <= y0: return
+        m = Image.new('L', (x1 - x0, y1 - y0))
+        Q = [(x - x0, y - y0) for x, y in P]
+        getattr(ImageDraw.Draw(m), kind)(Q if kind in ('polygon', 'line') else [Q[0][0], Q[0][1], Q[1][0], Q[1][1]], fill=int(A), **kw)
+        self.a.paste(255, (x0, y0, x1, y1), m)
+    def polygon(self, pts, fill, cover=True): self._draw('polygon', [tuple(p) for p in pts], fill, None, cover)
+    def line(self, pts, fill, width=1, cover=True): self._draw('line', [tuple(p) for p in pts], fill, width, cover)
+    def ellipse(self, box, fill, cover=True): self._draw('ellipse', [tuple(box[:2]), tuple(box[2:])], fill, None, cover)
+    def rectangle(self, box, fill, cover=True): self._draw('rectangle', [tuple(box[:2]), tuple(box[2:])], fill, None, cover)
     def shade(self, pts, fill):
         """colour-only overlay (on surfaces that are already opaque)."""
         if fill[3] > 0: self.dc.polygon(pts, fill=fill)
     def patch(self, rgba, xy, cover=True):
+        self.used = True
         m = rgba.getchannel('A')
         self.c.paste(rgba.convert('RGB'), xy, m)
-        if cover: self.a.paste((255, 255, 255), (xy[0], xy[1], xy[0] + rgba.width, xy[1] + rgba.height), m)
+        if cover: self.a.paste(255, (xy[0], xy[1], xy[0] + rgba.width, xy[1] + rgba.height), m)
+
+class _Eraser:
+    """draws a figure's silhouette as black into the quarter-res glow / pool layers: a person standing in front of a
+    lit doorway or window occludes that light, so the bloom haloes around the figure instead of burning it white."""
+    def __init__(self, draws, gs, shift=(0, 0)): self.ds, self.gs, self.sh = [d for d in draws if d is not None], gs, shift
+    def _p(self, pts): return [((x + self.sh[0]) / self.gs, (y + self.sh[1]) / self.gs) for x, y in pts]
+    def polygon(self, pts, fill, cover=True):
+        if fill[3] > 128:
+            for d in self.ds: d.polygon(self._p(pts), fill=(0, 0, 0))
+    def line(self, pts, fill, width=1, cover=True):
+        if fill[3] > 128:
+            for d in self.ds: d.line(self._p(pts), fill=(0, 0, 0), width=max(1, int(round(width / self.gs))))
+    def ellipse(self, box, fill, cover=True):
+        if fill[3] > 128:
+            (a, b), (c, e) = self._p([box[:2], box[2:]])
+            for d in self.ds: d.ellipse((a, b, c, e), fill=(0, 0, 0))
+    def rectangle(self, box, fill, cover=True): self.ellipse(box, fill)
 
 def _coeffs(dst, src):
     A = np.zeros((8, 8)); B = np.zeros(8)
@@ -769,11 +860,76 @@ def _coeffs(dst, src):
     except np.linalg.LinAlgError: return None
 
 def _mip(img, span):
+    """pre-shrink a texture that will be minified a lot (bilinear perspective sampling would alias).  Only cached
+    textures (immortal, stable id) are memoised: a per-frame temporary could recycle an id and hit a stale entry."""
     if img.width > 2.0 * span and img.width > 48:
         f = int(img.width / (1.5 * span))
         if f > 1:
-            return _tx(('mip', id(img), f), lambda: img.resize((max(8, img.width // f), max(8, img.height // f)), Image.BOX))
+            mk = lambda: img.resize((max(8, img.width // f), max(8, img.height // f)), Image.BOX)
+            return _tx(('mip', id(img), f), mk) if id(img) in _PERSIST else mk()
     return img
+
+def _warp_box(img, quad, size):
+    """perspective-map img (RGBA) onto quad (TL, TR, BR, BL), given relative to a patch of `size` -> RGBA patch."""
+    q = np.asarray(quad, float)
+    span = max(np.linalg.norm(q[1] - q[0]), np.linalg.norm(q[2] - q[3]), np.linalg.norm(q[3] - q[0]) * img.width / max(1, img.height), 1)
+    img = _mip(img, span)
+    co = _coeffs(q, [(0, 0), (img.width, 0), (img.width, img.height), (0, img.height)])
+    if co is None: return None
+    return img.transform(size, Image.PERSPECTIVE, tuple(co), Image.BILINEAR)
+
+def _cov(pts, ss, Wo, Ho):
+    """anti-aliased coverage of a polygon given in ss-canvas px -> (L mask at output res, (x0, y0)) or None."""
+    P = np.asarray(pts, float)
+    x0 = max(0, int(math.floor(P[:, 0].min() / ss))); y0 = max(0, int(math.floor(P[:, 1].min() / ss)))
+    x1 = min(Wo, int(math.floor(P[:, 0].max() / ss)) + 2); y1 = min(Ho, int(math.floor(P[:, 1].max() / ss)) + 2)
+    if x1 <= x0 or y1 <= y0: return None
+    m = Image.new('L', ((x1 - x0) * ss, (y1 - y0) * ss), 0)
+    ImageDraw.Draw(m).polygon([(x - x0 * ss, y - y0 * ss) for x, y in P], fill=255)
+    return (m.reduce(ss) if ss > 1 else m), (x0, y0)
+
+def _gface(gc, ga, quad, ss, base, tex=None, shade=None):
+    """composite one textured planar face (quad in ss-canvas px) onto the output-res ground layer with AA edges.
+    base: flat colour under the texture (also fills edge pixels the texture sampler leaves empty)."""
+    r = _cov(quad, ss, gc.width, gc.height)
+    if r is None: return None
+    cov, (x0, y0) = r; box = (x0, y0, x0 + cov.width, y0 + cov.height)
+    gc.paste(tuple(int(v) for v in base[:3]), box, cov); ga.paste(255, box, cov)
+    if tex is not None:
+        tw = _warp_box(tex, np.asarray(quad, float) / ss - [x0, y0], cov.size)
+        if tw is not None: gc.paste(tw.convert('RGB'), box, ImageChops.multiply(cov, tw.getchannel('A')))
+    if shade is not None and shade[3] > 0:
+        k = shade[3] / 255.0
+        gc.paste(tuple(int(v) for v in shade[:3]), box, cov.point([int(v * k + .5) for v in range(256)]))
+    return cov, (x0, y0)
+
+def _stamp(rx, ry):
+    """normalised gaussian splat (peak 1) for soft dust, cached by quantised radii (output px)."""
+    kx, ky = max(1, int(round(rx * 2))), max(1, int(round(ry * 2)))
+    def mk():
+        sx, sy = kx / 2, ky / 2; R = int(math.ceil(2.2 * max(sx, sy)))
+        yy, xx = np.mgrid[-R:R + 1, -R:R + 1].astype(np.float32)
+        return np.exp(-.5 * ((xx / (sx * .62)) ** 2 + (yy / (sy * .62)) ** 2)).astype(np.float32)
+    return _tx(('stamp', kx, ky), mk)
+
+def _splat(blobs, Wo, Ho):
+    """soft additive dust: blobs [(x, y, rx, ry, a)] in output px -> (alpha L image, (x0, y0)) or None.
+    Density accumulates (overlaps thicken) and saturates as 1 - exp(-d)."""
+    blobs = [b for b in blobs if b[4] > .004]
+    if not blobs: return None
+    B = np.array(blobs, float)
+    x0 = int(max(0, math.floor((B[:, 0] - 2.4 * B[:, 2]).min()) - 2)); y0 = int(max(0, math.floor((B[:, 1] - 2.4 * B[:, 3]).min()) - 2))
+    x1 = int(min(Wo, math.ceil((B[:, 0] + 2.4 * B[:, 2]).max()) + 3)); y1 = int(min(Ho, math.ceil((B[:, 1] + 2.4 * B[:, 3]).max()) + 3))
+    if x1 <= x0 + 1 or y1 <= y0 + 1: return None
+    D = np.zeros((y1 - y0, x1 - x0), np.float32)
+    for x, y, rx, ry, a in blobs:
+        k = _stamp(rx, ry); R = k.shape[0] // 2
+        cx, cy = int(round(x)) - x0, int(round(y)) - y0
+        ax0, ay0, ax1, ay1 = max(0, cx - R), max(0, cy - R), min(D.shape[1], cx + R + 1), min(D.shape[0], cy + R + 1)
+        if ax1 <= ax0 or ay1 <= ay0: continue
+        D[ay0:ay1, ax0:ax1] += a * k[ay0 - (cy - R):ay1 - (cy - R), ax0 - (cx - R):ax1 - (cx - R)]
+    A = (1 - np.exp(-D)) * 255
+    return Image.fromarray(np.clip(A + .5, 0, 255).astype(np.uint8)), (x0, y0)
 
 def _warp(img, quad, W, H, alpha=1.0):
     """perspective-map img (RGBA) onto screen quad (TL, TR, BR, BL) -> (patch, (x0, y0)) or None."""
@@ -797,28 +953,37 @@ def _quad_tex(cv, img, quad, alpha=1.0, cover=True):
 def _rgba(c, a=255): return (int(min(255, max(0, c[0]))), int(min(255, max(0, c[1]))), int(min(255, max(0, c[2]))), int(min(255, max(0, a))))
 
 # ---------------------------------------------------------------------------------------------- people
-PEOPLE = [(-1.25, 5.10), (1.50, 5.45), (-2.55, 6.35), (2.45, 6.70), (-0.35, 7.10)]
+# five maquette figures, in entry order: the first pops up on the path just in front of the step and crosses the
+# threshold ON "ENTRAM"; the others come across the lawn and follow >= 0.16 s apart (brisk, capped walking speed)
+PEOPLE = [(0.15, 4.78), (-1.25, 5.10), (1.50, 5.45), (-2.55, 6.35), (2.45, 6.70)]
+_DOOR_OUT = np.array([0.0, 0.0, FRONT + .95]); _DOOR_IN = np.array([0.0, 0.0, FRONT - 1.6]); _THR = FRONT - .05
+_VMAX = 4.0
+def _people_plan():
+    plan, prev = [], -1e9
+    for i, (x, z) in enumerate(PEOPLE):
+        start = np.array([x, 0.0, z]); d1 = float(np.linalg.norm(_DOOR_OUT - start))
+        L = d1 + (_DOOR_OUT[2] - _THR)                         # path length to the threshold
+        t_app = .05 * i
+        t_in = max((W_ENTRAM - W_PESSOAS) + .16 * i, t_app + L / _VMAX, prev + .16)
+        plan.append((start, d1, t_app, L / (t_in - t_app))); prev = t_in
+    return plan
+_PPLAN = _people_plan()
+
 def _people(st):
     """[(feet pos, pop 0..~1.1, walk phase, depth inside the door, idx)] at the state time."""
     out = []
     tp = st['people_t']
     if tp < 0: return out
-    door_out = np.array([0.0, 0.0, FRONT + .95]); door_in = np.array([0.0, 0.0, FRONT - 1.6])
-    for i, (x, z) in enumerate(PEOPLE):
-        t_app = .05 * i; t_arr = (W_ENTRAM - W_PESSOAS) + .14 * i
+    seg2 = float(np.linalg.norm(_DOOR_IN - _DOOR_OUT))
+    for i, (start, d1, t_app, v) in enumerate(_PPLAN):
         if tp < t_app: continue
-        start = np.array([x, 0.0, z])
-        d1 = np.linalg.norm(door_out - start)
-        v = d1 / max(.2, t_arr - t_app)
-        v = min(v, 4.2)
         tt = tp - t_app; dist = tt * v
         a = _back(tt / .24, 1.8)
-        if dist < d1: p = start + (door_out - start) * (dist / d1)
-        else: p = door_out + (door_in - door_out) * min(1.0, (dist - d1) / np.linalg.norm(door_in - door_out))
-        inside = max(0.0, FRONT - .05 - p[2])
+        if dist < d1: p = start + (_DOOR_OUT - start) * (dist / d1)
+        else: p = _DOOR_OUT + (_DOOR_IN - _DOOR_OUT) * min(1.0, (dist - d1) / seg2)
+        inside = max(0.0, _THR - p[2])
         if inside > 1.3: continue
-        # feet height: lot 0 -> step .2 -> plinth .4
-        zz = p[2]
+        zz = p[2]                                                # feet height: lot 0 -> step .2 -> plinth .4
         p = p.copy(); p[1] = 0.0 if zz > FRONT + .32 + .52 else (.2 if zz > FRONT + .32 else YS)
         out.append((p, a, dist / 0.66, inside, i))
     return out
@@ -849,6 +1014,11 @@ def _draw_person(d, foot, h, phase, i, alpha=1.0, dark=0.0):
     d.ellipse((x - hr, sy - hr * 2.3, x + hr, sy - hr * .1), fill=_rgba(c, a))
     if dark < .5:
         d.line([(x + w * .48, sy), (x + w * .31, y - h * .46)], fill=_rgba((160, 120, 255), a * .85), width=max(1, int(h / 55)))
+    if dark > .25 and h > 14:                                      # backlit: warm light wraps head and shoulders
+        rc = _rgba((255, 208, 150), a * min(1.0, (dark - .25) * 2.2)); lw = max(1, int(h / 70))
+        d.line([(x - w * .30, y - h * .46), (x - w * .48, sy), (x + w * .48, sy), (x + w * .30, y - h * .46)], fill=rc, width=lw)
+        cy_ = sy - hr * 1.2
+        d.line([(x + hr * math.cos(u_), cy_ - hr * 1.1 * math.sin(u_)) for u_ in np.linspace(0, math.pi, 9)], fill=rc, width=lw)
 
 # ---------------------------------------------------------------------------------------------- render
 def _piece_transforms(st):
@@ -885,61 +1055,73 @@ def _visible_pieces(st):
     return pa
 
 def render(state, cam=None, size=(900, 900), t=None, ss=2, shadow=True, gap=0.6, glow=1.0, people=True):
-    """the house at `state` seen through `cam` -> PIL RGBA (transparent background, with its own soft shadow)."""
+    """the house at `state` seen through `cam` -> PIL RGBA (transparent background, with its own soft shadow).
+    Two layers: the GROUND (floating shadow, soil sides, grass lot, house shadow + AO, soft dust behind the house) is
+    built at output resolution with supersampled polygon edges; the HOUSE (+ people, chips, light trace) is painted at
+    ss x ss supersampling and laid over it; bloom / light pools are summed at quarter res and added once."""
     st = state; t = st['t'] if t is None else t
-    Wo, Ho = int(size[0]), int(size[1]); W, H = int(round(Wo * ss)), int(round(Ho * ss))
+    ss = max(1, int(round(ss)))
+    Wo, Ho = int(size[0]), int(size[1]); W, H = Wo * ss, Ho * ss
     lot = st['lot']
     if lot['a'] <= 0: return Image.new('RGBA', (Wo, Ho), (0, 0, 0, 0))
     cam = _Cam(cam, W, H)
-    cv = _Cv(W, H)
     gs = 4
     GW, GH = max(1, W // gs), max(1, H // gs)
-    glow_l = Image.new('RGB', (GW, GH)); gd = ImageDraw.Draw(glow_l)
-    pool_l = Image.new('RGB', (GW, GH)); pd = ImageDraw.Draw(pool_l)
     dy, ls = lot['dy'], lot['s']
     off = np.array([0, dy, 0])
     def LW(P): return np.asarray(P, float) * ls + off
     def pr(P): return cam.proj(LW(P))
     Cw = (cam.C - off) / ls                                   # camera in model space
-    # ----- floating shadow under the lot
-    if shadow:
+    # ================= GROUND (output res)
+    gc = Image.new('RGB', (Wo, Ho)); ga = Image.new('L', (Wo, Ho))
+    if shadow:                                                # soft shadow of the floating lot on a virtual floor
         sh = Image.new('L', (GW, GH), 0)
         gy = -LOT_TH - gap; k = 1.0 + gap * .06
         sq = np.array([[-LOT * k, gy, -LOT * k], [LOT * k, gy, -LOT * k], [LOT * k, gy, LOT * k], [-LOT * k, gy, LOT * k]])
-        P, _ = cam.proj(sq * ls + off * .3)
-        ImageDraw.Draw(sh).polygon([tuple(p / gs) for p in P], fill=int(170 / (1 + gap * .5)))
-        sh = sh.filter(ImageFilter.GaussianBlur(max(2, (3 + gap * 7) * W / 1800 * 2))).resize((W, H), Image.BILINEAR)
-        a_ = _cl(1 + dy / 2.6) ** 2 * lot['a']
-        if a_ < 1: sh = sh.point(lambda v: int(v * a_))
-        cv.c.paste((4, 3, 10), (0, 0, W, H), sh); cv.a.paste((255, 255, 255), (0, 0, W, H), sh)
-    # ----- lot: visible sides (soil) then the top (grass + path)
+        P, Z = cam.proj(sq * ls + off * .3)
+        if Z.min() > .3:
+            ImageDraw.Draw(sh).polygon([tuple(p / gs) for p in P], fill=int(170 / (1 + gap * .5)))
+            sh = sh.filter(ImageFilter.GaussianBlur(max(2, (3 + gap * 7) * W / 1800 * 2))).resize((Wo, Ho), Image.BILINEAR)
+            a_ = _cl(1 + dy / 2.6) ** 2 * lot['a']
+            if a_ < 1: sh = sh.point([int(v * a_) for v in range(256)])
+            ga = sh; gc = Image.merge('RGB', [sh.point([v * c // 255 for v in range(256)]) for c in (4, 3, 10)])
     lv = np.array([[sx * LOT, y, sz * LOT] for sx in (-1, 1) for y in (-LOT_TH, 0) for sz in (-1, 1)])  # idx 4sx+2y+sz
-    LP, _ = pr(lv)
-    sides = [((0, 0, 1), [3, 7, 5, 1]), ((1, 0, 0), [7, 6, 4, 5]), ((0, 0, -1), [6, 2, 0, 4]), ((-1, 0, 0), [2, 3, 1, 0])]
-    stex = _lot_side_tex()
-    for n, ids in sides:
-        n = np.array(n, float)
-        if n @ (Cw - n * LOT) <= 0: continue
-        quad = LP[ids]; pts = [tuple(p) for p in quad]
-        cv.polygon(pts, (70, 52, 40, 255))
-        _quad_tex(cv, stex, quad)
-        m = float(np.clip((_shade(np.array([100., 100, 100]), n, cam) / 100).mean(), 0, 1.4))
-        cv.shade(pts, (8, 5, 16, int(255 * (1 - m) * .95)) if m < 1 else (255, 240, 230, int(255 * (m - 1) * .3)))
-    top = LP[[2, 6, 7, 3]]
-    cv.polygon([tuple(p) for p in top], (74, 101, 62, 255))
-    _quad_tex(cv, _lot_top_tex(), top)
-    mt = float(np.clip((_shade(np.array([100., 100, 100]), np.array([0, 1., 0]), cam) / 100).mean(), 0, 1.4))
-    if mt < 1: cv.shade([tuple(p) for p in top], (8, 5, 16, int(255 * (1 - mt) * .8)))
-    lot_mask_pts = [tuple(p / gs) for p in top]
+    LP, LZ = pr(lv)
+    lot_mask_pts = None
+    if LZ.min() > .3:                                         # (a camera inside / behind the lot draws no ground)
+        sides = [((0, 0, 1), [3, 7, 5, 1]), ((1, 0, 0), [7, 6, 4, 5]), ((0, 0, -1), [6, 2, 0, 4]), ((-1, 0, 0), [2, 3, 1, 0])]
+        stex = _lot_side_tex()
+        for n, ids in sides:
+            n = np.array(n, float)
+            if n @ (Cw - n * LOT) <= 0: continue
+            m = float(np.clip((_shade(np.array([100., 100, 100]), n, cam) / 100).mean(), 0, 1.4))
+            _gface(gc, ga, LP[ids], ss, (70, 52, 40), stex,
+                   (8, 5, 16, int(255 * (1 - m) * .95)) if m < 1 else (255, 240, 230, int(255 * (m - 1) * .3)))
+        if Cw[1] > 0:
+            top = LP[[2, 6, 7, 3]]
+            mt = float(np.clip((_shade(np.array([100., 100, 100]), np.array([0, 1., 0]), cam) / 100).mean(), 0, 1.4))
+            _gface(gc, ga, top, ss, (74, 101, 62), _lot_top_tex(), (8, 5, 16, int(255 * (1 - mt) * .8)) if mt < 1 else None)
+            lot_mask_pts = [tuple(p / gs) for p in top]
+        elif Cw[1] < -LOT_TH:
+            _gface(gc, ga, LP[[1, 5, 4, 0]], ss, (40, 30, 26))
     house = (st['slab'] > 0 and st['sink'] < .999) or st['outline'] > 0
     C, A = _piece_transforms(st)
     pa = _visible_pieces(st)
-    # ----- shadows / AO on the lot
-    if st['slab'] > 0 and st['sink'] < .999:
-        _ground_shadow(cv, st, cam, pr, C, A, pa, gs, GW, GH, lot_mask_pts)
-    # ----- warm light pools on the lot (windows, open door)
-    lights = st['lights']
-    if lights > .01 and st['slab'] > 0:
+    lm = None
+    if lot_mask_pts is not None:
+        lm = Image.new('L', (GW, GH), 0); ImageDraw.Draw(lm).polygon(lot_mask_pts, fill=255)
+        if st['slab'] > 0 and st['sink'] < .999:              # house shadow + contact AO on the grass
+            gc = _ground_shadow(gc, st, cam, pr, C, A, pa, gs, GW, GH, lm, W)
+    solids = _solids(st)
+    dust_b, dust_f = _dust_blobs(st, cam, pr, ls, ss, Cw, solids) if st['dust'] else ([], [])
+    if dust_b: _dust_over(gc, ga, dust_b)
+    # ================= HOUSE (ss x ss)
+    cv = _Cv(W, H)
+    glow_l = Image.new('RGB', (GW, GH)); gd = ImageDraw.Draw(glow_l)
+    pool_l = Image.new('RGB', (GW, GH)); pd = ImageDraw.Draw(pool_l)
+    lit = [False]
+    lights = st['lights']                                     # warm light pools on the lot (windows, open door)
+    if lights > .01 and st['slab'] > 0 and lm is not None:
         for p in G.panes:
             if p['kind'] != 'win' or p['id'] >= 4: continue
             w_ = st['win'][p['id']]
@@ -952,46 +1134,50 @@ def render(state, cam=None, size=(900, 900), t=None, ss=2, shadow=True, gap=0.6,
             quad = np.array([a0, a1, b1, b0]); quad[:, 1] = 0.0
             quad[:, 0] = np.clip(quad[:, 0], -LOT, LOT); quad[:, 2] = np.clip(quad[:, 2], -LOT, LOT)
             S, _ = pr(quad)
-            pd.polygon([tuple(s / gs) for s in S], fill=_rgba(WARM * .30 * w_ * glow))
+            pd.polygon([tuple(s / gs) for s in S], fill=_rgba(WARM * .30 * w_ * glow)); lit[0] = True
         op = _cl(st['door_ang'] / 60.0) * lights * (1 - _cl(st['fly'][G.door] / .3))
         if op > .02:
             quad = np.array([[-.55, 0, FRONT + .55], [.55, 0, FRONT + .55], [1.5, 0, FRONT + 3.4], [-1.5, 0, FRONT + 3.4]])
-            S, _ = pr(quad); pd.polygon([tuple(s / gs) for s in S], fill=_rgba(WARM * .55 * op * glow))
-    # ----- the house
+            S, _ = pr(quad); pd.polygon([tuple(s / gs) for s in S], fill=_rgba(WARM * .55 * op * glow)); lit[0] = True
+    chips = _chips(st, cam, pr, ls, Cw, solids) if st['wind'] > 0 else ([], [])
+    _draw_chips(cv, chips[0])                                 # debris / wind dust hidden by the house: under it
     if house:
-        _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people)
-    # ----- dust puffs (landings)
-    for (x, z, age, scl) in st['dust']:
-        _dust(cv, cam, pr, x, z, age, scl, ls)
-    # ----- vanish particles + wind dust
-    if st['wind'] > 0:
-        _draw_particles(cv, st, cam, pr, ls)
-    # ----- outline trace
+        _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people, pd)
+    _draw_chips(cv, chips[1])
     if st['outline'] > 0 and st['outline_a'] > .01:
         _draw_outline(cv, gd, st, cam, pr, gs, glow, Cw)
-    # ----- resolve: reduce, bloom, sheen, unpremultiply
-    if ss in (2, 3, 4): c = cv.c.reduce(ss); a = cv.a.getchannel(0).reduce(ss)
-    elif ss == 1: c = cv.c; a = cv.a.getchannel(0)
-    else: c = cv.c.resize((Wo, Ho), Image.BOX); a = cv.a.getchannel(0).resize((Wo, Ho), Image.BOX)
-    C_ = np.asarray(c, np.float32); A_ = np.asarray(a, np.float32)[..., None]
-    if glow > 0:
-        pool = pool_l.filter(ImageFilter.GaussianBlur(max(2, W / 260)))
-        lm = Image.new('L', (GW, GH), 0); ImageDraw.Draw(lm).polygon(lot_mask_pts, fill=255)
-        pool = ImageChops.multiply(pool, Image.merge('RGB', [lm] * 3))
-        g1 = glow_l.filter(ImageFilter.GaussianBlur(max(1, W / 1200)))
-        g2 = glow_l.filter(ImageFilter.GaussianBlur(max(2, W / 260)))
-        gsum = (np.asarray(g1.resize((Wo, Ho), Image.BILINEAR), np.float32) * .55 + np.asarray(g2.resize((Wo, Ho), Image.BILINEAR), np.float32) * .85
-                + np.asarray(pool.resize((Wo, Ho), Image.BILINEAR), np.float32))
-        C_ = C_ + gsum
-        A_ = np.maximum(A_, np.clip(gsum.max(2, keepdims=True) * 1.2, 0, 255))
-    if st['sheen'] >= 0:
-        C_ = _sheen(C_, A_, st['sheen'])
-    if lot['a'] < 1: C_ = C_ * lot['a']; A_ = A_ * lot['a']
-    rgb = np.clip(C_ * 255 / np.maximum(A_, 1), 0, 255)
-    return Image.fromarray(np.dstack([rgb, np.clip(A_, 0, 255)]).astype(np.uint8), 'RGBA')
+    # ================= resolve
+    a = None
+    if cv.used:
+        if ss > 1: c = cv.c.reduce(ss); a = cv.a.reduce(ss)
+        else: c = cv.c; a = cv.a
+        inv = ImageChops.invert(a)
+        Cc = ImageChops.add(c, ImageChops.multiply(gc, Image.merge('RGB', (inv, inv, inv))))
+        Ca = ImageChops.add(a, ImageChops.multiply(ga, inv))
+    else:
+        Cc, Ca = gc, ga
+    if dust_f: _dust_over(Cc, Ca, dust_f)
+    if glow > 0 and (lit[0] or glow_l.getbbox() is not None):
+        r1, r2 = max(1, W / 1200), max(2, W / 260)
+        gsum = ImageChops.add(glow_l.filter(ImageFilter.GaussianBlur(r1)).point([int(v * .55) for v in range(256)] * 3),
+                              glow_l.filter(ImageFilter.GaussianBlur(r2)).point([int(v * .85) for v in range(256)] * 3))
+        if lit[0] and lm is not None:
+            pool = ImageChops.multiply(pool_l.filter(ImageFilter.GaussianBlur(r2)), Image.merge('RGB', (lm, lm, lm)))
+            gsum = ImageChops.add(gsum, pool)
+        r_, g_, b_ = gsum.split()
+        gmax = ImageChops.lighter(ImageChops.lighter(r_, g_), b_).point([min(255, int(v * 1.2)) for v in range(256)])
+        Cc = ImageChops.add(Cc, gsum.resize((Wo, Ho), Image.BILINEAR))
+        Ca = ImageChops.lighter(Ca, gmax.resize((Wo, Ho), Image.BILINEAR))
+    if st['sheen'] >= 0 and a is not None:                  # light sheen across the house (not the lot / shadow):
+        k = _sheen_band(st['sheen'], Wo, Ho) * np.asarray(a, np.float32)          # C += (A - C) * band * house cover
+        Cc = Image.composite(Image.merge('RGB', (Ca, Ca, Ca)), Cc, Image.fromarray(np.clip(k + .5, 0, 255).astype(np.uint8)))
+    if lot['a'] < 1:
+        lut = [int(v * lot['a'] + .5) for v in range(256)]
+        Cc = Cc.point(lut * 3); Ca = Ca.point(lut)
+    return Image.merge('RGBa', (*Cc.split(), Ca)).convert('RGBA')
 
-def _ground_shadow(cv, st, cam, pr, C, A, pa, gs, GW, GH, lot_mask_pts):
-    """house shadow along the key light + contact AO around the plinth, multiplied onto the lot (colour only)."""
+def _ground_shadow(gc, st, cam, pr, C, A, pa, gs, GW, GH, lm, W):
+    """house shadow along the key light + contact AO around the plinth, multiplied onto the grass (output res)."""
     sm = Image.new('L', (GW, GH), 0); smd = ImageDraw.Draw(sm)
     lt = LKEY
     def ground(P):
@@ -1005,33 +1191,34 @@ def _ground_shadow(cv, st, cam, pr, C, A, pa, gs, GW, GH, lot_mask_pts):
             v = Gp[j]; val = int(150 * pa[i])
             for f in (0, 1, 4, 5, 2):
                 smd.polygon([tuple(v[k]) for k in FACE_IDX[f]], fill=val)
-    if st['roof_a'] > .3 and st['fly'][G.ridge] < .6:
-        for gb in G.gables:
+    if st['roof_a'] > .3:
+        for gi, gb in enumerate(G.gables):
+            if st['fly'][G.gable_ref[gi]] >= .6: continue
             Gp = ground(gb['v'] + np.array([0, st['roof_dy'], 0]))
             for f in ([0, 1, 4, 3], [0, 2, 5, 3], [1, 2, 5, 4]): smd.polygon([tuple(Gp[k]) for k in f], fill=150)
-    sm = sm.filter(ImageFilter.GaussianBlur(max(1.2, cv.W / 1100)))
+    sm = sm.filter(ImageFilter.GaussianBlur(max(1.2, W / 1100)))
     hs = (1 - st['sink']) * _cl(st['slab'])
     ao = Image.new('L', (GW, GH), 0); aod = ImageDraw.Draw(ao)
     for gr, val in ((.60, 60), (.20, 115)):
         fp = np.array([[-HX - .32 - gr, 0, BACK - .32 - gr], [HX + .32 + gr, 0, BACK - .32 - gr],
                        [HX + .32 + gr, 0, FRONT + .32 + gr], [-HX - .32 - gr, 0, FRONT + .32 + gr]])
         S, _ = pr(fp); aod.polygon([tuple(p / gs) for p in S], fill=int(val * hs))
-    ao = ao.filter(ImageFilter.GaussianBlur(max(2, cv.W / 520)))
-    sm = ImageChops.lighter(sm, ao)
-    lm = Image.new('L', (GW, GH), 0); ImageDraw.Draw(lm).polygon(lot_mask_pts, fill=255)
-    sm = ImageChops.multiply(sm, lm).resize((cv.W, cv.H), Image.BILINEAR)
-    k_ = sm.point(lambda v: int(255 - v * .80)); kb = sm.point(lambda v: int(255 - v * .64))
-    r_, g_, b_ = cv.c.split()
-    cv.c = Image.merge('RGB', (ImageChops.multiply(r_, k_), ImageChops.multiply(g_, k_), ImageChops.multiply(b_, kb)))
-    cv.redraw()
+    ao = ao.filter(ImageFilter.GaussianBlur(max(2, W / 520)))
+    sm = ImageChops.multiply(ImageChops.lighter(sm, ao), lm).resize(gc.size, Image.BILINEAR)
+    k_ = sm.point([int(255 - v * .80) for v in range(256)]); kb = sm.point([int(255 - v * .64) for v in range(256)])
+    r_, g_, b_ = gc.split()
+    return Image.merge('RGB', (ImageChops.multiply(r_, k_), ImageChops.multiply(g_, k_), ImageChops.multiply(b_, kb)))
 
-def _sheen(C_, A_, u):
-    h, w = C_.shape[:2]
-    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+_SHEEN_G = {}
+def _sheen_band(u, w, h):
+    """diagonal light sweep strength (h, w) float32: a function of g = x/w + .45 y/h only -> per-frame 1-D lookup."""
+    if (w, h) not in _SHEEN_G:
+        g = (np.arange(w, dtype=np.float32) / w)[None, :] + (np.arange(h, dtype=np.float32) / h * .45)[:, None]
+        _SHEEN_G[(w, h)] = np.minimum(g * 4096, 6143).astype(np.int16)
     pos = -0.35 + 1.75 * _ss(0, 1, u)
-    s = xx / w + yy / h * .45 - pos * 1.45
-    band = (np.exp(-(s / .08) ** 2) * .40 + np.exp(-(s / .018) ** 2) * .30) * math.sin(math.pi * _cl(u))
-    return C_ + (A_ - C_) * band[..., None]
+    s = np.arange(6144, dtype=np.float32) / 4096 - pos * 1.45
+    lut = ((np.exp(-(s / .08) ** 2) * .40 + np.exp(-(s / .018) ** 2) * .30) * math.sin(math.pi * _cl(u))).astype(np.float32)
+    return lut[_SHEEN_G[(w, h)]]
 
 def _hull_in_front(P, Cw):
     """True if the house hull cannot hide point P (camera and P share an outer half-space of a hull face)."""
@@ -1039,26 +1226,79 @@ def _hull_in_front(P, Cw):
         if n @ P > off and n @ Cw > off: return True
     return False
 
-_CLIPS = {}
-def _win_clip(i):
-    """one sequential reader per window (two windows play the same film at different offsets)."""
-    if i not in _CLIPS: _CLIPS[i] = E.Clip(WIN_VIDS[i][0], (162, 288))
-    return _CLIPS[i]
+# ---- window films: pre-decoded once (graded, cover-cropped to the pane at 2x the base texture height) into a
+# memory-mapped cache; frame = integer timeline frame since VID_T modulo the loop -> pure function of t, no ffmpeg
+# reader state, constant cost whatever order frames are requested in.
+WIN_TEX_H = 150                   # base pane texture height (px); close-ups get the 2x version
+_WIN_N = {}
+def _win_size(i, h=WIN_TEX_H):
+    p = G.win_pane[i]; return max(40, int(h * p['w'] / p['h'])), h
 
-def _pane_img(p, st, t):
-    """window pane texture: dark glass -> warm interior -> playing film, + reflection + slim frame."""
-    i = p['id']; h = 150; w = max(40, int(h * p['w'] / p['h']))
+def _decode_film(path, off, n, w, h, src_fps):
+    """n frames at 30 fps starting at source time `off`, cover-cropped to w x h, graded (uint8 n x h x w x 3)."""
+    import subprocess
+    vf = (f'fps=30,' if src_fps != 30 else '') + f'scale={w}:-2:flags=area,crop={w}:{h}'
+    ss = max(0.0, off - (0.5 / 30 if src_fps == 30 else 0.0))
+    cmd = ['ffmpeg', '-v', 'error', '-ss', f'{ss:.4f}', '-i', path, '-frames:v', str(n), '-vf', vf]
+    cmd += (['-fps_mode', 'passthrough'] if src_fps == 30 else []) + ['-f', 'rawvideo', '-pix_fmt', 'rgb24', '-']
+    b = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False).stdout
+    k = len(b) // (w * h * 3)
+    if k == 0: return np.full((n, h, w, 3), 30, np.uint8)
+    a = np.frombuffer(b[:k * w * h * 3], np.uint8).reshape(k, h, w, 3).astype(np.float32)
+    if k < n: a = np.concatenate([a, np.repeat(a[-1:], n - k, 0)])           # short source: hold the last frame
+    a = a * np.array([1.04, .98, .88], np.float32) * .92 + np.array([14, 8, 0], np.float32)
+    return np.clip(a, 0, 255).astype(np.uint8)
+
+def _src_fps(path):
+    import subprocess
+    r = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=r_frame_rate',
+                        '-of', 'csv=p=0', path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.decode().strip()
+    try: a_, b_ = r.split('/')[:2]; return round(float(a_) / float(b_), 3)
+    except Exception: return 30.0
+
+def _film_spec(i):
+    path, off, loop = WIN_VIDS[i]
+    n = int(round(loop * 30)); w, h = _win_size(i, 2 * WIN_TEX_H)
+    return f'win{i}', _ckey(_src_sig(path), off, n, w, h), (lambda: _decode_film(path, off, n, w, h, _src_fps(path)))
+
+def _film(i):
+    """(n, H, W, 3) uint8 memmap of hero window i's film loop at 2x pane texture resolution."""
+    if i not in _WIN_N:
+        name, key, build = _film_spec(i)
+        if not os.path.exists(os.path.join(CACHE, f'{name}_{key}.npy')):
+            from concurrent.futures import ThreadPoolExecutor          # first use anywhere: decode all four at once
+            def one(j):
+                try: _disk(*_film_spec(j))
+                except Exception: pass
+            with ThreadPoolExecutor(len(WIN_VIDS)) as ex: list(ex.map(one, range(len(WIN_VIDS))))
+        _WIN_N[i] = _disk(name, key, build)
+    return _WIN_N[i]
+
+def prewarm():
+    """build every disk cache (window films + static textures) now; optional (everything is also built on demand)."""
+    for i in range(len(WIN_VIDS)): _film(i)
+    _lot_top_tex(); _lot_side_tex()
+    for k in G.tiles:
+        ww = int(150 * (COLF if G.P[k]['wall'] in 'FB' else COLS) / (2 * RH)); _post_tex(G.P[k]['tex'], ww, 150)
+
+def film_frame_index(i, t):
+    """loop frame of hero window i at timeline t (integer maths on the 30 fps grid -> identical in every process)."""
+    n = int(round(WIN_VIDS[i][2] * 30))
+    return int(math.floor((t - VID_T) * 30 + 0.5 + 1e-6)) % n
+
+def _pane_img(p, st, t, hi=False):
+    """window pane texture: dark glass -> warm interior -> playing film, + reflection + slim frame.
+    hi=True: 2x texture (300 px tall) for close-ups."""
+    i = p['id']; w, h = _win_size(i, WIN_TEX_H * (2 if hi else 1)) if i < 4 else (max(40, int(WIN_TEX_H * (2 if hi else 1) * p['w'] / p['h'])), WIN_TEX_H * (2 if hi else 1))
     base = _glass_tex(w, h)
     wv = float(st['win'][i]); vv = float(st['vid'][i]) if i < 4 else 0.0
     if wv > .01: base = Image.blend(base, _warm_tex(w, h), min(1.0, wv))
     if vv > .01:
-        path, off, loop = WIN_VIDS[i]
         try:
-            fr = _win_clip(i).at(off + ((t - VID_T) % loop))
-            fr = _cover(fr, w, h)
-            a = np.asarray(fr, np.float32) * np.array([1.04, .98, .88], np.float32) * .92 + np.array([14, 8, 0], np.float32)
-            fr = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).convert('RGBA')
-            base = Image.blend(base, fr, min(1.0, vv))
+            fr = Image.fromarray(np.array(_film(i)[film_frame_index(i, t)]))
+            if not hi: fr = fr.reduce(2) if fr.size == (2 * w, 2 * h) else fr.resize((w, h), Image.BOX)
+            elif fr.size != (w, h): fr = fr.resize((w, h), Image.BILINEAR)
+            base = Image.blend(base, fr.convert('RGBA'), min(1.0, vv))
         except Exception:
             pass
     base = base.copy()
@@ -1066,9 +1306,11 @@ def _pane_img(p, st, t):
     base.alpha_composite(_frame_tex(w, h))
     return base
 
-def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
+def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people, pd=None):
     V = C[:, None, :] + np.einsum('nij,kj->nki', A, _S8)            # (N, 8, 3)
-    S, _ = pr(V.reshape(-1, 3)); S = S.reshape(G.N, 8, 2)
+    S, VZ = pr(V.reshape(-1, 3)); S = S.reshape(G.N, 8, 2)
+    near = VZ.reshape(G.N, 8).min(1) < .35                         # a piece crossing the camera plane is not drawn
+    if near.any(): pa = pa * ~near
     nrm = np.zeros((G.N, 6, 3)); fc = np.zeros((G.N, 6, 3))
     for f in range(6):
         ax = A[:, :, FACE_AX[f]]
@@ -1080,27 +1322,36 @@ def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
     _, depth = pr(C)
     fly = st['fly']; chaos = fly.max() > 1e-4
     wpx = max(1, cv.W // 1100)
+    # vanish / rewind: a piece near its slot (fly < HOME) keeps the structural layering (walls, then attached items,
+    # then the roof on top); only pieces travelling freely are depth-sorted, before the structure if they are farther
+    # than the house centre, after it if nearer (sorting slabs and wall blocks together by centre depth puts the top
+    # wall row over the eaves).
+    HOME = .30
+    free = (fly >= HOME) & (pa > .01)
+    hc = float(pr(np.array([[0.0, YS + 1.6, ZH]]))[1][0])
     items = []
     for k in G.blocks:
-        if pa[k] > .01: items.append((depth[k], 'box', k))
+        if pa[k] > .01 and not free[k]: items.append((depth[k], 'box', k))
     for p in G.panes:
         lint = [j for j in p['nb'] if G.P[j]['row'] > p['rows'][1]]
         a_ = min(pa[j] for j in lint) if lint else 1.0
         fl = max(fly[j] for j in p['nb']) if p['nb'] else 0.0
         a_ *= 1 - _cl((fl - .15) / .25)
         if a_ <= .01: continue
-        nb = [j for j in p['nb'] if pa[j] > .01]
+        nb = [j for j in p['nb'] if pa[j] > .01 and not free[j]]
         key = max(depth[j] for j in nb) + .01 if nb else float(pr(p['q'].mean(0)[None])[1][0])
         items.append((key, 'pane' if p['kind'] == 'win' else 'doorway', (p, a_)))
-    door_open = st['door_ang'] > 4 or chaos
-    if pa[G.door] > .01 and not door_open:
+    door_open = st['door_ang'] > 4
+    if pa[G.door] > .01 and not door_open and not free[G.door]:
         nb = G.door_pane['nb']
         items.append(((max(depth[j] for j in nb) + .005) if nb else depth[G.door], 'box', G.door))
-    if chaos:
-        for k in G.roof + G.sills + [G.door, G.sign]:
-            if pa[k] > .01: items.append((depth[k], 'box', k))
-        if st['roof_a'] > .01:
-            for gi, gb in enumerate(G.gables): items.append((float(pr(_gable_v(gb, st, gi).mean(0)[None])[1][0]), 'gable', gi))
+    gable_free = [fly[G.gable_ref[gi]] >= HOME for gi in range(2)]
+    free_items = [(depth[k], 'box', k) for k in np.nonzero(free)[0] if k not in (G.slab, G.step)]
+    if st['roof_a'] > .01:
+        for gi, gb in enumerate(G.gables):
+            if gable_free[gi]: free_items.append((float(pr(_gable_v(gb, st, gi).mean(0)[None])[1][0]), 'gable', gi))
+    free_back = sorted([it for it in free_items if it[0] > hc], key=lambda x: -x[0])
+    free_front = sorted([it for it in free_items if it[0] <= hc], key=lambda x: -x[0])
 
     def draw_box(k, alpha):
         kind = G.kind[k]
@@ -1160,7 +1411,16 @@ def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
         if pp[3] > 0: inside_ppl.append(pp)
         elif _hull_in_front(pp[0], Cw): front_ppl.append(pp)
         else: back_ppl.append(pp)
-    for pp in back_ppl: _person(cv, pp, pr, cam)
+    # figures near the open, lit doorway are backlit: warm-dark silhouettes (else the doorway bloom burns them white)
+    bl_ = st['lights'] * _cl(st['door_ang'] / 50.0)
+    door_out = _DOOR_OUT
+    def backlit(pp): return bl_ * _cl(1 - np.linalg.norm((pp[0] - door_out)[[0, 2]]) / 2.0) ** .8 * .82
+    for pp in back_ppl: _person(cv, pp, pr, cam, dark=backlit(pp))
+    def draw_free(lst):
+        for key, kind, pl in lst:
+            if kind == 'box': draw_box(pl, pa[pl])
+            else: _draw_gable(cv, G.gables[pl], st, cam, pr, Cw, pl)
+    draw_free(free_back)
     # ---------- walls, panes, doorway (painter's order)
     items.sort(key=lambda x: -x[0])
     for key, kind, pl in items:
@@ -1171,7 +1431,8 @@ def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
             if (Cw - p['q'][0]) @ p['n'] <= 0:
                 cv.polygon([tuple(x) for x in q], (22, 22, 30, int(255 * a_)))
             else:
-                _quad_tex(cv, _pane_img(p, st, t), q, a_)
+                hi = np.linalg.norm(q[3] - q[0]) > 2.2 * WIN_TEX_H         # close-up: 2x texture
+                _quad_tex(cv, _pane_img(p, st, t, hi), q, a_)
                 w_ = st['win'][p['id']]
                 if w_ > .01:
                     vv = st['vid'][p['id']] if p['id'] < 4 else 0
@@ -1191,12 +1452,11 @@ def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
         elif kind == 'gable':
             _draw_gable(cv, G.gables[pl], st, cam, pr, Cw, pl)
     # ---------- attached outside items (sills, sign) on walls facing the camera
-    if not chaos:
-        for k in G.sills:
-            if pa[k] > .01 and np.array(WALL_N[G.P[k]['wall']], float) @ (Cw - G.C0[k]) > 0: draw_box(k, pa[k])
-    if st['logo'] > 0 and pa[G.sign] > .01 and (chaos or (Cw - G.C0[G.sign])[2] > 0):
+    for k in G.sills:
+        if pa[k] > .01 and not free[k] and np.array(WALL_N[G.P[k]['wall']], float) @ (Cw - G.C0[k]) > 0: draw_box(k, pa[k])
+    if st['logo'] > 0 and pa[G.sign] > .01 and (free[G.sign] or (Cw - G.C0[G.sign])[2] > 0):
         k = G.sign
-        if not chaos: draw_box(k, pa[k])
+        if not free[k]: draw_box(k, pa[k])
         q = S[k, TEX_CORNERS['F']]
         if vis[k, 4]:
             lg = st['logo']
@@ -1221,34 +1481,39 @@ def _draw_house(cv, gd, st, cam, pr, LW, C, A, pa, t, gs, glow, Cw, people):
             tmp = _Cv(x1 - x0, y1 - y0)
             for pp in sorted(inside_ppl, key=lambda x: -x[3]):
                 p, a_, ph, inside, i = pp
-                _person(tmp, (p, a_ * (1 - _ss(.5, 1.3, inside)), ph, inside, i), pr, cam, dark=_cl(inside / .45) * .9, shift=(x0, y0))
+                _person(tmp, (p, a_ * (1 - _ss(.5, 1.3, inside)), ph, inside, i), pr, cam,
+                        dark=max(bl_ * .82, _cl(inside / .45) * .9), shift=(x0, y0), erase=_Eraser([gd], gs, (x0, y0)))
             m = Image.new('L', (x1 - x0, y1 - y0), 0)
             ImageDraw.Draw(m).polygon([(x - x0, y - y0) for x, y in qo], fill=255)
-            ta = ImageChops.multiply(tmp.a.getchannel(0), m)
+            ta = ImageChops.multiply(tmp.a, m)
             tc = ImageChops.multiply(tmp.c, Image.merge('RGB', [m] * 3))
             box = (x0, y0, x1, y1)
             inv = Image.merge('RGB', [ta.point(lambda v: 255 - v)] * 3)
             cv.c.paste(ImageChops.add(ImageChops.multiply(cv.c.crop(box), inv), tc), box)
-            cv.a.paste(ImageChops.add(ImageChops.multiply(cv.a.crop(box), inv), Image.merge('RGB', [ta] * 3)), box)
+            cv.a.paste(ImageChops.add(ImageChops.multiply(cv.a.crop(box), inv.getchannel(0)), ta), box)
     # ---------- open door leaf (outside the facade)
-    if pa[G.door] > .01 and door_open and not chaos:
+    if pa[G.door] > .01 and door_open and not free[G.door]:
         if (Cw - G.C0[G.door])[2] > -1.0: draw_box(G.door, pa[G.door])
-    # ---------- roof assembly: gables, chimney (plane rule), slate panels, ridge
-    if not chaos and st['roof_a'] > .01:
-        for gi, gb in enumerate(G.gables): _draw_gable(cv, gb, st, cam, pr, Cw, gi)
+    # ---------- roof assembly: gables, chimney (plane rule), slate panels, ridge (pieces at home)
+    if st['roof_a'] > .01:
+        for gi, gb in enumerate(G.gables):
+            if not gable_free[gi]: _draw_gable(cv, gb, st, cam, pr, Cw, gi)
         n_r = np.array([math.sin(TH), math.cos(TH), 0])
         chim_after = n_r @ (Cw - np.array([0, YR + st['roof_dy'], 0])) > 0
+        chim = [k for k in (G.chim, G.chimcap) if not free[k]]
         if not chim_after:
-            for k in (G.chim, G.chimcap): draw_box(k, pa[k])
-        rk = [k for k in G.roof if k not in (G.chim, G.chimcap, G.ridge)]
+            for k in chim: draw_box(k, pa[k])
+        rk = [k for k in G.roof if k not in (G.chim, G.chimcap) and k not in G.ridges and not free[k]]
         for k in sorted(rk, key=lambda k: -depth[k]): draw_box(k, pa[k])
-        draw_box(G.ridge, pa[G.ridge])
+        for k in sorted([k for k in G.ridges if not free[k]], key=lambda k: -depth[k]): draw_box(k, pa[k])
         if chim_after:
-            for k in (G.chim, G.chimcap): draw_box(k, pa[k])
-        # monitor rim light on the eaves and the ridge
-        _roof_rim(cv, gd, st, cam, pr, gs, glow, Cw)
+            for k in chim: draw_box(k, pa[k])
+        if fly[G.roof].max() < 1e-3:                         # monitor rim light on the eaves and the ridge
+            _roof_rim(cv, gd, st, cam, pr, gs, glow, Cw)
+    draw_free(free_front)
     # ---------- people in front of the house
-    for pp in sorted(front_ppl, key=lambda x: -np.linalg.norm(x[0] - Cw)): _person(cv, pp, pr, cam)
+    er = _Eraser([gd, pd], gs)
+    for pp in sorted(front_ppl, key=lambda x: -np.linalg.norm(x[0] - Cw)): _person(cv, pp, pr, cam, dark=backlit(pp), erase=er)
 
 def _roof_rim(cv, gd, st, cam, pr, gs, glow, Cw):
     """thin purple/blue light lines on the roof edges facing the studio monitors (camera-space rim)."""
@@ -1275,7 +1540,7 @@ def _roof_rim(cv, gd, st, cam, pr, gs, glow, Cw):
 
 def _gable_v(gb, st, gi):
     v = gb['v'] + np.array([0, st['roof_dy'], 0])
-    u = st['fly'][G.ridge]
+    u = st['fly'][G.gable_ref[gi]]
     if u > 1e-4:
         c = v.mean(0)
         off = WIND * (8.5 * u * u) + np.array([0, 1, 0]) * (3.2 * u ** 1.5) + np.array([0, 0, 1.0 if gi == 0 else -1.0]) * u
@@ -1284,7 +1549,7 @@ def _gable_v(gb, st, gi):
     return v
 
 def _draw_gable(cv, gb, st, cam, pr, Cw, gi):
-    u = st['fly'][G.ridge]
+    u = st['fly'][G.gable_ref[gi]]
     al = st['roof_a'] * (1 - _cl((u - .55) / .45))
     if al <= .01: return
     v = _gable_v(gb, st, gi)
@@ -1296,7 +1561,7 @@ def _draw_gable(cv, gb, st, cam, pr, Cw, gi):
         if n @ (Cw - P[0]) <= 0: continue
         cv.polygon([tuple(S[j]) for j in f], _rgba(_shade(CREAM, n, cam), 255 * al))
 
-def _person(cv, pp, pr, cam, dark=0.0, shift=(0, 0)):
+def _person(cv, pp, pr, cam, dark=0.0, shift=(0, 0), erase=None):
     p, a_, ph, inside, i = pp
     S, _ = pr(np.array([p, p + np.array([0, 1.75, 0])]))
     S = S - np.array(shift, float)
@@ -1306,24 +1571,95 @@ def _person(cv, pp, pr, cam, dark=0.0, shift=(0, 0)):
         rr = h * .15
         cv.ellipse((S[0][0] - rr * 1.4, S[0][1] - rr * .32, S[0][0] + rr * 1.4, S[0][1] + rr * .32), (8, 6, 14, int(110 * _cl(a_))))
     _draw_person(cv, (S[0][0], S[0][1]), h * _cl(a_, 0, 1.25), ph, i, min(1.0, a_ * 1.3), dark)
+    if erase is not None: _draw_person(erase, (S[0][0], S[0][1]), h * _cl(a_, 0, 1.25), ph, i, min(1.0, a_ * 1.3), 1.0)
 
-def _dust(cv, cam, pr, x, z, age, scl, ls):
-    r = np.random.default_rng(int(abs(x) * 10 + abs(z) * 100 + scl * 1000))
-    n_ = 70
-    ang = r.uniform(0, 2 * math.pi, n_)
-    k = _eo(age / 1.0)
-    rad = (1.0 + r.uniform(0, .45, n_) + .55 * k) * scl
-    px = x + np.cos(ang) * rad * (HX + .4); pz = z + np.sin(ang) * rad * (HZ + .4)
-    py = .04 + r.uniform(0, .45, n_) * k * scl
-    Sx, Z = pr(np.stack([px, py, pz], 1))
-    al = (1 - _cl(age / 1.1)) ** 1.6 * .5
-    for j in range(n_):
-        rr = max(1.0, (.07 + .10 * (j % 3)) * cam.focal / Z[j] * ls * (1 + k))
-        cv.ellipse((Sx[j][0] - rr, Sx[j][1] - rr * .7, Sx[j][0] + rr, Sx[j][1] + rr * .7), (226, 218, 206, int(255 * al)))
+# ---- occlusion of loose particles (dust, debris) by what is CURRENTLY built: convex solids as half-space lists
+def _solids(st):
+    out = []
+    hs = YS * max(0.0, st['slab']) * (1 - st['sink'])
+    if hs > .02 and st['slab'] > 0:
+        out.append([(np.array([1, 0, 0.]), HX + .32), (np.array([-1, 0, 0.]), HX + .32), (np.array([0, 0, 1.]), FRONT + .32),
+                    (np.array([0, 0, -1.]), -(BACK - .32)), (np.array([0, 1, 0.]), hs), (np.array([0, -1, 0.]), 0.0)])
+    bl = np.array(G.blocks)
+    up = ((st['pa'][bl] > .9) & (st['drop'][bl] < .05) & (st['fly'][bl] < .15)).mean()
+    if up > .75:
+        if st['roof_a'] > .9 and abs(st['roof_dy']) < .15 and st['fly'][G.ridge] < .15:
+            out.append(G.hull[:4] + [(np.array([0, -1, 0.]), -YS)] + G.hull[5:])     # walls + roof incl. the eaves
+        else:
+            out.append(_HID_PLANES[:5] + [(np.array([0, 1, 0.]), YW - .03)])          # open-top box of walls
+    return out
 
-def _draw_particles(cv, st, cam, pr, ls):
+def _hidden_v(P, Cw, planes, eps=.985):
+    """vectorised: is each point hidden from Cw by the convex solid {x: n.x <= off}?"""
+    P = np.atleast_2d(np.asarray(P, float)); D = P - Cw; m = len(P)
+    t0 = np.zeros(m); t1 = np.ones(m); ok = np.ones(m, bool)
+    for n, off in planes:
+        a = D @ n; b = off - float(n @ Cw)
+        par = np.abs(a) < 1e-9
+        ok &= ~(par & (b < 0))
+        tt = b / np.where(par, 1.0, a)
+        t1 = np.where(~par & (a > 0), np.minimum(t1, tt), t1)
+        t0 = np.where(~par & (a < 0), np.maximum(t0, tt), t0)
+    return ok & (t0 <= t1) & (t0 < eps)
+
+def _behind(P, Cw, solids):
+    h = np.zeros(len(P), bool)
+    for pl in solids: h |= _hidden_v(P, Cw, pl)
+    return h
+
+DUST_COL = (224, 216, 204)
+def _dust_blobs(st, cam, pr, ls, ss, Cw, solids):
+    """soft dust of the landings -> (behind-the-house, in-front) blob lists [(x, y, rx, ry, a)] in output px.
+    'ground': a ring rolling out around the plinth; 'eaves': a puff squeezed out under the eaves (roof landing)."""
+    pts, rad, al = [], [], []
+    for (x, z, age, scl, kind) in st['dust']:
+        r = np.random.default_rng(int(abs(x) * 10 + abs(z) * 100 + scl * 1000) + (7 if kind == 'eaves' else 0))
+        if kind == 'eaves':
+            n_ = 120; k = _eo(age / .9)
+            u = r.uniform(0, 1, n_) * 2 * (2 * HX + 2 * (FRONT - BACK)); per = 2 * HX
+            P = np.zeros((n_, 3)); N = np.zeros((n_, 3))
+            for j in range(n_):                                  # walk the eaves rectangle
+                v = u[j] % (2 * per + 2 * (FRONT - BACK))
+                if v < per: P[j] = (-HX + v, 0, FRONT); N[j] = (0, 0, 1)
+                elif v < per + (FRONT - BACK): P[j] = (HX, 0, FRONT - (v - per)); N[j] = (1, 0, 0)
+                elif v < 2 * per + (FRONT - BACK): P[j] = (HX - (v - per - (FRONT - BACK)), 0, BACK); N[j] = (0, 0, -1)
+                else: P[j] = (-HX, 0, BACK + (v - 2 * per - (FRONT - BACK))); N[j] = (-1, 0, 0)
+            out = (.30 + r.uniform(0, .5, n_) + 1.1 * k) * scl
+            P = P + N * out[:, None]
+            P[:, 1] = YW - .10 - r.uniform(0, .25, n_) - .45 * k * r.uniform(.4, 1, n_)
+            rm = (.10 + .06 * (np.arange(n_) % 3)) * (1 + 1.6 * k)
+            a = np.full(n_, (1 - _cl(age / 1.0)) ** 1.5 * .42 * min(1.0, age / .05))
+        else:
+            n_ = 110; k = _eo(age / 1.0)
+            ang = r.uniform(0, 2 * math.pi, n_)
+            rr = (1.0 + r.uniform(0, .45, n_) + .55 * k) * scl
+            P = np.stack([x + np.cos(ang) * rr * (HX + .4), .05 + r.uniform(0, .45, n_) * k * scl, z + np.sin(ang) * rr * (HZ + .4)], 1)
+            rm = (.12 + .09 * (np.arange(n_) % 3)) * (1 + 1.3 * k) * scl ** .5
+            a = np.full(n_, (1 - _cl(age / 1.1)) ** 1.6 * .40 * min(1.0, age / .05))
+        pts.append(P); rad.append(rm); al.append(a)
+    if not pts: return [], []
+    P = np.concatenate(pts); rm = np.concatenate(rad); a = np.concatenate(al)
+    S, Z = pr(P)
+    hid = _behind(P, Cw, solids) if solids else np.zeros(len(P), bool)
+    back, front = [], []
+    for j in range(len(P)):
+        if Z[j] < .3 or a[j] < .004: continue
+        rx = max(.8, rm[j] * cam.focal / Z[j] * ls / ss)
+        b = (S[j][0] / ss, S[j][1] / ss, rx, rx * .72, a[j])
+        (back if hid[j] else front).append(b)
+    return back, front
+
+def _dust_over(Cimg, Aimg, blobs):
+    """composite soft dust (premultiplied colour + coverage images, in place)."""
+    r = _splat(blobs, Cimg.width, Cimg.height)
+    if r is None: return
+    m, (x0, y0) = r; box = (x0, y0, x0 + m.width, y0 + m.height)
+    Cimg.paste(DUST_COL, box, m); Aimg.paste(255, box, m)
+
+def _chips(st, cam, pr, ls, Cw, solids):
+    """crisp debris chips torn off by the wind + wind-borne dust -> (behind, front) [(x, y, r, rgba)] in ss px."""
     fly = st['fly']; t = st['t']
-    pts, al, sz = [], [], []
+    pts, al, sz, spin, tone = [], [], [], [], []
     if t < RET_T0:
         for i in np.nonzero((fly > 0) & (fly < 1))[0]:
             u = fly[i]
@@ -1333,8 +1669,8 @@ def _draw_particles(cv, st, cam, pr, ls):
                 p = G.C0[i] + o + WIND * (11 * u ** 1.3 * r.uniform(.7, 1.3)) + np.array([0, 1, 0]) * (2.6 * u * r.uniform(.5, 1.5)) \
                     + np.array([0, math.sin(u * 9 + j) * .3, math.cos(u * 7 + j) * .3])
                 pts.append(p); al.append((1 - u) ** 1.2 * .9 * min(1, u * 8)); sz.append(r.uniform(.035, .10))
-    # wind-borne dust drifting across the empty lot (seg 15-16)
-    w = st['wind']
+                spin.append(r.uniform(0, 6.28) + u * r.uniform(-14, 14)); tone.append(r.uniform(.62, 1.0) * (.55 if G.kind[i] in ('roof', 'ridge') else 1))
+    w = st['wind']                                            # wind-borne dust drifting across the lot (seg 15-16)
     if w > .01:
         r = np.random.default_rng(404)
         n_ = 46
@@ -1346,12 +1682,26 @@ def _draw_particles(cv, st, cam, pr, ls):
             if abs(x[j]) > LOT * 1.05: continue
             p = np.array([x[j], y0[j] + .25 * math.sin(tt * 2.2 + ph[j]), z0[j] - .3 * tt])
             edge = _cl((LOT * 1.05 - abs(x[j])) / 2.0)
-            pts.append(p); al.append(.45 * w * edge); sz.append(.03 + .03 * (j % 3))
-    if not pts: return
-    S, Z = pr(np.array(pts))
+            pts.append(p); al.append(.45 * w * edge); sz.append(.03 + .03 * (j % 3)); spin.append(ph[j] + tt * 3); tone.append(.95)
+    if not pts: return [], []
+    P = np.array(pts); S, Z = pr(P)
+    hid = _behind(P, Cw, solids) if solids else np.zeros(len(P), bool)
+    back, front = [], []
+    base = np.array([238, 232, 222], float)
     for k in range(len(pts)):
+        if Z[k] < .3 or al[k] <= .004: continue
         rr = max(.7, sz[k] * cam.focal / Z[k] * ls)
-        cv.rectangle((S[k][0] - rr, S[k][1] - rr, S[k][0] + rr, S[k][1] + rr), (238, 232, 222, int(255 * al[k])))
+        a_ = spin[k]; sq = abs(math.sin(a_ * 1.7)) * .55 + .45          # tumbling: the shard foreshortens as it turns
+        lit = tone[k] * (.80 + .35 * max(0.0, math.cos(a_ * 1.3)))
+        (back if hid[k] else front).append((S[k][0], S[k][1], rr, a_, sq, _rgba(base * lit, 255 * al[k])))
+    return back, front
+
+def _draw_chips(cv, chips):
+    for x, y, rr, a_, sq, col in chips:
+        if rr < 1.6: cv.rectangle((x - rr, y - rr, x + rr, y + rr), col); continue
+        c, s_ = math.cos(a_), math.sin(a_)
+        q = [(-1.2, -.8 * sq), (1.0, -1.0 * sq), (1.15, .9 * sq), (-.9, 1.05 * sq)]   # irregular shard
+        cv.polygon([(x + rr * (u * c - v * s_), y + rr * (u * s_ + v * c)) for u, v in q], col)
 
 def _hidden(P, Cw):
     """is world point P hidden by the (convex) house solid, seen from Cw?"""
@@ -1408,10 +1758,12 @@ def anchor(name, state, cam, size=(900, 900)):
 
 # ---------------------------------------------------------------------------------------------- self test
 if __name__ == '__main__':
-    import sys, time
+    import time
     out = os.path.join(E.HERE, 'out', 'house'); os.makedirs(out, exist_ok=True)
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'strip'
-    if cmd == 'strip':
+    if cmd == 'prewarm':
+        t0 = time.time(); prewarm(); print('caches ready in', CACHE, f'({time.time() - t0:.1f} s)')
+    elif cmd == 'strip':
         ts = [float(x) for x in sys.argv[2:]] or [3.95, 4.3, 6.6, 7.1, 8.6, 9.8, 10.3, 10.9, 11.3, 12.1, 13.2, 13.6, 14.1, 15.8,
                                                   16.6, 28.8, 29.5, 30.1, 31.0, 33.1, 33.6, 34.6, 35.1, 37.6]
         size = (450, 450); cols = 6
