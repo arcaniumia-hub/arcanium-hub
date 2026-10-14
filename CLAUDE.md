@@ -45,4 +45,7 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - Showcase assets (bad examples, close-ups, carousel, poster, website): `lumarc-showcase/src/assets/` (gitignored).
 - `video/lumarc-breakout/` ("Break out of the feed", ultracode build): fake Instagram feed kit (`sections/feedkit.py`),
   glass crack/shatter kit (`sections/_glasskit.py`), engine fork with deterministic frame reads — reuse for feed/glass ideas.
+- `video/lumarc-therapy/` ("Couples Therapy — for brands", comedy, ultracode): multi-take dialogue engine (several HeyGen
+  takes, one per character, keyed into angles of one Higgsfield location), parts-based dialogue EDL, SFX on a separate bus.
+  The owner likes HUMOR formats; one character per frame.
 - Per-project READMEs in each `video/*/` folder explain how each film was built.
