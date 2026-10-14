@@ -1,21 +1,23 @@
 """s08 — Instagram: "…Oh. OH. Okay… I'm listening."  Therapist: "If your Instagram stopped talking to you… comment
-L-U-M-A-R-C. We do couples therapy. [For brands.]" + END CARD   (46.50–DUR)
+L-U-M-A-R-C. We do couples therapy. For brands." + END CARD   (46.50–DUR)
 
-46.50  HARD CUT out of the movie: Instagram MS, stunned (arms still crossed). His phone keeps pinging: every ping drops
-       a notification banner (the movie's iOS card, same account) over his crossed arms — never over his face, which
-       sits high in the MS — with the follower count climbing (+3,517 -> +8,902 -> +14,377 -> +21,450 on the double
-       ping); each banner pops out as the next crash zoom snaps in.
-47.73  "OH."      crash zoom #1 (z 1.30)          — each preceded by a notification ping
-48.60  "Okay…"    crash zoom #2 (z 1.58)          — captions grow with every zoom
-49.67  "I'm listening." crash zoom #3 (ECU z 1.90), held through his silent lean-in.
-50.67  CUT to the therapist, to camera. 52.60 punch-in on "you…".
-53.10  "comment": a real Instagram comment sheet slides up (emoji reactions, 'Add a comment for lumarc_studio…',
+Line 16 plays as 4 PARTS back to back (pauses removed: jumps at 47.26 / 47.78 / 48.54); line 17 as 2 parts (jump at
+54.94). Every jump is hidden by a camera move that lands ON its first frame (see JUMPS16 / JUMPS17 in _D_kit).
+46.50  HARD CUT out of the movie: Instagram MS, stunned (arms still crossed). His phone keeps pinging: the first ping
+       drops a notification banner (the movie's iOS card, same account) over his crossed arms — never over his face,
+       which sits high in the MS; every later ping bumps it and the follower count climbs (+3,517 -> +8,902 ->
+       +14,377 -> +21,450 on the double ping); it pops out as the ECU snaps in. Each ping sits ~0.13 s before a snap.
+47.267 crash zoom #1 (z 1.30) lands on the jump into part 2 — "OH." 47.32
+47.800 crash zoom #2 (z 1.58) lands on the jump into part 3 — "Okay…" 47.87       captions grow with every zoom
+48.567 crash zoom #3 (ECU z 1.90) lands on the jump into part 4 — "I'm listening." 48.60, held through his silent lean-in.
+49.60  CUT to the therapist, to camera. 51.50 punch-in on "you…".
+52.06  "comment": a real Instagram comment sheet slides up (emoji reactions, 'Add a comment for lumarc_studio…',
        Post, iOS dark keyboard). He SPELLS the name and every letter is typed on its spoken onset with the iOS key
-       balloon: L 53.94 · U 54.17 · M 54.62 · A 54.94 · R 55.23 · C 55.44 (type cues).
-55.72  dead air: the therapist's deadpan stare, caret blinking.  56.16 Post (click) -> the sheet drops.
-56.44  "We do couples therapy." — wider again; LUMARC lower third (wordmark + 'couples therapy' on "couples").
-       If TL[17] includes "For brands." (take src 25.28–25.88): deadpan beat with a slow creep, then "FOR BRANDS.".
-VOICE_END  END CARD: the frame frosts into LUMARC glass on the boom, logo slams (bloom + shockwave), the session
+       balloon: L 52.86 · U 53.09 · M 53.54 · A 53.86 · R 54.15 · C 54.36 (type cues).
+54.61  Post (click, 0.25 s after the C) -> the sheet drops; 54.967 = the jump into part 2: wider reframe on that frame.
+55.00  "We do couples therapy." — LUMARC lower third (wordmark + 'licensed couples therapist') wipes in on "We".
+56.18  deadpan beat with a slow creep, then "FOR BRANDS." (56.68).
+57.30  END CARD (VOICE_END): the frame frosts into LUMARC glass on the boom, logo slams (bloom + shockwave), the session
        dissolves into brand space; "Couples therapy / for brands.", Comment "LUMARC" pill, "Be seen. Be remembered.",
        @lumarc_studio · slumarc.com; light sweep; holds to the end.
 """
@@ -29,34 +31,39 @@ START, END = E.span(16, 17)                       # 46.50 – DUR
 W, H, FPS = E.W, E.H, E.FPS
 L16, L17 = E.TL[16], E.TL[17]
 clamp, eout, ein, lerp, smooth, expo = E.clamp, E.eout, E.ein, K.lerp, K.smooth, K.expo
-T_END = E.VOICE_END                                # end card (57.62 on the current timeline)
+T_END = E.VOICE_END                                # end card (57.30 on the current timeline)
 
 # ---------------------------------------------------------------- measured onsets (see _D_kit.MEASURED)
-W_OH1, W_OH2, W_OKAY, W_IM = K.wt(16, '…OH.'), K.wt(16, 'OH.'), K.wt(16, 'OKAY…'), K.wt(16, "I'M")
-W_YOU = K.wt(17, 'YOU…')
-W_COMMENT = K.wt(17, 'COMMENT')
-W_WE, W_COUPLES, W_THERAPY = K.wt(17, 'WE'), K.wt(17, 'COUPLES'), K.wt(17, 'THERAPY.')
-W_BRANDS = K.wt(17, 'BRANDS.')
-SPELL = K.SPELL
+W_OH1, W_OH2, W_OKAY, W_IM = K.wt(16, '…OH.'), K.wt(16, 'OH.'), K.wt(16, 'OKAY…'), K.wt(16, "I'M")   # 46.57 47.32 47.87 48.60
+W_YOU = K.wt(17, 'YOU…')                                                                           # 51.50
+W_COMMENT = K.wt(17, 'COMMENT')                                                                    # 52.08
+W_WE, W_COUPLES, W_THERAPY = K.wt(17, 'WE'), K.wt(17, 'COUPLES'), K.wt(17, 'THERAPY.')            # 55.00 55.38 55.78
+W_BRANDS = K.wt(17, 'BRANDS.')                                                                     # 56.84
+SPELL = K.SPELL                                    # L 52.86 U 53.09 M 53.54 A 53.86 R 54.15 C 54.36
 
-F_Z = [K.fr(W_OH2), K.fr(W_OKAY), K.fr(W_IM)]     # 1432, 1458, 1490 — the snaps land here
+# line 16 = 4 parts back to back: each crash zoom LANDS on the first frame of a part (the jump in the take is the cut
+# between the snap's blurred travel frames and its landing frame); the word follows 1-2 frames later.
+F_Z = list(K.JUMPS16)                              # 1418, 1434, 1457  (47.267, 47.800, 48.567)
+T_Z = [round(f / FPS, 3) for f in F_Z]             # 47.267, 47.800, 48.567
+SNAP_K = (.26, .62)                                # snap progress on the 2 frames before the landing (landing = 1)
+LAND_BLUR = .30                                    # residual radial blur on the landing (jump) frame
 Z = [1.0, 1.30, 1.58, 1.90]
 TO = [(540, 600), (540, 630), (540, 660), (540, 690)]
-F_T17 = math.ceil(L17['t0'] * FPS - 1e-6)          # 1520  therapist
-F_YOU = K.fr(W_YOU)                                # 1578  punch-in on "you…"
-T_UP = W_COMMENT - .02                             # sheet rises on "comment"
-T_POST = W_WE - .28                                # 56.16 Post tap at the end of the dead air
-T_DOWN = T_POST + .04
-F_WE = K.fr(W_WE) - 1                              # wider framing for "We do couples therapy."
-PINGS = [47.22, 48.20, 49.06, 49.24]
-# the banner each ping drops (groups: one banner per zoom; the double ping ticks the same banner's count up)
-PING_CARDS = [(PINGS[0], ['+3,517 new followers']), (PINGS[1], ['+8,902 new followers']),
-              (PINGS[2], ['+14,377 new followers', '+21,450 new followers'])]
-PING_OUT = [W_OH2 - .12, W_OKAY - .12, W_IM - .12]          # flick up as each crash zoom snaps in
-PING_TOP = 1140                                             # card 1140-1308: above the captions (1424+)
+F_T17 = math.ceil(L17['t0'] * FPS - 1e-6)          # 1488  therapist
+F_YOU = K.fr(W_YOU)                                # 1545  punch-in on "you…"
+T_UP = round(W_COMMENT - .02, 3)                   # 52.06 sheet rises on "comment"
+T_POST = round(SPELL[-1][1] + .25, 3)              # 54.61 Post tap 0.25 s after the spelled C
+T_DOWN = round(T_POST + .04, 3)                    # 54.65 the sheet drops (off screen by 54.89)
+F_WE = K.JUMPS17[0]                                # 1649 (54.967) wider reframe ON the jump into line 17's part 2
+# one ping ~0.13 s before each snap (in the tightened pauses); the double ping before the ECU
+PINGS = [round(T_Z[0] - .135, 2), round(T_Z[1] - .135, 2), round(T_Z[2] - .29, 2), round(T_Z[2] - .135, 2)]   # 47.13 47.66 48.28 48.43
+# one banner: dropped by the first ping, every later ping bumps it and ticks the count up
+PING_CARDS = [(PINGS[0], ['+3,517 new followers', '+8,902 new followers', '+14,377 new followers', '+21,450 new followers'])]
+PING_OUT = [round((F_Z[2] - 2) / FPS - .001, 3)]   # 48.499: pops out over the ECU snap (gone 1 frame after it lands)
+PING_TOP = 1140                                    # card 1140-1308: above the captions (1424+)
 
 CUES = [(p, 'notify', {'gain': g}) for p, g in zip(PINGS, (-7, -6, -6, -4))] + [
-    (W_OH2, 'zoom', {}), (W_OKAY, 'zoom', {'gain': 1}), (W_IM, 'zoom', {'gain': 2}),   # escalating crash zooms
+    (T_Z[0], 'zoom', {}), (T_Z[1], 'zoom', {'gain': 1}), (T_Z[2], 'zoom', {'gain': 2}),   # escalating crash zooms
     (W_YOU, 'tick', {'gain': -8}),                                                    # punch-in
     (W_COMMENT, 'swipe', {'gain': -4}),                                               # comment sheet up
 ] + [(ts, 'type', {'i': i, 'gain': 7}) for i, (_, ts) in enumerate(SPELL)] + [
@@ -80,7 +87,7 @@ def face_i(src):
 def ping_banners(ctx, t):
     """one iOS banner per ping group, popping in place on the ping (scale .9 -> 1 with a little overshoot, 0.16 s; it
     never travels through the captions); a later ping in the group bumps it and ticks the number; it pops out (fade +
-    slight drop) as the zoom snaps in. Same card art as the movie's notification stack."""
+    slight drop) at PING_OUT (the ECU snap). Same card art as the movie's notification stack."""
     NH = K.NH
     for (ta, bodies), t_out in zip(PING_CARDS, PING_OUT):
         if not ta <= t < t_out + .12: continue
@@ -97,28 +104,37 @@ def ping_banners(ctx, t):
 
 
 
+def snap_k(f, fz):
+    """crash-zoom progress on the frame grid: 0 before, SNAP_K on the 2 travel frames, 1 from the landing frame fz on.
+    The landing frame still carries ~40 % of the move: the take's jump (first frame of a part) is buried in it."""
+    d = fz - f
+    return 1.0 if d <= 0 else (SNAP_K[1] if d == 1 else (SNAP_K[0] if d == 2 else 0.0))
+
+
 def level_z(t, f):
-    """z for the frame: piecewise holds with a creep, 3-frame snaps landing on each word."""
+    """z for the frame: piecewise holds with a creep, 3-frame snaps landing on each jump of the take."""
     def hold(i, tt):
         t0 = START if i == 0 else F_Z[i - 1] / FPS
         return Z[i] + .03 * max(0., tt - t0)
     i = sum(1 for fz in F_Z if f >= fz - 2)              # level being reached / held
     if i == 0: return hold(0, t), 0, 1.0
     fz = F_Z[i - 1]
-    k = K.snap(f, fz)
+    k = snap_k(f, fz)
     if k >= 1: return hold(i, t), i, 1.0
     z_prev = hold(i - 1, (fz - 3) / FPS)
     return lerp(z_prev, Z[i], k), i, k
 
 
 def instagram(ctx, t, f):
-    src = L16['s0'] + (t - L16['t0'])
+    src = E.src_at(16, t)                                     # follows the line's parts
     ctx.shot.update(show=True, spk='I', angle='I', src=src)
     z, i, k = level_z(t, f)
     to = TO[i] if k >= 1 or i == 0 else tuple(lerp(a, b, k) for a, b in zip(TO[i - 1], TO[i]))
     ctx.cam.update(K.face_cam(face_i(src), z, to=to))
     if i > 0 and k < 1:
-        ctx.wrap = K.zoom_blur(.8 + .2 * i if k < .6 else .45 + .1 * i, anchor=to)
+        ctx.wrap = K.zoom_blur(.8 + .2 * i if k < .5 else .5 + .1 * i, anchor=to)
+    elif i > 0 and f == F_Z[i - 1]:
+        ctx.wrap = K.zoom_blur(LAND_BLUR, anchor=to)          # the landing (= jump) frame: a last smear of the move
     ctx.post['vignette'] = .32 + .06 * i
     sizes = {'…OH.': 78, 'OH.': 104, 'OKAY…': 112, "I'M LISTENING.": 100}
     K.clean_take(ctx)                                        # choked matte: the ECU magnifies the key fringe
@@ -128,7 +144,7 @@ def instagram(ctx, t, f):
 
 # ================================================================ line 17: the CTA
 def therapist(ctx, t, f):
-    src = L17['s0'] + (t - L17['t0'])
+    src = E.src_at(17, t)
     ctx.shot.update(show=True, spk='T', angle='T', src=src)
     u = t - F_T17 / FPS
     if f < F_YOU: z = 1.02 + .02 * u

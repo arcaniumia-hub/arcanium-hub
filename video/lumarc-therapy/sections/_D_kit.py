@@ -29,16 +29,28 @@ def scale_im(im, s, resample=Image.BILINEAR):
 
 # ================================================================== measured word onsets
 # voice16k.raw (10 ms RMS envelope, 2.5/1 ms-hop spectrograms, 14th-order LPC formant tracks); edit-timeline seconds.
-# Line 17 is measured in the THERAPIST TAKE's own seconds (src) and mapped through TL[17], so it stays right if the
-# integrator re-times / extends that line. NB: in the take the therapist SPELLS the name: "comment L-U-M-A-R-C".
+# Lines 16 + 17 are measured in their TAKE's own seconds (src) and mapped through the line's PARTS (timeline.py plays
+# each line as back-to-back parts with the internal pauses removed), so they stay right if the integrator re-times /
+# re-cuts those lines. Re-checked on the tightened timeline (voice16k.raw of the parts build): every onset below sits
+# on its 10 ms envelope rise. NB: in the take the therapist SPELLS the name: "comment L-U-M-A-R-C".
 L14, L15, L16, L17 = TL[14], TL[15], TL[16], TL[17]
-def e17(src): return round(L17['t0'] + (src - L17['s0']), 3)
+def e_src(i, src):
+    """edit-timeline second at which line i's take plays source second `src` (the part that contains it)."""
+    ps = TL[i]['parts']; p = ps[0]
+    for q in ps:
+        if src >= q['s0'] - 1e-6: p = q
+    return round(p['t0'] + (src - p['s0']), 3)
+def e16(src): return e_src(16, src)
+def e17(src): return e_src(17, src)
+def first_frame(t): return math.ceil(t * FPS - 1e-6)
+JUMPS16 = [first_frame(p['t0']) for p in L16['parts'][1:]]     # first frame of each later part = a jump in the take
+JUMPS17 = [first_frame(p['t0']) for p in L17['parts'][1:]]
 FB = L17['s1'] >= 25.86            # "For brands." (take src 25.28-25.88) is inside the edit?
 
 MEASURED = {
     14: [('I', 36.90), ('SELL', 37.00), ('CROISSANTS,', 37.23), ('NOT', 38.33), ('MOVIES!', 38.50)],
     15: [('KEVIN…', 39.64), ('YOUR', 40.45), ('CROISSANTS', 40.78), ('DESERVE', 41.54), ('A', 42.10), ('MOVIE.', 42.14)],
-    16: [('…OH.', 46.57), ('OH.', 47.73), ('OKAY…', 48.60), ("I'M", 49.68), ('LISTENING.', 49.76)],
+    16: [(w, e16(s)) for w, s in (('…OH.', 31.03), ('OH.', 32.18), ('OKAY…', 33.05), ("I'M", 34.14), ('LISTENING.', 34.21))],
     17: [(w, e17(s)) for w, s in (('IF', 17.92), ('YOUR', 18.08), ('INSTAGRAM', 18.39), ('STOPPED', 18.92),
                                    ('TALKING', 19.34), ('TO', 19.67), ('YOU…', 19.76), ('COMMENT', 20.34),
                                    ('“LUMARC”.', 21.12), ('WE', 23.62), ('DO', 23.88), ('COUPLES', 24.00),
