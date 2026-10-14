@@ -1,0 +1,15 @@
+__pycache__/
+music.wav
+out/
+sections/__pycache__/
+sfx.wav
+src/*.mov
+src/*.mp4
+src/*.raw
+src/*.wav
+src/assets/
+src/green_frame.png
+src/studio_plate_sharp.png
+src/studio_ref.png
+src/th_ref_*.png
+src/tight16k.raw
