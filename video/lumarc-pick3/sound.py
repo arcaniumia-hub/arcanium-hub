@@ -20,7 +20,7 @@ import engine as E
 DUR = E.DUR; TL = E.TL
 TS = lambda i: TL[i]['t0']; TE = lambda i: TL[i]['t1']
 # word onsets the score is keyed on (edit timeline; measured on src/tight16k.raw)
-ON = dict(AI_SHATTER=18.90, THIS=29.55, PICK3=33.35)       # measured onsets (updated from the section reports)
+ON = dict(AI_SHATTER=18.64, THIS=28.98, PICK3=33.767)      # measured by the section authors: rule shatters on "AI", montage on "this.", THREE slam
 mix = Mix(DUR)
 def nz(x, p=1.0):
     x = np.asarray(x, np.float32); return x / (np.abs(x).max() + 1e-9) * p
@@ -205,15 +205,16 @@ SFX = {
     'tap': lambda c: (tap_(), 0, -8),
 }
 
-def hook_bed(a, z, hits=()):
-    """dry tension bed for one hook block: sub drone + 16th-note ticks + a riser into its last beat; ends clean at z."""
-    A('hbed', pad([note('D2'), note('A2')], z - a, att=.05, rel=.05, bright=700), a, -18)
+def hook_bed(blk, a, z):
+    """dry tension bed for one hook block (its own stem hbed_<blk>, trimmed to the block afterwards): sub drone +
+    16th-note ticks + a riser into its last beat."""
+    st = 'hbed_' + blk
+    A(st, pad([note('D2'), note('A2')], z - a, att=.05, rel=.05, bright=700), a, -18)
     for t, i in grid(a, z - .05, 120, 4):
-        A('hbed', tick(5200 if i % 4 else 3800, .03, .45), t, -27 if i % 4 else -22, pan=.2 if i % 2 else -.2)
+        A(st, tick(5200 if i % 4 else 3800, .03, .45), t, -27 if i % 4 else -22, pan=.2 if i % 2 else -.2)
     for t, i in grid(a, z - .05, 120, 1):
-        if i % 2 == 0: A('hbed', kick(.35, .6, 120, 40), t, -16)
-    A('hbed', riser(min(1.4, z - a - .2), 300, 5500, 1.0, .4), z - min(1.4, z - a - .2) - .05, -16, p=.8)
-    for t in hits: A('hit', addl(nz(impact(1.2, .9, .9, .3)), nz(sub_boom(.8, 70, 35)) * .4), t, -8)
+        if i % 2 == 0: A(st, kick(.35, .6, 120, 40), t, -16)
+    A(st, riser(min(1.4, z - a - .2), 300, 5500, 1.0, .4), z - min(1.4, z - a - .2) - .05, -16, p=.8)
 
 def bouncy(a, z):
     """the 'pick two' groove: playful, punchy (116 BPM): kick/clap, plucky bass, staccato stabs."""
@@ -258,13 +259,12 @@ def cinematic(a, z):
         if k == 8: A('clap', addl(clap(.3), snare(.25, 200, 1.0) * .6), t, -10)
         if k % 2 == 0 or k >= 12: A('hat', hat(.05), t, -20, pan=.2)
         if k == 0: A('bass', sub808(note('D1'), bt * 3.6, drive=2.0), t, -8)
-    A('hit', addl(nz(impact(2.2, 1.2, .9, .5)), nz(braam(note('D1'), 2.0, .9)) * .6), a, -4)
 
 def score():
     B0, B1 = E.BLOCK_SPAN['B']
     END = TL[-1]['t0']                                                     # end card (the smile)
     for b in ('A1', 'A2', 'A3'):
-        a, z = E.BLOCK_SPAN[b]; hook_bed(a, z)
+        a, z = E.BLOCK_SPAN[b]; hook_bed(b, a, z)
     bouncy(B0, TL[19]['t0'] - .02)                                         # the three "pick two" jokes
     tension_pad(TL[19]['t0'], ON['AI_SHATTER'])                            # "That rule was written before AI"
     A('hit', addl(nz(impact(2.4, 1.2, 1.0, .6)), nz(sub_boom(1.6, 64, 28)) * .6), TL[20]['t0'], -4)   # the LUMARC drop
@@ -273,15 +273,15 @@ def score():
     cinematic(ON['THIS'], TL[28]['t0'] - .02)                              # the montage
     A('pad', pad([note('E3'), note('B3'), note('E4'), note('G4')], ON['PICK3'] - TL[28]['t0'] + .1, att=.15, rel=.1, bright=1500), TL[28]['t0'], -14)
     A('fx', riser(ON['PICK3'] - TL[28]['t0'] - .1, 300, 7500, 1.0, .5), TL[28]['t0'] + .1, -12, p=.8)
-    A('hit', addl(nz(impact(2.8, 1.3, 1.0, .7)), nz(braam(note('E1'), 2.2, .9)) * .6), ON['PICK3'], -3)  # PICK THREE
+    # PICK THREE: the section fires boom + braam + impact + sub on THREE — the score just drops the full groove there
     lumarc_groove(ON['PICK3'], END - .02, g=1)
     A('pad', pad([note(n) for n in ['E3', 'B3', 'E4', 'G#4', 'B4']], B1 - END, att=.01, rel=1.2, bright=2200), END, -11)
-    A('fx', shimmer([note('E5'), note('B5'), note('G#6'), note('E6')], B1 - END, 1.8), END, -12)
-    A('hit', addl(nz(impact(2.2, 1.0, .5, .5)), nz(sub_boom(2.0, 60, 30)) * .6), END, -6)
+    A('fx', shimmer([note('E5'), note('B5'), note('G#6'), note('E6')], B1 - END, 1.8), END, -16)      # (the section has the end boom)
     allm = [k for k in mix.stems if k not in ('sfx', 'hit')]
     mix.silence(ON['AI_SHATTER'] + .05, TL[20]['t0'] - .01, stems=allm, fade_ms=15)               # the beat of stillness
-    for b in ('A1', 'A2', 'A3'):                                                                   # hooks end dry, exactly
-        z = E.BLOCK_SPAN[b][1]; mix.silence(z - .015, z + .0001, stems=[k for k in mix.stems if k != 'sfx'], fade_ms=25)
+    for b in ('A1', 'A2', 'A3'):                                   # each hook bed lives only inside its own block
+        a, z = E.BLOCK_SPAN[b]; buf = mix.stems['hbed_' + b]; f = T_(.025)
+        buf[:T_(a)] = 0; buf[T_(z) - f:T_(z)] *= np.linspace(1, 0, f)[:, None]; buf[T_(z):] = 0
     mix.sidechain('pad', [t for t, _ in grid(TL[20]['t0'], END, 112, 1)], .4, .16)
 
 def cues():
@@ -290,6 +290,12 @@ def cues():
         if kind not in SFX: missing.add(kind); continue
         params = dict(params, _t=t)
         x, off, g = SFX[kind](params)
+        x = np.asarray(x, np.float32)
+        for b in ('A1', 'A2', 'A3'):                               # a hook's SFX never ring past its block end
+            a, z = E.BLOCK_SPAN[b]
+            if a <= t < z:
+                n = max(1, T_(z - (t + off))); x = x[:n].copy(); f = min(len(x), T_(.02))
+                x[len(x) - f:] *= (np.linspace(1, 0, f)[:, None] if x.ndim == 2 else np.linspace(1, 0, f))
         A('sfx', x, t + off, g + min(params.get('gain', 0), 3), pan=params.get('pan', 0))
     if missing: print('unknown cue kinds (skipped):', sorted(missing))
 
@@ -309,5 +315,7 @@ def render_split(gains, target_peak=.89):
 
 if __name__ == '__main__':
     score(); cues()
+    i, j = T_(19.10), T_(TL[20]['t0'] - .01)                       # the beat of stillness after the rule shatters
+    mix.stems['sfx'][i:j] *= np.linspace(1, 0, j - i)[:, None]
     render_split(dict(kick=.85, clap=.85, hat=.8, bass=.85, arp=.8))
     print('music ok', DUR)
