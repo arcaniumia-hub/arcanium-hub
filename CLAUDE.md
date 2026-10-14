@@ -48,4 +48,7 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - `video/lumarc-therapy/` ("Couples Therapy — for brands", comedy, ultracode): multi-take dialogue engine (several HeyGen
   takes, one per character, keyed into angles of one Higgsfield location), parts-based dialogue EDL, SFX on a separate bus.
   The owner likes HUMOR formats; one character per frame.
+- `video/lumarc-casa/` ("Edição que faz o olho ficar", PT-BR, ultracode): reusable 3D house/maquette renderer
+  (`sections/_house.py`) — the owner loves motion that literally illustrates each spoken word. Some videos are now in
+  PORTUGUESE (he says which).
 - Per-project READMEs in each `video/*/` folder explain how each film was built.
