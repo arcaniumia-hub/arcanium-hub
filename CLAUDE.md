@@ -37,6 +37,10 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - Network blocks HeyGen/Higgsfield CDNs: the owner must send files in chat (≤ ~30 MB; compress if larger).
 - Higgsfield sandbox (mcp sandbox_exec) has internet + ffmpeg: use it to generate/package assets, upload a .zip via
   media_upload (PUT with `If-None-Match: *`), give the owner the link, and he re-sends it here.
+- **Faster: pull generated images straight into the container** — in the sandbox, curl the result_url, convert to JPEG
+  (≤ ~250 KB each), then call sandbox_exec with `image_paths` (≤ 512 KiB total per call). The tool result saves each image
+  at FULL resolution as `~/.claude/projects/<session>/tool-results/mcp-Higgsfield-blob-*.jpg` → copy into src/assets.
+  (The sandbox is sometimes rate-limited: just retry later.)
 - Deliver files with SendUserFile (limit 30 MB). Media files are gitignored; commit code + small assets and push to the
   working branch after each milestone.
 
@@ -55,4 +59,7 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - `video/lumarc-casa/` ("Edição que faz o olho ficar", PT-BR, ultracode): reusable 3D house/maquette renderer
   (`sections/_house.py`) — the owner loves motion that literally illustrates each spoken word. Some videos are now in
   PORTUGUESE (he says which).
+- `video/lumarc-ia/` ("IA só faz conteúdo genérico?", PT-BR, AI-first SHOWREEL, ultracode): every phrase a different
+  technique, reusing the whole portfolio via engine paths (`E.FILMS`, `E.LOCS`, `E.house()`…); GENÉRICO stamp kit;
+  phone CTA card; score with a cheesy stock-ukulele "generic" opening.
 - Per-project READMEs in each `video/*/` folder explain how each film was built.

@@ -21,8 +21,8 @@ import engine as E
 DUR = E.DUR; TL = E.TL
 TS = lambda i: TL[i]['t0']; TE = lambda i: TL[i]['t1']
 # word onsets the score is keyed on (edit timeline; measured on src/tight16k.raw)
-ON = dict(MAXIMO=14.91, MAO_CERTA=30.25, CLONE_END=37.96, TRES=38.35, AI_FIRST=45.44, ESTRATEGIA=50.30,
-          RESULTADO=57.20, GENERICO=62.21, NOVENTA=67.55)
+ON = dict(MAXIMO=14.76, MAO_CERTA=30.25, CLONE_END=37.96, TRES=38.565, LIGHTS_ON=44.00, AI_FIRST=44.95,
+          ESTRATEGIA=50.27, RESULTADO=57.21, GENERICO=62.29, NOVENTA=68.025)
 mix = Mix(DUR)
 def nz(x, p=1.0):
     x = np.asarray(x, np.float32); return x / (np.abs(x).max() + 1e-9) * p
@@ -196,7 +196,8 @@ def lock_():
 def ff(dur=.8):
     n = T_(dur); t = tt(n); ph = (t / .07) % 1.0
     chirp = np.sin(2 * np.pi * (900 + 3200 * ph) * t) * (1 - ph) * .35
-    return ((chirp + whoosh(dur, .6, up=True)[:n] * .8) * np.minimum(1, t / .03) * np.minimum(1, (dur - t) / .1)).astype(np.float32)
+    w = whoosh(dur, .6, up=True); w = pad_to(w.mean(1) if w.ndim == 2 else w, n)
+    return ((chirp + w * .8) * np.minimum(1, t / .03) * np.minimum(1, (dur - t) / .1)).astype(np.float32)
 def counter(dur=1.0):
     n = T_(dur); out = np.zeros(n, np.float32); t = 0.0; k = 0
     while t < dur - .03:
@@ -272,6 +273,7 @@ def murmur(dur=1.5):
 SFX = {
     'whoosh': lambda c: (whoosh(.5, .7), -.35, -10),
     'swoosh_up': lambda c: (whoosh(.55, .6, up=True), -.33, -9),
+    'swoosh': lambda c: (whoosh(.45, .55, up=False), -.25, -10),
     'swipe': lambda c: (whoosh(.32, .45, up=True), -.14, -7),
     'flick': lambda c: (whoosh(.28, .35, up=True), -.1, -11),
     'zoom': lambda c: (whoosh(.32, .5, up=True), -.16, -11),
@@ -328,8 +330,9 @@ def score():
     build(TS(11) + .4, ON['MAO_CERTA'])
     trap(ON['MAO_CERTA'], TS(19) - .02, rest=(ON['CLONE_END'], ON['TRES']))
     A('hit', addl(nz(impact(1.6, 1.0, .9, .4)), nz(sub_boom(1.2, 70, 30)) * .5), ON['TRES'], -6)
-    groove(TS(19), TS(27) - .02, thin=(TS(21), ON['ESTRATEGIA'] - .05))
-    A('hit', addl(nz(impact(2.0, 1.1, .8, .5)), nz(braam(note('E1'), 1.4, .7)) * .5), TS(19), -6)
+    # LUMARC: the stage goes dark on the cut (43.40, the section's 'switch'), the lights slam on at "-MARC" -> groove
+    groove(ON['LIGHTS_ON'], TS(27) - .02, thin=(TS(21), ON['ESTRATEGIA'] - .05))
+    A('hit', addl(nz(impact(2.0, 1.1, .8, .5)), nz(braam(note('E1'), 1.4, .7)) * .5), ON['LIGHTS_ON'], -6)
     A('hit', addl(nz(impact(2.2, 1.2, .9, .5)), nz(sub_boom(1.6, 64, 28)) * .6), ON['RESULTADO'], -5)
     punchy(TS(28), TS(31) - .02)
     A('hit', addl(nz(impact(2.4, 1.2, 1.0, .6)), nz(braam(note('A1'), 1.6, .9)) * .5), ON['GENERICO'], -5)
@@ -346,7 +349,8 @@ def score():
     # hard silences: the record scratch, "O resultado?", the clone pause
     allm = lambda: [k for k in mix.stems if k not in ('sfx', 'hit')]
     mix.silence(TS(3) - .02, TS(3) + .30, stems=allm(), fade_ms=10)
-    mix.silence(TS(27) - .02, TS(28) - .04, stems=[k for k in allm() if k not in ('pad', 'fx')], fade_ms=12)
+    mix.silence(TS(27) - .02, TS(28) - .04, stems=allm(), fade_ms=12)                 # "O resultado?" (one hit)
+    mix.silence(TS(19) - .02, ON['LIGHTS_ON'] - .01, stems=allm(), fade_ms=12)        # the dark stage before "-MARC"
     mix.sidechain('pad', [t for t, _ in grid(ON['MAO_CERTA'], END, 112, 1)], .4, .16)
 
 def cues():
