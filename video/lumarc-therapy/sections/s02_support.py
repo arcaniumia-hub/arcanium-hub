@@ -12,7 +12,7 @@
 9.333 CUT to Kevin MS for "That's not true!"; 2-frame snap push on "TRUE!" (9.80), anchored on his face, low thud.
 All takes go through K.show() (clean matte: no cream outline / green fringe, which the CUs made obvious).
 Measured onsets (voice16k.raw): MY 3.05 · INSTAGRAM 3.37 · DOESN'T 3.75 · SUPPORT 4.04 · ME 4.40 · ANYMORE 4.52 ·
-SUPPORT 5.63 · YOU? 6.27 · YOU 7.07 · ONLY 7.16 · TALK 7.58 · TO 7.84 · ME 7.90 · WHEN 8.12 · YOU 8.28 · NEED 8.44 ·
+SUPPORT 5.63 · YOU? 6.27 · YOU 7.07 · ONLY 7.32 · TALK 7.58 · TO 7.84 · ME 7.90 · WHEN 8.12 · YOU 8.28 · NEED 8.44 ·
 SOMETHING 8.72 · THAT'S 9.37 · NOT 9.59 · TRUE! 9.80
 """
 import engine as E

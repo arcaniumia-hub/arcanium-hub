@@ -25,6 +25,9 @@ F_I = 57       # 1.900  Instagram cutaway (TWO 1.92)
 F_T2 = 72      # 2.400  back to the therapist (TODAY? 2.43)
 CUTS = [F_T1 / FPS, F_K / FPS, F_I / FPS, F_T2 / FPS]
 CHIP_Y = 1160
+I_OPEN = 35.0      # Instagram's silent reaction material (src 34.7-36.2: chin up, side-eye, arms crossed, mouth shut)
+Z_OPEN, OPEN_Y = 1.02, 300.
+TITLE_Y = 1150     # centre of the title block: kicker ~1000, big lines ~1060-1290, clear of the face and the caption
 
 CUES = [
     (0.02, 'thud', {'gain': -2}),                 # the prestige title lands (nudged off 0.00 so the attack survives)
@@ -38,14 +41,13 @@ def t_src(t): return L0['s0'] + (t - L0['t0'])
 def draw(ctx, lt, t):
     f = K.fr(t)
     if f < F_T1:
-        # ---------------- cold open: the empty office + title
-        ctx.shot.update(show=False, angle='wide')
+        # ---------------- cold open: Instagram's silent offended side-eye + the premise title (the hook frame)
+        K.show(ctx, 'I', I_OPEN + t, 'I')
         k = t / (F_T1 / FPS)
-        ctx.cam.update(z=1.0 + .055 * k, x=560., y=980.)
-        ctx.bg_dim = .40
-        ctx.post.update(vignette=.55, sat=.92)
-        ti = K.title_layer(t, F_T1 / FPS, sub='Kevin & his Instagram')
-        ctx.add('screen', ti, W / 2, 860)
+        ctx.cam.update(z=Z_OPEN + .05 * k, x=K.FACE['I'][0], y=OPEN_Y)
+        ctx.wrap = K.dim_wrap()
+        ctx.post.update(vignette=.50, sat=.92)
+        ctx.add('screen', K.hook_title(t, F_T1 / FPS), W / 2, TITLE_Y)
     elif f < F_K:
         # ---------------- therapist, first sight: "what brings…"
         K.show(ctx, 'T', t_src(t), 'T')

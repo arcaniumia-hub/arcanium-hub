@@ -16,12 +16,13 @@ LAV = (164, 142, 255)
 MEASURED = {
     0: [('SO…', .42), ('WHAT', 1.13), ('BRINGS', 1.43), ('YOU', 1.75), ('TWO', 1.92), ('HERE', 2.14), ('TODAY?', 2.43)],
     1: [('MY', 3.05), ('INSTAGRAM', 3.37), ("DOESN'T", 3.75), ('SUPPORT', 4.04), ('ME', 4.40), ('ANYMORE.', 4.52)],
-    2: [('SUPPORT', 5.63), ('YOU?', 6.27), ('YOU', 7.07), ('ONLY', 7.16), ('TALK', 7.58), ('TO', 7.84), ('ME', 7.90),
+    2: [('SUPPORT', 5.63), ('YOU?', 6.27), ('YOU', 7.07), ('ONLY', 7.32), ('TALK', 7.58), ('TO', 7.84), ('ME', 7.90),
         ('WHEN', 8.12), ('YOU', 8.28), ('NEED', 8.44), ('SOMETHING.', 8.72)],
     3: [("THAT'S", 9.37), ('NOT', 9.59), ('TRUE!', 9.80)],
 }
 # review notes (A_review): DOESN'T = the /d/ release after the dip at 3.745 (was 3.80); ME = the voiced /m/-/i/ after
-# the long /t/ aspiration of "support" 4.30-4.40 (was 4.31, 3 frames early); NEED = /n/ after the /u/ of "you"
+# the long /t/ aspiration of "support" 4.30-4.40 (was 4.31, 3 frames early); ONLY = F1 jump of the /o/ at 7.32 (polish_sync: 7.16-7.32 is still
+# the /ju/ glide of "you", F2 ~2700 -> 1000 Hz; was 7.16, 5 frames early); NEED = /n/ after the /u/ of "you"
 # (centroid track; vowel at 8.50); WHEN = the /w/ glide (centroid falls from 8.11). YOU? 6.27 verified: 5.92-6.07 is
 # the aspirated /p/, 6.09-6.24 "-or-", the /t/ flap 6.25-6.28, then "you?" with the rising question pitch 180->207 Hz.
 def wt(seg, text, nth=0):
@@ -209,37 +210,64 @@ def chip(ctx, t, t_in, t_out, name, desc='', x=84, y=1196, layer='screen', speed
     if a_out < 1: big = E.fade(big, a_out)
     ctx.add(layer, big, x - hp + dx_out, y - hp, center=False)
 
-# ------------------------------------------------------------------ prestige title card
-def title_layer(t, t_end, sub=None):
-    """'COUPLES / THERAPY' with a small 'SESSION 1' between lavender rules. Crisp from frame 0 (the hook frame);
-    life comes from a slow tracking drift, the rules drawing outward and a faint light sweep across the letters."""
-    drift = t / max(.5, t_end)
-    tr = .15 + .045 * drift
-    l1 = spaced('COUPLES', 150, 260, tr); l2 = spaced('THERAPY', 150, 260, tr)
-    s1 = spaced('SESSION 1', 34, 560, .52, col=(236, 228, 255))
-    wmax = max(l1.width, l2.width) + 60
-    lead = 34
-    h = s1.height + 40 + l1.height + lead + l2.height + 60 + (110 if sub else 0)
-    im = Image.new('RGBA', (wmax + 120, h + 80), (0, 0, 0, 0)); cx = im.width // 2; y = 40
-    im.alpha_composite(s1, (cx - s1.width // 2, y))
-    d = ImageDraw.Draw(im); rl = int(64 * E.eout(E.clamp(.35 + t / .5))); ry = y + s1.height // 2
+# ------------------------------------------------------------------ hook title card (over Instagram's side-eye)
+TITLE_BIG = 104          # 'HIS INSTAGRAM' ~870 px wide (inside the 80-1000 safe area)
+IG_GRAD = [(214, 150, 255), (255, 118, 186), (255, 178, 104)]   # engine SPK_GRAD['I'], lifted for the dark hoodie
+def _hook_art():
+    """static art of the hook title: small kicker 'COUPLES THERAPY · SESSION 1' (lavender ticks), then the premise in
+    big type 'KEVIN & / HIS INSTAGRAM' ('&' in LUMARC lavender). Returns (rgba, y of the big lines' top, kicker rule y,
+    kicker half width)."""
+    def mk():
+        kick = spaced('COUPLES THERAPY  ·  SESSION 1', 34, 560, .24, col=(236, 228, 255))
+        l1a = spaced('KEVIN', TITLE_BIG, 700, .05); amp = spaced('&', TITLE_BIG, 500, 0., col=LAV)
+        l2 = spaced('HIS INSTAGRAM', TITLE_BIG, 700, .05)
+        # 'INSTAGRAM' in his own hoodie gradient (violet -> pink -> orange): the word points at the man on screen
+        f = E.font(TITLE_BIG, 700); xs = int(4 + sum(f.getlength(c) for c in 'HIS ') + .05 * TITLE_BIG * 4) - 3
+        g = E.gradient(l2.width - xs, l2.height, IG_GRAD).convert('RGBA'); g.putalpha(l2.getchannel('A').crop((xs, 0, l2.width, l2.height)))
+        l2.paste(g, (xs, 0))
+        gap_amp = int(TITLE_BIG * .26)
+        w1 = l1a.width + gap_amp + amp.width
+        wmax = max(kick.width + 2 * 70, w1, l2.width)
+        lead = int(TITLE_BIG * .16)
+        h = kick.height + 40 + l1a.height + lead + l2.height
+        im = Image.new('RGBA', (wmax + 40, h + 40), (0, 0, 0, 0)); cx = im.width // 2; y = 20
+        im.alpha_composite(kick, (cx - kick.width // 2, y)); ry = y + kick.height // 2
+        y += kick.height + 40; ytop = y
+        x = cx - w1 // 2; im.alpha_composite(l1a, (x, y))
+        im.alpha_composite(amp, (x + l1a.width + gap_amp, y + (l1a.height - amp.height)))
+        y += l1a.height + lead
+        im.alpha_composite(l2, (cx - l2.width // 2, y))
+        return im, ytop, ry, kick.width // 2
+    return E.cached(('A_hook_art', TITLE_BIG), mk)
+
+def hook_title(t, t_end):
+    """the hook title, crisp from frame 0. Life: lavender ticks draw outward beside the kicker, a slow 2.5 % scale
+    drift and a faint warm light sweep across the letters (window light catching the type)."""
+    art, ytop, ry, kw = _hook_art(); k = E.clamp(t / max(.5, t_end))
+    im = art.copy(); d = ImageDraw.Draw(im); cx = im.width // 2
+    rl = int(46 * E.eout(E.clamp(.35 + t / .5)))
     if rl > 1:
-        d.line((cx - s1.width // 2 - 22 - rl, ry, cx - s1.width // 2 - 22, ry), fill=LAV + (230,), width=2)
-        d.line((cx + s1.width // 2 + 22, ry, cx + s1.width // 2 + 22 + rl, ry), fill=LAV + (230,), width=2)
-    y += s1.height + 40
-    y1 = y; im.alpha_composite(l1, (cx - l1.width // 2, y)); y += l1.height + lead
-    im.alpha_composite(l2, (cx - l2.width // 2, y)); y += l2.height + 36
-    rw = int(90 * E.eout(E.clamp(.3 + t / .6)))
-    d.line((cx - rw, y, cx + rw, y), fill=CREAM + (120,), width=2)
-    if sub:     # episode line: the absurd couple, named in the hook frame
-        sb = E.cached(('A_title_sub', sub), lambda: spaced(sub, 50, 380, .035, col=(240, 233, 222)))
-        y += 34; im.alpha_composite(sb, (cx - sb.width // 2, y))
-    # faint diagonal light sweep through the letters (warm, like window light catching the type)
+        d.line((cx - kw - 18 - rl, ry, cx - kw - 18, ry), fill=LAV + (235,), width=3)
+        d.line((cx + kw + 18, ry, cx + kw + 18 + rl, ry), fill=LAV + (235,), width=3)
     A = np.asarray(im.getchannel('A'), np.float32) / 255
     yy, xx = np.mgrid[0:im.height, 0:im.width].astype(np.float32)
-    pos = -300 + (im.width + 600) * E.clamp(t / max(.5, t_end))
-    band = np.exp(-(((xx + .45 * (yy - y1)) - pos) / 90) ** 2) * .55
+    pos = -300 + (im.width + 600) * k
+    band = np.exp(-(((xx + .45 * (yy - ytop)) - pos) / 90) ** 2) * .45
     rgb = np.asarray(im.convert('RGB'), np.float32)
     rgb = rgb + (np.array((255, 236, 205), np.float32) - rgb) * (band * (A > 0))[..., None]
     im = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8)).convert('RGBA'); im.putalpha(Image.fromarray((A * 255).astype(np.uint8)))
-    return soft_shadow(im, blur=30, op=.50, grow=4)
+    s = 1.0 + .025 * k
+    if s > 1.001: im = im.resize((int(im.width * s), int(im.height * s)), Image.BICUBIC)
+    return soft_shadow(im, blur=26, op=.62, grow=6)
+
+def dim_wrap(top=.86, mid=.46, y0=560, y1=900, bot=.52):
+    """ctx.wrap: darken the WORLD (not chips/captions/title) with a vertical ramp: face zone ~top, title zone ~mid."""
+    def mk():
+        ys = np.arange(H, dtype=np.float32)
+        g = np.where(ys < y0, top, np.where(ys < y1, top + (mid - top) * np.clip((ys - y0) / (y1 - y0), 0, 1) ** .8,
+                     mid + (bot - mid) * np.clip((ys - 1500) / 420, 0, 1)))
+        col = np.repeat((g * 255).astype(np.uint8)[:, None], W, 1)
+        return Image.merge('RGB', [Image.fromarray(col)] * 3)
+    m = E.cached(('A_dim_ramp', top, mid, y0, y1, bot), mk)
+    from PIL import ImageChops
+    return lambda fr: ImageChops.multiply(fr.convert('RGB'), m).convert('RGBA')

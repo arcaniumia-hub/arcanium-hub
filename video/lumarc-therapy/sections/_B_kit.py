@@ -424,7 +424,7 @@ def ig_bars(S=1):
         return im.convert('RGB')
     return E.cached(('B_igbars', S), mk)
 
-def ig2021_content(S=1, extra=120):
+def ig2021_content(S=1, extra=160):
     """the scrolling content under the bars (y from IG['head']): @kevinsbakery's last post + the older one (the flyer)
     peeking in below. RGB, W*S x (H - head + extra)*S."""
     def mk():
@@ -455,10 +455,12 @@ def ig2021_content(S=1, extra=120):
         return im.convert('RGB')
     return E.cached(('B_igcontent', S, extra), mk)
 
-def ig2021_screen(scroll=0.0, z=1.0, anchor=(16, 1565)):
-    """RGB 1080x1920 frame of the post screen: content scrolled by `scroll` px (negative = still moving up into
-    place) under the fixed bars, the whole screen punched in by z about `anchor` (screen px). z > 1 samples the 2x
-    render, so the type stays crisp."""
+def ig2021_screen(scroll=0.0, z=1.0, anchor=(16, 1488)):
+    """RGB 1080x1920 frame of the post screen: content scrolled by `scroll` px (negative = content shifted up by
+    -scroll px; -160 at most) under the fixed bars, the whole screen punched in by z about `anchor` (screen px).
+    z > 1 samples the 2x render, so the type stays crisp.
+    B_polish: s03 rests at scroll -90 (the post header sits exactly under the nav bar, the photo starts right under
+    it) so the date line and the kinetic caption under it stay above the Reels caption band (y <= 1640)."""
     S = 2 if z > 1.001 else 1
     sy = int(round(-scroll * S)); key = ('B_igfull_last', S)
     hit = E._C.get(key)
