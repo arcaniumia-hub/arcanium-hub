@@ -7,6 +7,7 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - Colours: night bg `#0e0e14`, gradient `#4f6bff → #6a55ff → #9a4dff`, white `#faf9f6`, muted `#a6a6b8`.
 - Font **Outfit** (`video/*/fonts/outfit.woff2`). Logo: `video/silence-motion/img/logo.png` (640×218 RGBA).
 - Taglines: "Be seen. Be remembered." · CTA keyword: **Comment "LUMARC"** / "VIDEO" / "CLONE" (comment beats DM for reach).
+- Contact phone (used as CTA when he asks for "entre em contato"): **(854) 295-2249** — show on screen; avatars mis-speak digits.
 - Every video ends with a LUMARC CTA card. Never say a specific video/product is AI-made — **except** the clone skit
   (the clone being AI is the openly stated joke) and the brand positioning below.
 - Positioning (from Oct 2026): LUMARC openly presents itself as an **AI-first studio — "AI-first. Not AI-only."** (AI does
