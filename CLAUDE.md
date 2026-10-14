@@ -7,8 +7,11 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - Colours: night bg `#0e0e14`, gradient `#4f6bff → #6a55ff → #9a4dff`, white `#faf9f6`, muted `#a6a6b8`.
 - Font **Outfit** (`video/*/fonts/outfit.woff2`). Logo: `video/silence-motion/img/logo.png` (640×218 RGBA).
 - Taglines: "Be seen. Be remembered." · CTA keyword: **Comment "LUMARC"** / "VIDEO" / "CLONE" (comment beats DM for reach).
-- Every video ends with a LUMARC CTA card. Never say a video/product is AI-made — **except** the clone skit, where the
-  clone being AI is the openly stated joke/product.
+- Every video ends with a LUMARC CTA card. Never say a specific video/product is AI-made — **except** the clone skit
+  (the clone being AI is the openly stated joke) and the brand positioning below.
+- Positioning (from Oct 2026): LUMARC openly presents itself as an **AI-first studio — "AI-first. Not AI-only."** (AI does
+  the heavy lifting, the team brings taste). Benefits: faster delivery, lower cost, big-agency quality. **Never cite
+  specific prices or deadlines** (only "faster" / "costs less").
 
 ## The owner's taste (what got "Esse é o nível que eu quero!")
 - `video/lumarc-showcase/` is the reference standard: talking head keyed from green into his own purple-monitor
