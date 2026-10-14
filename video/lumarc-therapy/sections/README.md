@@ -37,9 +37,9 @@ Run everything from `video/lumarc-therapy/` with `python3`.
 | 14 | 36.84–39.24 | K | I sell croissants, not movies! | s07 |
 | 15 | 39.58–42.78 | T | Kevin… your croissants deserve a movie. | s07 |
 | — | 42.90–46.50 | — | THE MOVIE (no dialogue) | s07 |
-| 16 | 46.50–50.26 | I | …Oh. OH. Okay… I'm listening. | s08 |
-| 17 | 50.66–57.62 | T | If your Instagram stopped talking to you… comment "LUMARC". We do couples therapy. For brands. | s08 |
-| — | 57.62–60.22 | — | end card | s08 |
+| 16 | 46.50–49.18 | I | …Oh. OH. Okay… I'm listening. (4 parts, pauses tightened) | s08 |
+| 17 | 49.58–57.30 | T | If your Instagram stopped talking to you… comment "LUMARC". We do couples therapy. For brands. | s08 |
+| — | 57.30–59.90 | — | end card | s08 |
 
 Word onsets: `E.word_time('FLYER')` is an automatic estimate (often 0.1–0.5 s off, worst inside lines with long
 internal pauses such as 4, 13, 16, 17). **Measure the onsets you key effects on** from `src/voice16k.raw` (mono 16 kHz
