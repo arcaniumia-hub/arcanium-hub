@@ -36,11 +36,11 @@ def rhodes(midis, dur):
     for m in midis:
         f = mtof(m); x += (np.sin(2 * np.pi * f * t) + .25 * np.sin(2 * np.pi * 2 * f * t) * np.exp(-t / .25) + .08 * np.sin(2 * np.pi * 7 * f * t) * np.exp(-t / .04))
     trem = 1 + .18 * np.sin(2 * np.pi * 4.2 * t)
-    return (x / len(midis) * np.exp(-t / 1.6) * np.minimum(1, t / .004) * trem * .5).astype(np.float32)
+    return (x / len(midis) * np.exp(-t / 1.6) * np.minimum(1, t / .004) * np.minimum(1, (dur - t) / .04) * trem * .5).astype(np.float32)
 def upright(midi, dur):
     n = T(dur); t = tt(n); f = mtof(midi)
     x = np.sin(2 * np.pi * f * t) + .3 * np.sin(4 * np.pi * f * t) * np.exp(-t / .15)
-    return (lp(x, 900) * np.exp(-t / .5) * np.minimum(1, t / .006) * .6).astype(np.float32)
+    return (lp(x, 900) * np.exp(-t / .5) * np.minimum(1, t / .006) * np.minimum(1, (dur - t) / .03) * .6).astype(np.float32)
 def brush(dur=.25, g=1.0):
     n = T(dur); t = tt(n); return (bp(noise(n), 1800, 8000) * np.minimum(1, t / .03) * np.exp(-t / .09) * .25 * g).astype(np.float32)
 def lounge(a, z, g=0.0, sfx='', bright=1.0):
@@ -59,7 +59,7 @@ def lounge(a, z, g=0.0, sfx='', bright=1.0):
 # ------------------------------------------------------------------ comedic SFX
 def crickets(dur):
     n = T(dur); t = tt(n); env = np.zeros(n, np.float32)
-    for g0 in np.arange(0, dur, .55):
+    for g0 in np.arange(0, dur, .30):
         for c in range(3):
             s = T(g0 + c * .045); e = min(n, s + T(.03)); env[s:e] = np.hanning(e - s) if e > s else 0
     return (np.sin(2 * np.pi * 4600 * t) * env * .4).astype(np.float32)
@@ -94,7 +94,7 @@ SFX = {
     'boom': lambda c: (addl(nz(impact(2.6, 1.2, .8, .6)), nz(braam(note('D1'), 2.2, .7)) * .5), 0, -5),
     'braam': lambda c: (braam(note(c.get('note', 'D1')), c.get('dur', 2.4), 1.0), 0, -5),
     'taiko': lambda c: (taiko(1.2), 0, -6),
-    'thud': lambda c: (heartbeat(.5, 60, 1.0), 0, -8),
+    'thud': lambda c: (addl(heartbeat(.5, 60, 1.0), nz(tom(note('A2'), .3), .45)), 0, -8),
     'tick': lambda c: (tick(2600, .05, .6), 0, -16),
     'clock': lambda c: (clock_tick(c.get('i', 0)), 0, -14),
     'pop': lambda c: (glock(note('E6'), .4), 0, -16),
@@ -107,7 +107,7 @@ SFX = {
     'scratch': lambda c: (scratch(.45), 0, -8),                    # record scratch
     'crickets': lambda c: (crickets(c.get('dur', 1.5)), 0, -20),
     'trombone': lambda c: (sad_trombone(), 0, -12),               # wah-wah-wah-waaah
-    'sting': lambda c: (sting(), 0, -9),                          # dun dun DUNNN
+    'sting': lambda c: (sting(), 0, -4),                          # dun dun DUNNN
     'tissue': lambda c: (tissue(), 0, -14),
     'riser': lambda c: (riser(max(.3, c.get('to', 0) - c['_t']), 300, 6000, .9, .4), 0, -12),
     'shimmer': lambda c: (shimmer([note('D5'), note('A5'), note('F#6')], 1.6, .8), 0, -15),
@@ -119,17 +119,24 @@ SFX = {
 def score():
     M0, M1 = MOVIE
     lounge(0.0, TS(10) - .05, 7)                                       # the session…
-    # "…Creative?" -> dead air (crickets come from the section cue) until "My algorithm cried."
-    lounge(TS(11) - .02, M0 - .30, 8)                                    # …continues to the movie
+    # "…Creative?" -> hard stop, dead air (crickets from the section cue), "My algorithm cried." lands dry;
+    # the lounge comes back under the therapist's "Instagram,"
+    lounge(TS(12) - .05, M0 - .30, 8)                                    # …continues to the movie
+    mix.silence(TE(10) - .02, TS(12) - .05, stems=('keys', 'bass', 'drums'), fade_ms=20)
+    # SEVEN: the music drops out for the dun-dun-DUNNN and returns after the therapist's "Kevin…"
+    mix.silence(21.62, 23.46, stems=('keys', 'bass', 'drums'), fade_ms=30)
     for k in ('keys', 'bass', 'drums'):
-        if k in mix.stems: mix.stems[k][T(M0 - .30):] *= 0
-    # the MOVIE: trailer treatment
-    A('trailer', braam(note('D1'), 2.0, 1.0), M0, -4)
+        if k in mix.stems:
+            mix.stems[k][T(M0 - .34):T(M0 - .30)] *= np.linspace(1, 0, T(.04))[:, None]; mix.stems[k][T(M0 - .30):] *= 0
+    # the MOVIE: trailer treatment — BWAAM, hit, hit, hit, (suck-out) TITLE
+    A('trailer', braam(note('D1'), 1.1, 1.0), M0, -4)
     A('trailer', taiko(1.2), M0 + .02, -7)
-    A('trailer', pad([note('D3'), note('A3'), note('F4')], M1 - M0, att=.3, rel=.4, bright=1600), M0, -12)
-    A('trailer', riser(M1 - M0 - 1.3, 250, 7000, 1., .5), M0 + .3, -12)
-    for k, at in enumerate((M0 + 1.15, M0 + 1.75, M0 + 2.2)): A('trailer', taiko(1.0), at, -8 - k)
+    A('tbed', pad([note('D3'), note('A3'), note('F4')], M1 - M0, att=.3, rel=.4, bright=1600), M0, -17)
+    A('tbed', riser(M1 - M0 - 1.45, 250, 7000, 1., .5), M0 + .3, -12)
+    for k, at in enumerate((M0 + 1.15, M0 + 1.75, M0 + 2.2)): A('trailer', taiko(1.0), at, (-4, -4, -3)[k])
     A('trailer', addl(nz(impact(2.4, 1.2, .9, .6)), nz(braam(note('D1'), 1.6, .9)) * .6), M1 - 1.15, -3)
+    mix.sidechain('tbed', [M0 + 1.15, M0 + 1.75, M0 + 2.2, M1 - 1.15], .7, .15)
+    mix.silence(M1 - 1.29, M1 - 1.155, stems=('trailer', 'tbed'), fade_ms=8)
     # after the movie: bright session groove under "I'm listening" + CTA
     lounge(TS(16) + .5, E.VOICE_END - .05, 4, sfx='2', bright=1.2)
     A('pad', pad([note(n) for n in ['D3', 'A3', 'D4', 'F#4', 'A4']], DUR - E.VOICE_END, att=.01, rel=1.4, bright=2200), E.VOICE_END, -11)
@@ -142,8 +149,20 @@ def cues():
         if kind not in SFX: missing.add(kind); continue
         params = dict(params, _t=t)
         x, off, g = SFX[kind](params)
-        A('sfx', x, t + off, g + params.get('gain', 0), pan=params.get('pan', 0))
+        gain = min(params.get('gain', 0), 0 if kind == 'type' else 2)     # SFX are no longer ducked: undo old boosts
+        A('sfx', x, t + off, g + gain, pan=params.get('pan', 0))
     if missing: print('unknown cue kinds (skipped):', sorted(missing))
+
+def render_split(gains, target_peak=.89):
+    """score -> music.wav and the per-hit SFX -> sfx.wav, at one common scale (so their balance is kept); the mux ducks
+    the music under the voice hard and the SFX only gently, so on-word hits still punch."""
+    stems = {k: v * gains.get(k, 1.0) for k, v in mix.stems.items()}
+    sfx = stems.pop('sfx', np.zeros((mix.n, 2), np.float32)); music = sum(stems.values())
+    scale = target_peak / (np.abs(music + sfx).max() + 1e-9)
+    tail = np.linspace(1, 0, T(.3))[:, None]
+    for x, name in ((music, 'music.wav'), (sfx, 'sfx.wav')):
+        y = np.tanh(x * scale * 1.1) / 1.1; y[-T(.3):] *= tail
+        write(y, os.path.join(HERE, name))
 
 def write(x, path):
     x = np.asarray(x, np.float32)
@@ -172,16 +191,21 @@ def ambience():
 
 def mux():
     out = os.path.join(E.OUT, 'lumarc-therapy.mp4')
+    M0, M1 = MOVIE; ve = E.VOICE_END - .06
+    boost = f"if(between(t,{M0 - .06:.2f},{M1:.2f}),1.8,if(gte(t,{ve:.2f}),2.4,1))"        # movie +5 dB, end card +7.6 dB
     af = ('[0:a]aresample=48000,acompressor=threshold=-22dB:ratio=3:attack=6:release=90:makeup=3,'
-          'apad=whole_dur=%.2f,asplit=2[v][key];[1:a]volume=0.32[m];[m][key]sidechaincompress=threshold=0.04:ratio=6:attack=15:release=300[md];'
-          '[2:a]volume=1.0[am];[v][md][am]amix=inputs=3:normalize=0,loudnorm=I=-14:TP=-1.2:LRA=11[a]' % DUR)
+          'apad=whole_dur=%.2f,asplit=3[v][key][key2];' % DUR +
+          f"[1:a]volume='0.32*{boost}':eval=frame[m];[m][key]sidechaincompress=threshold=0.04:ratio=6:attack=15:release=300[md];"
+          f"[3:a]volume='0.32*{boost}':eval=frame[s];[s][key2]sidechaincompress=threshold=0.1:ratio=2:attack=10:release=200[sd];"
+          '[2:a]volume=1.0[am];[v][md][am][sd]amix=inputs=4:normalize=0,loudnorm=I=-14:TP=-1.2:LRA=11[a]')
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(E.SRC, 'voice_room.wav'), '-i', os.path.join(HERE, 'music.wav'),
-                    '-i', os.path.join(E.SRC, 'amb.wav'), '-filter_complex', af, '-map', '[a]', '-c:a', 'pcm_s16le', '-ar', '48000',
-                    os.path.join(E.OUT, 'mix.wav')], check=True)
+                    '-i', os.path.join(E.SRC, 'amb.wav'), '-i', os.path.join(HERE, 'sfx.wav'), '-filter_complex', af, '-map', '[a]',
+                    '-c:a', 'pcm_s16le', '-ar', '48000', os.path.join(E.OUT, 'mix.wav')], check=True)
     kb = min(14000, int(28.6 * 8 * 1024 / DUR) - 192)                      # 2-pass to land under the 30 MB chat limit
     for ps in (1, 2):
         cmd = ['ffmpeg', '-v', 'error', '-y', '-i', os.path.join(E.OUT, 'video.mp4'), '-i', os.path.join(E.OUT, 'mix.wav'), '-map', '0:v', '-map', '1:a',
-               '-c:v', 'libx264', '-preset', 'slow', '-b:v', f'{kb}k', '-pass', str(ps), '-passlogfile', os.path.join(E.OUT, 'x264'),
+               '-c:v', 'libx264', '-preset', 'slow', '-tune', 'film', '-x264-params', 'aq-mode=3:aq-strength=1.0:deblock=-1,-1',
+               '-b:v', f'{kb}k', '-pass', str(ps), '-passlogfile', os.path.join(E.OUT, 'x264'),
                '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-c:a', 'aac', '-b:a', '192k', '-t', f'{DUR:.3f}']
         subprocess.run(cmd + (['-f', 'mp4', '/dev/null'] if ps == 1 else [out]), check=True)
     print(out, os.path.getsize(out) / 1e6, 'MB')
@@ -190,5 +214,5 @@ if __name__ == '__main__':
     if len(sys.argv) > 1 and sys.argv[1] == 'mux': mux()
     else:
         voice_room(); ambience(); score(); cues()
-        mix.render(os.path.join(HERE, 'music.wav'), gains=dict(bass=.9, drums=.8))
+        render_split(gains=dict(bass=.9, drums=.8))
         print('sound ok', DUR)

@@ -2,6 +2,8 @@
 instagram.mp4, 25 fps), one line at a time, in story order.
 
 LINE = (speaker, src_in, src_out, caption, gap_before)
+  src_in may instead be a list of PARTS [(a, b[, gain_db]), …] (src_out None): the parts play back to back (internal
+  pauses tightened); each part start is a jump in the take — hide it with a snap/zoom.
   speaker  'T' therapist · 'K' Kevin (bakery owner) · 'I' his Instagram
   caption  '|' page breaks, '*' emphasis
   gap_before  seconds of silence on the edit timeline before the line starts (comedic timing)
@@ -31,8 +33,9 @@ LINES = [
     ('I', 23.40, 28.74, "*Consistency. | Good *lighting. | *Reels. | Is that too much | to ask?", .24),
     ('K', 16.08, 18.46, "I sell croissants, | not *movies!", .14),
     ('T', 12.80, 15.98, "Kevin… | your croissants | deserve a *movie.", .34),
-    ('I', 30.96, 34.72, "…Oh. | *OH. | Okay… | I'm *listening.", None),     # gap = after the MOVIE insert
-    ('T', 17.86, 25.92, "If your Instagram | stopped talking | to you… | comment | *“LUMARC”. | We do | couples therapy. | For *brands.", .40),
+    ('I', [(30.96, 31.72, -3.5), (32.12, 32.66), (32.98, 33.72), (34.08, 34.72)], None,
+     "…Oh. | *OH. | Okay… | I'm *listening.", None),     # gap = after the MOVIE insert; pauses tightened (parts)
+    ('T', [(17.86, 23.20), (23.56, 25.92)], None, "If your Instagram | stopped talking | to you… | comment | *“LUMARC”. | We do | couples therapy. | For *brands.", .40),
 ]
 MOVIE_AFTER = 15      # the croissant "movie" plays after this line …
 MOVIE_LEN = 3.60      # … for this long (no dialogue), then line 16 starts
@@ -43,9 +46,13 @@ def build():
     for i, (spk, s0, s1, cap, gap) in enumerate(LINES):
         if gap is None: gap = 0.0
         t = round(t + gap, 2)
-        s0, s1 = snap(s0), snap(s1); d = round(s1 - s0, 2)
-        out.append(dict(i=i, spk=spk, s0=s0, s1=s1, t0=t, t1=round(t + d, 2), cap=cap))
-        t = round(t + d, 2)
+        rngs = s0 if isinstance(s0, list) else [(s0, s1)]
+        parts = []; u = t
+        for r in rngs:
+            a, b = snap(r[0]), snap(r[1]); parts.append(dict(s0=a, s1=b, t0=u, t1=round(u + b - a, 2), gain=r[2] if len(r) > 2 else 0.0))
+            u = round(u + b - a, 2)
+        out.append(dict(i=i, spk=spk, s0=parts[0]['s0'], s1=parts[-1]['s1'], t0=t, t1=u, cap=cap, parts=parts))
+        t = u
         if i == MOVIE_AFTER:
             out[-1]['movie'] = (t + .12, t + .12 + MOVIE_LEN); t = round(t + .12 + MOVIE_LEN, 2)
     return out

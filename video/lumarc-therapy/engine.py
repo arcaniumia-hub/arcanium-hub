@@ -284,6 +284,7 @@ def graded(spk, src_t, angle=None):
     im.putalpha(a8)
     _C[('graded_last', spk, angle)] = (f, im); return im
 
+LAMP_ON = 33.067                  # s06 switches the floor lamp on (Instagram's angle) on 'Good lighting'
 def line_at(t):
     """index of the line whose PICTURE owns t (a line's shot starts at its t0 = the section/segment boundary)."""
     k = None
@@ -296,7 +297,16 @@ def default_shot(t):
     if i is None: return None
     s_ = TL[i]
     if 'movie' in s_ and t >= s_['movie'][0]: return None
-    return dict(spk=s_['spk'], src=s_['s0'] + (t - s_['t0']), angle=s_['spk'])
+    pt = s_['parts'][0]
+    for p_ in s_['parts']:
+        if t >= p_['t0'] - 1e-6: pt = p_
+    return dict(spk=s_['spk'], src=pt['s0'] + (t - pt['t0']), angle=s_['spk'])
+def src_at(i, t):
+    """source second of line i's take at timeline t (follows the line's parts; past the end it keeps running)."""
+    s_ = TL[i]; pt = s_['parts'][0]
+    for p_ in s_['parts']:
+        if t >= p_['t0'] - 1e-6: pt = p_
+    return pt['s0'] + (t - pt['t0'])
 
 # ---------------------------------------------------------------- building blocks for sections
 def glass_panel(w, h, radius=36, tint=(255, 255, 255), alpha=.10, border=.45, shine=True):
@@ -470,6 +480,7 @@ def cap_word(text, size, spk=None):
     return _cache(('capw', text, size, spk), mk)
 
 # ---------------------------------------------------------------- post FX
+GRAIN_K = float(os.environ.get('GRAIN_K', '1'))     # delivery renders use less synthetic grain (30 MB encode)
 _grain = [np.random.default_rng(i).normal(0, 6.5, (H // 2, W // 2, 1)).astype(np.float32) for i in range(6)]
 _yy, _xx = np.mgrid[0:H, 0:W].astype(np.float32)
 _R2 = (((_xx - W / 2) / (W * .7)) ** 2 + ((_yy - H * .45) / (H * .7)) ** 2)
@@ -492,7 +503,7 @@ def post(img, P, t):
     if P['bright'] != 1: a = a * P['bright']
     if P['flash'] > .01: a = a + (np.array(P['flash_col'], np.float32) - a) * P['flash']
     a = a * (1 - P['vignette'] * np.clip(_R2 - .2, 0, 1))[..., None]
-    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(round(t * FPS)) % 6], 2, 0), 2, 1) * P['grain']
+    if P['grain']: a = a + np.repeat(np.repeat(_grain[int(round(t * FPS)) % 6], 2, 0), 2, 1) * P['grain'] * GRAIN_K
     return Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
 
 # ---------------------------------------------------------------- sections + frame
@@ -513,6 +524,8 @@ class Film:
     def compose_world(self, ctx, cam=None, shot=None):
         t = ctx.t; cam = dict(ctx.cam, **(cam or {})); S_ = dict(ctx.shot, **(shot or {}))
         if ctx.bg_img is not None: bg = ctx.bg_img
+        elif S_['angle'] == 'I' and t < LAMP_ON:                 # lamp continuity: off until the 'Good lighting' gag
+            from sections import _C_kit; bg = _C_kit.lamp_off_plate()
         else: bg = plate(S_['angle'])[0]
         if ctx.bg_z != 1: bg = zoom(bg, ctx.bg_z, (540, 760))
         if ctx.bg_blur > .3: bg = bg.filter(ImageFilter.GaussianBlur(ctx.bg_blur))

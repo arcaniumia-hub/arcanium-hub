@@ -12,3 +12,4 @@ __pycache__/
 sections/__pycache__/
 src/tight16k.raw
 src/*.wav
+sfx.wav
