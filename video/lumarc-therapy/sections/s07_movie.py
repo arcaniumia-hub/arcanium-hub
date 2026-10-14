@@ -7,11 +7,13 @@
 40.43  REACTION CUT on "your" (40.45): Kevin CU, suspicious squint (silent take src 23.05…) under "your croissants…".
 41.50  CUT back to the therapist on "deserve" (41.54), push continues.
 42.14  "MOVIE." (nasal onset 42.13–42.14): the frame BECOMES a movie — scope bars close in to a 2.39:1 slit while the camera pushes
-       to his eyes (Leone close-up); the line's last words sit on the black bar like subtitles. Riser under the hold.
-42.90  THE MOVIE (braam + taiko in the score). Inside the 2.39 slit: the oven glow fades up, A LUMARC FILM.
-43.62  The croissant pull (slit), fingers press.
-44.05  On the taiko the frame EXPANDS (slit -> 1080x1320 scope) as the crust cracks; speed-ramped tear, slow-mo
-       reveal of the honeycomb by 44.65.
+       to his eyes (Leone close-up); the line's last words drop onto the black bar like subtitles the moment the
+       bottom bar's edge reaches them (never straddling the edge). Riser under the hold.
+42.90  THE MOVIE (braam + taiko in the score). Inside the 2.39 slit: A LUMARC FILM over the oven glow fading up.
+43.62  CUT to the croissant pull and the frame EXPANDS with it (slit -> 1080x1320 scope, whoosh): the black-dominant
+       stretch after "movie." stays ~1 s. Fingers press.
+44.05  Taiko: the crust cracks — punch-in + speed-ramped tear (zoom-blur, leak flash), slow-mo reveal of the
+       honeycomb by 44.65.
 44.65  Taiko: hero croissant, rack focus + push.
 45.10  Taiko: the storefront with the line of customers, golden hour (framed so the real gold KEVIN'S BAKERY sign reads).
 45.35  IMPACT: KEVIN'S BAKERY gold trailer title slams (flash, anamorphic streak, shake); the street dims behind it.
@@ -48,21 +50,22 @@ F_M0 = K.fr(M0)                                    # 1287  42.900  THE MOVIE
 
 # movie beats (score: braam + taiko M0, taikos 44.05 / 44.65 / 45.10, impact 45.35)
 T_PULL = 43.62
-T_EXP = 44.05
+T_EXP = T_PULL                                     # the frame opens on the cut to the pull
+T_TEAR = 44.05                                     # taiko: crust cracks (punch-in + speed ramp)
 T_HERO = 44.65
 T_STORE = 45.10
 T_HIT = 45.35
 T_SHEEN = 45.62
 T_SAT = 45.72
 NOTIFS = [(45.80, 'kevinsbakery', 'maria.eats and 2,431 others liked your reel.', False),
-          (45.93, 'kevinsbakery', 'nyc.croissant.club commented: “WHERE IS THIS??”', False),
+          (45.93, 'kevinsbakery', 'nyc.croissant.club: “WHERE IS THIS??”', False),
           (46.04, 'kevinsbakery', 'Your reel is getting more views than usual.', False),
           (46.13, 'kevinsbakery', '+1,284 new followers', True)]          # lands, then holds ~.37 s to the cut
 
 CUES = [
     (W_MOVIES, 'zoom', {}),                                        # crash zoom "MOVIES!"
     (W_MOVIE + .04, 'riser', {'to': M0 - .02, 'gain': -5}),        # bars close: tension into the braam
-    (T_EXP, 'whoosh', {'gain': -8}),                               # the frame expands (taiko is in the score)
+    (T_EXP, 'whoosh', {'gain': -8}),                               # the frame expands on the cut to the pull
     (T_HIT, 'shing', {'gain': -5}),                                # gold title slam (score impact)
     (T_SHEEN, 'shimmer', {'gain': -9}),                            # light sweep on the gold
 ] + [(ta, 'notify', {'gain': g}) for (ta, *_), g in zip(NOTIFS, (-3, -4, -5, 0))]
@@ -80,6 +83,21 @@ def eyes_t(src):
 
 
 def src15(t): return L15['s0'] + (t - L15['t0'])
+
+
+def bars_close(t):
+    """bottom/top bar height while the frame becomes a movie (W_MOVIE -> T_BARS1)."""
+    return K.SLIT * smooth((t - W_MOVIE) / (T_BARS1 - W_MOVIE))
+
+
+CAP_Y, CAP_BAR_Y = 1480, 1580                      # caption on the picture / on the closed bar (subtitle)
+def cap_y(t):
+    """the caption stays put until the rising bottom bar edge is about to touch its letters, then drops onto the bar
+    (one eased frame or two, done while the edge sweeps past: the letters are never half on picture, half on black)."""
+    if t < W_MOVIE: return CAP_Y
+    edge = H - bars_close(t)
+    p = clamp((1526 - edge) / 110)
+    return CAP_Y + (CAP_BAR_Y - CAP_Y) * eout(p) if p > 0 else CAP_Y
 
 
 # ================================================================ office part
@@ -120,7 +138,7 @@ def therapist_b(ctx, t):
     kb = smooth((t - W_MOVIE) / (T_BARS1 - W_MOVIE))
     kz = eout((t - W_MOVIE) / (T_BARS1 - W_MOVIE + .05))
     z = zb + (1.44 - zb) * kz + .02 * max(0., t - T_BARS1)
-    bar = K.SLIT * kb
+    bar = bars_close(t)
     Y = min(960., bar + z * ey - 6)                          # world top edge stays hidden under the closing bar
     X = 540.
     def wrap(frame):
@@ -133,7 +151,7 @@ def therapist_b(ctx, t):
 
 # ================================================================ the movie
 def native_pull(t):
-    pts = [(T_PULL, 3.27), (T_EXP, 3.70), (44.36, 4.60), (T_HERO, 4.86)]
+    pts = [(T_PULL, 3.27), (T_TEAR, 3.70), (44.36, 4.60), (T_HERO, 4.86)]      # 1x, then the ramped tear on the taiko
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
     return float(np.interp(t, xs, ys))
 
@@ -148,17 +166,19 @@ def movie_picture(t, f):
     if t < T_PULL:                                           # 1  OVEN in the scope slit
         u = t - M0
         img = K.frame_from(K.plate_src('croissant_oven'), z=1.16 + .10 * u, cx=.50, cy=.47 + .07 * smooth(u / .65), dx=-24 * u + wx, dy=wy)
-        expo_ = smooth((u - .17) / .36)                       # credit over black, then the oven glow fades up
+        expo_ = smooth((u - .08) / .40)                       # the oven glow fades up under the credit
         flick = 1 + .035 * math.sin(t * 31) + .02 * math.sin(t * 17 + 1)
         return img, K.SLIT, dict(bright=expo_ * flick, leak=.35 * smooth((u - .3) / .3), leak_dx=.25 - .2 * u)
-    if t < T_HERO:                                           # 2  PULL: slit -> expand on the taiko
+    if t < T_HERO:                                           # 2  PULL: the frame opens on the cut, punch on the taiko
         img = K.pull_frame(native_pull(t))
-        ke = eout((t - T_EXP) / .20) if t >= T_EXP else 0.
-        z = lerp(1.30, 1.12, ke) + .03 * max(0., t - T_EXP)
+        ke = eout((t - T_EXP) / .22)
+        kp = 1 - (1 - clamp((t - (T_TEAR - 2 / FPS)) / (2 / FPS))) ** 2     # 2-frame punch-in landing on the taiko
+        z = lerp(1.30, 1.12, ke) + .03 * max(0., t - T_EXP) + .07 * kp
         cy = lerp(.585, .56, ke)
         img = K.frame_from(img, z=z, cx=.52, cy=cy, dx=wx, dy=wy)
         bar = lerp(K.SLIT, K.SCOPE, ke)
-        return img, bar, dict(bright=1.0, leak=.25 * (1 - ke) + .45 * clamp(1 - abs(t - T_EXP) / .12), leak_dx=.05)
+        return img, bar, dict(bright=1.0, leak=.30 * clamp(1 - abs(t - T_EXP) / .14) + .45 * clamp(1 - abs(t - T_TEAR) / .12),
+                              leak_dx=.05)
     if t < T_STORE:                                          # 3  HERO croissant, rack focus + push
         u = t - T_HERO
         img = K.frame_from(K.plate_src('croissant_hero'), z=1.16 + .16 * u, cx=.36, cy=.66, dx=wx, dy=wy)
@@ -184,7 +204,7 @@ def movie(ctx, t, f):
         img = Image.eval(img, lambda v, b=P['bright']: int(min(255, v * b)))
     if t >= T_HIT:                                           # flash frame on the impact: additive light, picture only
         img = K.add_light(img, 235 / 255 * math.exp(-(t - T_HIT) / .05))
-    if T_EXP - 1 / FPS <= t < T_EXP + 2 / FPS:
+    if T_TEAR - 1 / FPS <= t < T_TEAR + 2 / FPS:            # the crack: radial blur on the punch frames
         img = K.zoom_blur(.55, anchor=(540, 960))(img).convert('RGB')
     out = K.letterbox(img.convert('RGBA'), bar)
     cx = W / 2
@@ -200,7 +220,7 @@ def movie(ctx, t, f):
     if t >= T_HIT:
         ti, ink = K.title_img()
         kh = (t - T_HIT)
-        s = (1 + .26 * (1 - expo(kh / .2))) * (1 + .018 * kh)
+        s = .96 * (1 + .26 * (1 - expo(kh / .2))) * (1 + .008 * kh)     # settles 880-890 px wide: inside x 80-1000
         if T_SHEEN < t < T_SHEEN + .45: ti = K.sheen(ti, (t - T_SHEEN) / .45, ink, 40, .65)
         ti2 = K.scale_im(ti, s)
         ty = 1030
@@ -227,4 +247,4 @@ def draw(ctx, lt, t):
     elif f < F_TB: kevin_reaction(ctx, t)
     else: therapist_b(ctx, t)
     K.clean_take(ctx)                                        # choked matte: no key fringe on the zooms
-    K.captions(ctx, t, (14, 15))
+    K.captions(ctx, t, (14, 15), cy0=cap_y(t))

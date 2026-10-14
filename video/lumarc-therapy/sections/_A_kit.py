@@ -244,11 +244,14 @@ def hook_title(t, t_end):
     """the hook title, crisp from frame 0. Life: lavender ticks draw outward beside the kicker, a slow 2.5 % scale
     drift and a faint warm light sweep across the letters (window light catching the type)."""
     art, ytop, ry, kw = _hook_art(); k = E.clamp(t / max(.5, t_end))
-    im = art.copy(); d = ImageDraw.Draw(im); cx = im.width // 2
-    rl = int(46 * E.eout(E.clamp(.35 + t / .5)))
-    if rl > 1:
-        d.line((cx - kw - 18 - rl, ry, cx - kw - 18, ry), fill=LAV + (235,), width=3)
-        d.line((cx + kw + 18, ry, cx + kw + 18 + rl, ry), fill=LAV + (235,), width=3)
+    def ticks(im, rl):
+        d = ImageDraw.Draw(im); cx = im.width // 2
+        if rl > 1:
+            d.line((cx - kw - 18 - rl, ry, cx - kw - 18, ry), fill=LAV + (235,), width=3)
+            d.line((cx + kw + 18, ry, cx + kw + 18 + rl, ry), fill=LAV + (235,), width=3)
+        return im
+    halo = E.cached(('A_hook_halo', TITLE_BIG), lambda: soft_shadow(ticks(art.copy(), 46), blur=26, op=.62, grow=6, only=True))
+    im = ticks(art.copy(), int(46 * E.eout(E.clamp(.35 + t / .5))))
     A = np.asarray(im.getchannel('A'), np.float32) / 255
     yy, xx = np.mgrid[0:im.height, 0:im.width].astype(np.float32)
     pos = -300 + (im.width + 600) * k
@@ -256,9 +259,10 @@ def hook_title(t, t_end):
     rgb = np.asarray(im.convert('RGB'), np.float32)
     rgb = rgb + (np.array((255, 236, 205), np.float32) - rgb) * (band * (A > 0))[..., None]
     im = Image.fromarray(np.clip(rgb, 0, 255).astype(np.uint8)).convert('RGBA'); im.putalpha(Image.fromarray((A * 255).astype(np.uint8)))
+    out = halo.copy(); pad = (halo.width - im.width) // 2; out.alpha_composite(im, (pad, pad))
     s = 1.0 + .025 * k
-    if s > 1.001: im = im.resize((int(im.width * s), int(im.height * s)), Image.BICUBIC)
-    return soft_shadow(im, blur=26, op=.62, grow=6)
+    if s > 1.001: out = out.resize((int(out.width * s), int(out.height * s)), Image.BICUBIC)
+    return out
 
 def dim_wrap(top=.86, mid=.46, y0=560, y1=900, bot=.52):
     """ctx.wrap: darken the WORLD (not chips/captions/title) with a vertical ramp: face zone ~top, title zone ~mid."""

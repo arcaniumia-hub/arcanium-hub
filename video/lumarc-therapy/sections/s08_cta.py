@@ -1,7 +1,10 @@
 """s08 — Instagram: "…Oh. OH. Okay… I'm listening."  Therapist: "If your Instagram stopped talking to you… comment
 L-U-M-A-R-C. We do couples therapy. [For brands.]" + END CARD   (46.50–DUR)
 
-46.50  HARD CUT out of the movie: Instagram MS, stunned (arms still crossed). His phone keeps pinging (sound).
+46.50  HARD CUT out of the movie: Instagram MS, stunned (arms still crossed). His phone keeps pinging: every ping drops
+       a notification banner (the movie's iOS card, same account) over his crossed arms — never over his face, which
+       sits high in the MS — with the follower count climbing (+3,517 -> +8,902 -> +14,377 -> +21,450 on the double
+       ping); each banner pops out as the next crash zoom snaps in.
 47.73  "OH."      crash zoom #1 (z 1.30)          — each preceded by a notification ping
 48.60  "Okay…"    crash zoom #2 (z 1.58)          — captions grow with every zoom
 49.67  "I'm listening." crash zoom #3 (ECU z 1.90), held through his silent lean-in.
@@ -46,6 +49,11 @@ T_POST = W_WE - .28                                # 56.16 Post tap at the end o
 T_DOWN = T_POST + .04
 F_WE = K.fr(W_WE) - 1                              # wider framing for "We do couples therapy."
 PINGS = [47.22, 48.20, 49.06, 49.24]
+# the banner each ping drops (groups: one banner per zoom; the double ping ticks the same banner's count up)
+PING_CARDS = [(PINGS[0], ['+3,517 new followers']), (PINGS[1], ['+8,902 new followers']),
+              (PINGS[2], ['+14,377 new followers', '+21,450 new followers'])]
+PING_OUT = [W_OH2 - .12, W_OKAY - .12, W_IM - .12]          # flick up as each crash zoom snaps in
+PING_TOP = 1140                                             # card 1140-1308: above the captions (1424+)
 
 CUES = [(p, 'notify', {'gain': g}) for p, g in zip(PINGS, (-7, -6, -6, -4))] + [
     (W_OH2, 'zoom', {}), (W_OKAY, 'zoom', {'gain': 1}), (W_IM, 'zoom', {'gain': 2}),   # escalating crash zooms
@@ -69,6 +77,26 @@ def face_i(src):
 
 
 # ================================================================ line 16: escalating crash zooms
+def ping_banners(ctx, t):
+    """one iOS banner per ping group, popping in place on the ping (scale .9 -> 1 with a little overshoot, 0.16 s; it
+    never travels through the captions); a later ping in the group bumps it and ticks the number; it pops out (fade +
+    slight drop) as the zoom snaps in. Same card art as the movie's notification stack."""
+    NH = K.NH
+    for (ta, bodies), t_out in zip(PING_CARDS, PING_OUT):
+        if not ta <= t < t_out + .12: continue
+        k_in = clamp((t - ta) / .16); k_out = ein(clamp((t - t_out) / .12))
+        hits = [p for p in PINGS if ta - 1e-6 <= p <= t + 1e-6]
+        j = min(len(bodies), len(hits)) - 1
+        sc = (.9 + .1 * E.back(k_in, 1.6)) * (1 - .04 * k_out)
+        if j > 0: sc *= 1 + .035 * (1 - eout((t - hits[j]) / .16))     # the count ticks: a small bump on the ping
+        card = K.scale_im(K.notif_card('kevinsbakery', bodies[j], True), sc)
+        a = min(1., k_in * 4) * (1 - k_out)
+        y = PING_TOP + NH / 2 + 26 * k_out
+        ctx.add('screen', K.scale_im(K.notif_shadow(), sc), W / 2, y, alpha=a * .9)
+        ctx.add('screen', card, W / 2, y, glass=18, alpha=a)
+
+
+
 def level_z(t, f):
     """z for the frame: piecewise holds with a creep, 3-frame snaps landing on each word."""
     def hold(i, tt):
@@ -95,6 +123,7 @@ def instagram(ctx, t, f):
     sizes = {'…OH.': 78, 'OH.': 104, 'OKAY…': 112, "I'M LISTENING.": 100}
     K.clean_take(ctx)                                        # choked matte: the ECU magnifies the key fringe
     K.captions(ctx, t, (16,), sizes=sizes)
+    ping_banners(ctx, t)
 
 
 # ================================================================ line 17: the CTA

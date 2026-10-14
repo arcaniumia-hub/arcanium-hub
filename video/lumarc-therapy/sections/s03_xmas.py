@@ -51,7 +51,8 @@ REST = 90                   # resting scroll: post header exactly under the nav 
 ANCHOR = (16, 1488)         # punch-in anchor: the date line's baseline (the date grows upward, the gap stays)
 def _post_screen(t):
     """the 2021 post screen recording at t (RGB 1080x1920) and its punch-in zoom."""
-    st = 56 * (1 - E.eout((t - CUT_POST) / .34))                  # he just scrolled up to it: still settling
+    st = 36 * (1 - E.eout((t - CUT_POST) / .34))                  # he just scrolled up to it: still settling
+    # (36 px: the next post's avatar/name never slides up into the caption band, even on the first frame)
     k = E.eout(E.clamp((t - PUSH_21 + 1 / E.FPS) / (5 / E.FPS)))
     z = 1 + .66 * k + .045 * _smooth((t - PUSH_21 - 5 / E.FPS) / .7)
     return K.ig2021_screen(-(REST + (st if st > .5 else 0.0)), z, ANCHOR), z

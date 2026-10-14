@@ -1,8 +1,11 @@
 """s01 — the hook (0.00–3.02): "So… what brings you two here today?"
 
-0.00–1.10  prestige cold-open title over the empty office (wide plate, dimmed, slow push): SESSION 1 / COUPLES THERAPY
-           / "Kevin & his Instagram" — the absurd couple is named in the hook frame. The therapist's "So…" (0.42) plays
-           under it as V.O. (his lips still hold the "o" until ~1.05, so the cut waits for "what").
+0.00–1.10  the hook frame: his Instagram (gradient hoodie, arms crossed, chin up, silent offended side-eye — reaction
+           material src 35.0-36.1, mouth shut) with a slow push, the world dimmed by a vertical ramp (face ~.86, title
+           zone ~.46) so the type reads without dimming the face. Big title = the premise: KEVIN & / HIS INSTAGRAM
+           ('INSTAGRAM' in his own hoodie gradient, so the word points at him), small kicker COUPLES THERAPY · SESSION 1.
+           Face clear of the type. The therapist's "So…" (0.42) plays under it as V.O. (his lips still hold the "o"
+           until ~1.05, so the cut waits for "what").
 1.10       CUT to the therapist (MS) one frame before "what" (1.13); chip THE THERAPIST. The "So…" caption page ends ON
            the cut (no half-faded word over his face).
 1.70       CUT on "you" (1.75): Kevin — apron, hurt frown (silent take src 3.15…).
@@ -30,7 +33,7 @@ Z_OPEN, OPEN_Y = 1.02, 300.
 TITLE_Y = 1150     # centre of the title block: kicker ~1000, big lines ~1060-1290, clear of the face and the caption
 
 CUES = [
-    (0.02, 'thud', {'gain': -2}),                 # the prestige title lands (nudged off 0.00 so the attack survives)
+    (0.02, 'thud', {'gain': -2}),                 # the hook title lands (nudged off 0.00 so the attack survives)
     (F_T1 / FPS + .01, 'tick', {'gain': -6}),     # chip THE THERAPIST
     (F_K / FPS, 'tick', {'gain': -8, 'pan': -.2}),   # cutaway accents (tiny, under the dialogue)
     (F_I / FPS, 'tick', {'gain': -8, 'pan': .2}),

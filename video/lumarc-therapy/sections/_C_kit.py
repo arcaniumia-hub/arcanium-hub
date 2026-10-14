@@ -30,8 +30,11 @@ def smooth(x):
 # one entry per caption word, in order (the integrator can merge these into engine.WORD_FIX)
 # (review pass: re-measured with 10 ms band energies — MUCH was keyed on its "ch" (36.03 -> nasal 35.86), HIM? on
 #  the "o" of "from" (30.80 -> 30.89), YOU/NEED a little early; lip smacks / breaths before CONSISTENCY, REELS skipped)
+# (polish pass: line 9 re-segmented on 5 ms band energies — "how" = breathy /h/ 23.85 + modal /aU/ 23.99-24.08;
+#  DID /d/ closure 24.09 (release 24.125); THAT /dh/ 24.21, /ae/ 24.235-24.32; MAKE /m/ murmur 24.35 after the /t/ gap;
+#  YOU /k/ release 24.545, /u/ 24.595; FEEL? /f/ frication 24.655-24.785 — the old values were one word early)
 MEASURED = {
-    9: [('KEVIN…', 23.00), ('HOW', 23.84), ('DID', 23.98), ('THAT', 24.12), ('MAKE', 24.22), ('YOU', 24.35), ('FEEL?', 24.53)],
+    9: [('KEVIN…', 23.00), ('HOW', 23.84), ('DID', 24.09), ('THAT', 24.20), ('MAKE', 24.35), ('YOU', 24.56), ('FEEL?', 24.66)],
     10: [('…CREATIVE?', 25.68)],
     11: [('MY', 26.89), ('ALGORITHM', 27.07), ('CRIED.', 27.67)],
     12: [('INSTAGRAM,', 28.74), ('WHAT', 29.83), ('DO', 30.02), ('YOU', 30.15), ('NEED', 30.36), ('FROM', 30.67), ('HIM?', 30.89)],
@@ -205,9 +208,17 @@ def insights_base():
         d.text((MX * S, (y + 108) * S), 'Non-followers', font=inter(28 * S, 'Regular'), fill=SUB, anchor='lm')
         d.text(((W - MX) * S, (y + 108) * S), '0%', font=inter(28 * S, 'SemiBold'), fill=FG, anchor='rm')
         d.rounded_rectangle(((W / 2 - 140) * S, 1880 * S, (W / 2 + 140) * S, 1890 * S), 5 * S, fill=(200, 200, 200))
-        im = im.resize((W, H), Image.LANCZOS); _status(ImageDraw.Draw(im))
-        return im
+        return im.resize((W, H), Image.LANCZOS)
     return E.cached('C_ins_base', mk)
+
+STATUS_H = 72                                                       # status-bar strip height (screen px)
+PILL_BOT = 63                                                       # bottom edge of the red screen-recording pill
+def status_layer():
+    """the iOS status bar (RGBA strip, W x STATUS_H) — composited separately so it can fade as a punch-in pushes it
+    off the top edge (a 1-8 px sliver of the red pill otherwise reads as a glitch line)."""
+    def mk():
+        im = Image.new('RGBA', (W, STATUS_H), (0, 0, 0, 0)); _status(ImageDraw.Draw(im)); return im
+    return E.cached('C_ins_status', mk)
 
 def _grad_line(x):
     """IG-ish magenta -> violet along the chart."""
@@ -217,10 +228,14 @@ def _grad_line(x):
 
 def _fmt(n): return f'{n:,}'
 
-def insights_frame(t, T_CUT, T_PL0, T_PL1):
+def insights_frame(t, T_CUT, T_PL0, T_PL1, status_a=1.0):
     """RGB screen at time t. T_CUT: first frame of the insert; T_PL0..T_PL1: the plunge (the head of the line races
-    over the cliff, the total counts down 1,204 -> 3); the red delta lands at T_PL1."""
+    over the cliff, the total counts down 1,204 -> 3); the red delta lands at T_PL1. status_a: status-bar opacity."""
     base = insights_base().copy()
+    if status_a > .002:
+        st = status_layer()
+        if status_a < .998: st = E.fade(st, status_a)
+        base.paste(st, (0, 0), st)
     S = 2
     # head position (in days): already drawn to the cliff edge at the cut, creeping; races over the cliff on "cried"
     if t < T_PL0: head = 21.3 + .9 * E.clamp((t - T_CUT) / max(.01, T_PL0 - T_CUT))
@@ -477,12 +492,23 @@ def _lamp_light():
         return g('key'), add
     return E.cached('C_lamp_light', mk)
 
-def _light(a, L, box=None):
-    """the lamp's exposure + warm key + spill on a world-space RGB float array (in place where possible)."""
+KEY_GAIN = .18                       # warm key on his face (polish: .30 clipped the skin's red channel flat orange)
+KNEE = 196.                          # soft highlight shoulder on the take: identity below, rolls off toward 255
+def shoulder(a, knee=KNEE):
+    """C1-continuous film shoulder: values above `knee` roll off exponentially toward 255 (no hard clip on skin)."""
+    hi = a > knee
+    if hi.any():
+        r = 255. - knee; a[hi] = knee + r * (1 - np.exp(-(a[hi] - knee) / r))
+    return a
+
+def _light(a, L, box=None, roll=False):
+    """the lamp's exposure + warm key + spill on a world-space RGB float array (in place where possible).
+    roll: apply the highlight shoulder (the take — keeps pore / forehead texture under the key)."""
     key, add = _lamp_light()
     if box is not None: y0, y1, x0, x1 = box; key, add = key[y0:y1, x0:x1], add[y0:y1, x0:x1]
-    a *= 1 + L * .06 * _LCOL + key * (L * .30 * _LCOL)
+    a *= 1 + L * .06 * _LCOL + key * (L * KEY_GAIN * _LCOL)
     a += L * add
+    if roll: shoulder(a)
     return a
 
 def lamp_plate(L):
@@ -500,20 +526,21 @@ def lamp_take(L):
         x0, y0, x1, y1 = bb
         a = np.asarray(img.crop(bb).convert('RGB'), np.float32).copy()
         out = img.copy()
-        out.paste(Image.fromarray(np.clip(_light(a, L, (y0, y1, x0, x1)), 0, 255).astype(np.uint8)), (x0, y0))
+        out.paste(Image.fromarray(np.clip(_light(a, L, (y0, y1, x0, x1), roll=True), 0, 255).astype(np.uint8)), (x0, y0))
         out.putalpha(al)
         return out
     return fx
 
 def lamp_bloom(L):
-    """ctx.wrap: soft beauty bloom of the lit picture's highlights (screen space)."""
+    """ctx.wrap: soft beauty bloom of the lit picture's highlights (screen space). Screen-blended, not added: the
+    glow lifts the shade/bulb halo but rolls off on bright skin instead of clipping it flat (polish pass)."""
     if L <= .001: return None
     def wrap(frame):
         rgb = frame.convert('RGB')
         hi = np.clip(np.asarray(rgb.resize((W // 6, H // 6), Image.BILINEAR), np.float32) - 170, 0, None)
         bl = Image.fromarray(np.clip(hi * 2.2 * .40 * L, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(6)).resize((W, H), Image.BILINEAR)
         from PIL import ImageChops
-        return ImageChops.add(rgb, bl).convert('RGBA')
+        return ImageChops.screen(rgb, bl).convert('RGBA')
     return wrap
 
 def lamp_wrap(L, cam):
@@ -524,7 +551,7 @@ def lamp_wrap(L, cam):
         M = lamp_maps(); g = lambda k: np.asarray(cam_img(M[k], cam), np.float32)[..., None] / 255
         a = np.asarray(frame.convert('RGB'), np.float32)
         key, pool, cone, bulb = g('key'), g('pool'), g('cone'), g('bulb')
-        a = a * (1 + L * (.06 + .30 * key) * np.array((1.0, .86, .62), np.float32))         # exposure + warm key
+        a = a * (1 + L * (.06 + KEY_GAIN * key) * np.array((1.0, .86, .62), np.float32))     # exposure + warm key
         a = a + L * (pool * np.array((70, 42, 14), np.float32) + cone * np.array((60, 40, 18), np.float32))
         a = a + L * bulb * np.array((255, 236, 196), np.float32) * 1.1
         # beauty glow: blooming highlights

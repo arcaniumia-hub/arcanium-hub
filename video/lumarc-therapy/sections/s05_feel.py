@@ -3,7 +3,7 @@ cried."  (lines 9-11, 22.94–28.66)
 
 Beats (timeline s, 30 fps frame grid; word onsets measured on src/voice16k.raw — see _C_kit.MEASURED):
   22.94   the therapist, calm and deadpan, MS; a slow creeping push through "Kevin…" and his loaded pause (23.35–23.81)
-          into "how did that make you feel?" (FEEL 24.52).
+          into "how did that make you feel?" (FEEL 24.66).
   25.100  CUT to Kevin (tighter) while the question hangs: brows knotted, eyes shut, searching for the word (silent take
           tail) -> "…Creative?" (25.68) with a hopeful little smile. Slow push the whole time.
   26.167  REACTION CUT on the tail of "…Creati-ve?": the therapist hears the end of the word and just looks (head tilt,
@@ -67,11 +67,13 @@ def draw(ctx, lt, t):
     elif f < F_T:
         # ---------------- "cried." — the Insights screen recording
         u = t - F_G / FPS
-        scr = K.insights_frame(t, F_G / FPS, T_PL0, T_PL1)
         z = 1.0 + .06 * K.smooth(u / .55)                                  # editor's punch-in (number stays in the safe area)
         jolt = 0.0
         if f >= F_THUD: jolt = 7 * math.exp(-(t - F_THUD / FPS) / .06) * math.cos(2 * math.pi * 11 * (t - F_THUD / FPS))
         dy = jolt - 34 * (1 - E.eout(u / .16))                             # the screen still settling from a scroll
+        # the punch-in pushes the status bar off the top: fade it as it leaves (no 1-8 px red sliver of the pill)
+        pill_bot = 1100 + z * (K.PILL_BOT - 1100) + dy
+        scr = K.insights_frame(t, F_G / FPS, T_PL0, T_PL1, status_a=E.clamp((pill_bot - 6) / 24))
         ctx.full = E.zoom(scr, z, (220, 1100), dy=dy) if (z > 1.001 or abs(dy) > .3) else scr
         ctx.post.update(vignette=.10, grain=.55)
     else:

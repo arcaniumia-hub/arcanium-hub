@@ -40,7 +40,7 @@ MEASURED = {
     15: [('KEVIN…', 39.64), ('YOUR', 40.45), ('CROISSANTS', 40.78), ('DESERVE', 41.54), ('A', 42.10), ('MOVIE.', 42.14)],
     16: [('…OH.', 46.57), ('OH.', 47.73), ('OKAY…', 48.60), ("I'M", 49.68), ('LISTENING.', 49.76)],
     17: [(w, e17(s)) for w, s in (('IF', 17.92), ('YOUR', 18.08), ('INSTAGRAM', 18.39), ('STOPPED', 18.92),
-                                   ('TALKING', 19.34), ('TO', 19.56), ('YOU…', 19.76), ('COMMENT', 20.34),
+                                   ('TALKING', 19.34), ('TO', 19.67), ('YOU…', 19.76), ('COMMENT', 20.34),
                                    ('“LUMARC”.', 21.12), ('WE', 23.62), ('DO', 23.88), ('COUPLES', 24.00),
                                    ('THERAPY.', 24.40), ('FOR', 25.30), ('BRANDS.', 25.46))],
 }
@@ -100,10 +100,68 @@ def face_cam(face, z, to=(540, 640), rot=0.0):
     return dict(z=z, x=fx, y=fy, dx=(to[0] - fx) * k, dy=(to[1] - fy) * k, rot=rot)
 
 
+LENS_BOX = (200, 160, 880, 640)        # therapist take px: his glasses live in here in every frame (eyes y 330-450)
+
+
+def lens_fix(av, src):
+    """the therapist's glasses mirror the green screen onto his eyelids: the engine despill (G = min(g, max(r, b)))
+    turns that green-on-skin into R≈G = olive/yellow patches, and where it is strongest the key punches a
+    semi-transparent hole in the matte (the plate shows through). Inside LENS_BOX (silhouette edges untouched):
+    1. enclosed matte holes are filled (alpha 255) and, with a ring that covers the engine's edge wrap round them,
+       re-coloured from the raw take (despilled, times the frame's graded/raw gain measured on his clean skin);
+    2. the green excess is pulled back to his skin ratio: G -> G - (G - rho*R)*w, rho = median graded G/R of his skin.
+       w is soft and continuous (no blotches): it needs a raw g/r above his skin's 90th percentile, a skin-like b/r
+       (neutral iris / sclera / metal frame / lens glare are left alone) and some brightness (the dark green irises
+       are left alone);
+    3. where the raw is still green-dominant (dark iris / lash line / hole interiors, which the engine despill
+       turns teal) G and B are held to R + 6: a neutral dark glint, like a real lens reflection."""
+    from scipy.ndimage import binary_fill_holes, minimum_filter, maximum_filter, gaussian_filter
+    x0, y0, x1, y1 = LENS_BOX
+    raw = np.asarray(E.take('T').raw(src))[y0:y1, x0:x1].astype(np.float32)
+    A = np.array(av)
+    sub = A[y0:y1, x0:x1].astype(np.float32)
+    a = sub[..., 3]
+    solid = a >= 250
+    filled = binary_fill_holes(solid)
+    holes = filled & ~solid
+    inner = minimum_filter(filled.astype(np.uint8), size=13) > 0
+    r, g, b = raw[..., 0], raw[..., 1], raw[..., 2]
+    q, br = g / np.maximum(r, 1), b / np.maximum(r, 1)
+    ring = (maximum_filter(holes.astype(np.uint8), size=11) > 0) & filled
+    skin = inner & ~ring & solid & (q < .84) & (r > 110) & (r < 235) & (br < .8)
+    if skin.sum() < 400: return av
+    q90 = float(np.percentile(q[skin], 90))
+    w = np.clip((q - q90) / .10, 0, 1) * np.clip((.90 - br) / .10, 0, 1) * np.clip((r - 95) / 35, 0, 1) * inner
+    if w.max() < .03 and not holes.any(): return av
+    rgb = sub[..., :3]
+    if holes.any():                                                   # 1. holes: rebuilt from the raw take
+        desp = np.dstack([r, np.minimum(g, np.maximum(r, b)), b])
+        gain = np.median(rgb[skin] / np.maximum(desp[skin], 1), 0)
+        wh = np.clip(gaussian_filter(ring.astype(np.float32), 1.5), 0, 1) * filled
+        wh = np.maximum(wh, holes)[..., None]
+        rgb = rgb * (1 - wh) + desp * gain[None, None, :] * wh
+        sub[..., 3] = np.where(holes, 255, a)
+    R0 = np.maximum(rgb[..., 0][skin], 1)
+    rho = float(np.median(rgb[..., 1][skin] / R0)) + .02                 # his skin's G/R and B/R (graded)
+    beta = float(np.median(rgb[..., 2][skin] / R0))
+    w = np.clip(gaussian_filter(w, 1.2), 0, 1)                         # 2. green excess back to the skin ratio
+    rgb[..., 1] -= np.maximum(rgb[..., 1] - rho * rgb[..., 0], 0) * w
+    rgb[..., 2] -= np.maximum(rgb[..., 2] - beta * rgb[..., 0], 0) * w     # and B with it (no pink/magenta cast)
+    # 3. dark spill (iris / lash line / hole interiors): the despill clamps G to B there -> teal. Neutralise.
+    wc = (np.clip((g - np.maximum(r, b) + 2) / 16, 0, 1) * inner)
+    wc = np.clip(gaussian_filter(wc, 1.0), 0, 1)
+    for ch in (1, 2):
+        rgb[..., ch] -= np.maximum(rgb[..., ch] - (rgb[..., 0] + 6), 0) * wc
+    sub[..., :3] = rgb
+    A[y0:y1, x0:x1] = np.clip(sub + .5, 0, 255).astype(np.uint8)
+    return Image.fromarray(A, 'RGBA')
+
+
 _CHOKE = {}
 def clean_take(ctx, px=2, soft=1.2):
     """draw ctx.shot's take ourselves with its matte choked by `px` (the engine key leaves a 2-3 px light/green fringe
-    round hair and ears that crash zooms magnify into a cut-out outline). Same placement as the engine (s=1, x=y=0)."""
+    round hair and ears that crash zooms magnify into a cut-out outline). Same placement as the engine (s=1, x=y=0).
+    Therapist frames also get lens_fix (green-screen reflection in his glasses)."""
     S = ctx.shot
     if not S['show'] or S['angle'] not in E.ANGLES or S['angle'] == 'wide': return
     assert abs(S['s'] - 1) < .005 and S['x'] == 0 and S['y'] == 0 and S['alpha'] >= 1 and S['bright'] == 1
@@ -112,9 +170,10 @@ def clean_take(ctx, px=2, soft=1.2):
     if hit is not None and hit[0] is av: out = hit[1]
     else:
         from scipy.ndimage import minimum_filter
-        a = np.asarray(av.getchannel('A'))
+        base = lens_fix(av, S['src']) if S['spk'] == 'T' else av
+        a = np.asarray(base.getchannel('A'))
         a2 = Image.fromarray(minimum_filter(a, size=2 * px + 1)).filter(ImageFilter.GaussianBlur(soft))
-        out = av.copy(); out.putalpha(Image.fromarray(np.minimum(a, np.asarray(a2))))
+        out = base.copy(); out.putalpha(Image.fromarray(np.minimum(a, np.asarray(a2))))
         _CHOKE[k] = (av, out)
     S['show'] = False
     ctx.behind.append(dict(img=out, xy=(0, 0), glass=0))
@@ -284,8 +343,10 @@ def film_look(img, t, leak=0.0, leak_dx=0.0, halation=.30, contrast=.35, warm=1.
         a = a + hv * np.array([1.0, .42, .16], np.float32) * halation
     if leak > .01:
         tex = leak_tex(); sh = int(leak_dx * W / 4)
-        t2 = np.roll(tex, sh, 1)
-        if sh > 0: t2[:, :sh] = 0
+        # edge-clamped shift (np.roll wrapped the dark left edge into the right columns for sh < 0: a hard seam)
+        if sh > 0: t2 = np.concatenate([np.zeros_like(tex[:, :sh]), tex[:, :-sh]], 1)
+        elif sh < 0: t2 = np.concatenate([tex[:, -sh:], np.repeat(tex[:, -1:], -sh, 1)], 1)
+        else: t2 = tex
         lk = np.asarray(Image.fromarray(np.clip(t2 * 180, 0, 255).astype(np.uint8)).resize((W, H), Image.BILINEAR), np.float32) / 180.
         a = 1 - (1 - a) * (1 - np.clip(lk * leak, 0, 1))          # screen blend
     a = a * (1 - lift / 255) + lift / 255
@@ -488,7 +549,10 @@ def notif_card(title, body, bold_body=False):
         tx = 150
         tt = ui_text(title, inter(34, 'SemiBold'), (245, 245, 247)); im.alpha_composite(tt, (tx, 30))
         nw = ui_text('now', inter(29, 'Regular'), (160, 160, 166)); im.alpha_composite(nw, (NW - 30 - nw.width, 34))
-        bb = ui_text(body, inter(34, 'SemiBold' if bold_body else 'Regular'), (236, 236, 240)); im.alpha_composite(bb, (tx, 88))
+        fb = inter(34, 'SemiBold' if bold_body else 'Regular'); room = NW - tx - 110      # keeps ~110 px right padding
+        txt = body
+        while fb.getlength(txt) > room and len(txt) > 4: txt = txt[:-2].rstrip() + '…'
+        bb = ui_text(txt, fb, (236, 236, 240)); im.alpha_composite(bb, (tx, 88))
         return im
     return C(('notif', title, body, bold_body), mk)
 
@@ -671,11 +735,12 @@ def comment_sheet(t, t_up, spell, t_post, t_down):
 
 
 # ================================================================== LUMARC lower third (mockumentary chip)
-LT_W, LT_H = 560, 228
+LT_W, LT_H = 600, 228
 
 
 def lt_card():
-    """dark glass name chip: lavender bar, LUMARC wordmark, 'licensed brand therapist'."""
+    """dark glass name chip: lavender bar, LUMARC wordmark, 'licensed couples therapist' (plays it straight: the
+    deadpan "For brands." is the line's button — the chip must not print the twist 1.6 s early)."""
     def mk():
         S = 2; im = Image.new('RGBA', (LT_W * S, LT_H * S), (0, 0, 0, 0)); d = ImageDraw.Draw(im)
         d.rounded_rectangle((0, 0, LT_W * S - 1, LT_H * S - 1), 32 * S, fill=(14, 12, 22, 170))
@@ -684,10 +749,10 @@ def lt_card():
         bar = E.rounded(E.gradient(6, LT_H - 60, [(120, 140, 255), (150, 120, 255), (190, 130, 255)]).convert('RGBA'), 3)
         im.alpha_composite(bar, (28, 30))
         lg = E.logo(400); im.alpha_composite(lg, (40, 10))
-        ds = mask_rgba(tracked_mask('licensed brand therapist', E.font(40, 500), 1.2), (238, 232, 222))
+        ds = mask_rgba(tracked_mask('licensed couples therapist', E.font(40, 500), 1.2), (238, 232, 222))
         im.alpha_composite(ds, (56, 146))
         return im
-    return C('ltcard2', mk)
+    return C('ltcard3', mk)
 
 
 def lower_third(ctx, t, t_in, x=64, y=1150, layer='screen', t_out=None):

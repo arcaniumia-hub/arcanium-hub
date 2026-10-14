@@ -6,14 +6,18 @@ Beats (timeline s, 30 fps frame grid; word onsets measured on src/voice16k.raw �
   29.833  "what" (29.83): pen click — his yellow legal pad swings in from the left (it never crosses the caption band;
           real paper: rules, margin, gum binding; a callback already on it: «Kevin: feels "creative" ??»). He writes
           «Instagram needs:» while he asks, and underlines it on "him?" (30.89).
-  31.400  CUT to Instagram (line 13). The pad stays: every need is handwritten on it as he says it, each with a ding
+  31.400  CUT to Instagram (line 13). The pad stays, dropped into the (empty) caption band on his shot so it reads as
+          the caption and his face / chest / the lamp stay clear (polish pass; it used to sit on his chest like a
+          sticker): every need is handwritten on it as he says it, each with a ding
           (E6 → G6 → B6, the list climbs): «1. Consistency» (31.44).
   32.89   «2. Good lighting» starts on "Good" — and on "lighting" (33.067) the brass floor lamp behind him CLICKS ON:
           bulb flare with a one-frame stutter, warm spill on the bookcase, a warm key and a soft beauty glow on his
           face. He stays beautifully lit for the rest of his line.
   34.200  "Reels." (34.19) — a Reels-style punch-in jump cut on him, «3. Reels» + the Reels glyph doodled next to it.
   35.200  the pad slides away to the left (list done).
-  35.733  "Is that TOO much…" (TOO 35.74) — CRASH ZOOM onto his face (3-frame snap with motion blur, 'zoom'), held.
+  35.45   "Is that too much to ask?" (IS 35.45) — a slow diva push on him (eases in, +9 %/s on top of the Reels level).
+          No crash zoom here (polish pass): "MOVIES!" (s07, 38.50) and the triple "Oh. OH. Okay" (s08) own the crash
+          zooms; this line is played straight and the button is the cut.
   36.267  "…to ASK?" (36.25) — CUT to Kevin's guilty face (brows up, eyes sliding away), slow push, until 36.84.
 The lamp light is computed in world space (lit plate cached per level, light on the keyed take, bloom post-camera).
 Captions: the engine's word-pop captions on the measured onsets; "Consistency. / Good lighting. / Reels." are the
@@ -33,7 +37,7 @@ F_I = 942                                  # 31.400  Instagram (line 13 starts 3
 F_LAMP = K.fr(K.wt(13, 'LIGHTING.'))       # 992  33.067  "lighting" (33.07): the lamp clicks on
 F_REELS = K.fr(K.wt(13, 'REELS.'))         # 1026 34.200  "Reels." (34.19): punch-in
 F_PADOUT = 1056                            # 35.200  the pad leaves (silence after "Reels.")
-F_ZOOM = K.fr(K.wt(13, 'TOO'))             # 1072 35.733  crash zoom lands on "TOO" (35.74)
+T_DIVA = K.wt(13, 'IS')                    # 35.45  "Is that too much to ask?": the slow diva push starts
 F_K = K.fr(K.wt(13, 'ASK?'))               # 1088 36.267  Kevin's guilty face on "ASK?" (36.25)
 
 SCHED = dict(head=(29.90, .80), ul=(K.wt(12, 'HIM?'), .16), n1=(K.wt(13, 'CONSISTENCY.'), .52), n2=(K.wt(13, 'GOOD'), .56),
@@ -46,11 +50,12 @@ CUES = [
     (F_LAMP / FPS, 'click', {'gain': 10}),                             # the lamp switch
     (K.wt(13, 'REELS.'), 'ding', {'note': 'B6', 'gain': -2}),           # need #3 (+ punch-in)
     (F_PADOUT / FPS, 'swipe', {'gain': -12}),                          # the pad slides away
-    (F_ZOOM / FPS, 'zoom', {}),                                        # crash zoom on "TOO"
 ]
 
-PAD_C = (470, 1150)          # pad centre on screen (clear of the caption band at 1480, off his face)
+PAD_C = (470, 1150)          # pad centre on the therapist's shot (clear of the caption band at 1480, off his face)
 PAD_S = 1.0
+PAD_C_I = (540, 1430)        # on Instagram's shot the pad drops into the (empty) caption band: the handwriting IS the
+PAD_S_I = .92                # caption of "Consistency. / Good lighting. / Reels." — chest, face and lamp stay clear
 PAD_ROT = -2.5
 
 def src(line, t): return line['s0'] + (t - line['t0'])
@@ -65,21 +70,18 @@ def pad_layer(ctx, t):
     dy = 70 * (1 - k_in) ** 2 + 50 * k_out + 3 * math.sin(t * 1.3)
     rot = PAD_ROT + 9 * (1 - k_in) + 6 * k_out + .3 * math.sin(t * .9)
     im = K.notepad(t, SCHED)
-    if abs(PAD_S - 1) > .01: im = im.resize((int(im.width * PAD_S), int(im.height * PAD_S)), Image.BICUBIC)
+    (cx, cy), sc = (PAD_C_I, PAD_S_I) if f >= F_I else (PAD_C, PAD_S)     # the position changes on the cut
+    if abs(sc - 1) > .01: im = im.resize((int(im.width * sc), int(im.height * sc)), Image.BICUBIC)
     im = im.rotate(rot, Image.BICUBIC, expand=True)
-    ctx.add('screen', im, PAD_C[0] + dx, PAD_C[1] + dy)
+    ctx.add('screen', im, cx + dx, cy + dy)
 
 def i_cam(t):
     f = K.fr(t); u = t - F_I / FPS
     z = 1.03 + .018 * u
     if f >= F_REELS: z += .13                                          # Reels-style punch-in jump cut
-    to = (520, 560)
-    if f >= F_ZOOM - 2:                                                # crash zoom: frames -2, -1, 0 -> 1/3, 2/3, 1
-        k = E.clamp((f - (F_ZOOM - 3)) / 3); k = 1 - (1 - k) ** 2
-        z0 = 1.03 + .018 * ((F_ZOOM - 3) / FPS - F_I / FPS) + .13
-        z = z0 + (1.62 - z0) * k + .04 * max(0., t - F_ZOOM / FPS)
-        to = (520 + 20 * k, 560 + 20 * k)
-    return K.face_cam(K.FACE['I'], z, to=to)
+    v = t - T_DIVA
+    if v > 0: z += .09 * (v - .12 * (1 - math.exp(-v / .12)))          # diva push: velocity eases in over ~.25 s
+    return K.face_cam(K.FACE['I'], z, to=(520, 560))
 
 def draw(ctx, lt, t):
     f = K.fr(t)
@@ -88,15 +90,12 @@ def draw(ctx, lt, t):
         K.cu_take(ctx, 'T', src(L12, t))
         ctx.cam.update(K.t_cam(t))
     elif f < F_K:
-        # ---------------- Instagram: the needs; the lamp; Reels; crash zoom
+        # ---------------- Instagram: the needs; the lamp; Reels; the diva push
         Lv = K.lamp_level(t, F_LAMP / FPS)
         K.cu_take(ctx, 'I', src(L13, t), fx=K.lamp_take(Lv) if Lv > .001 else None)
         cam = i_cam(t); ctx.cam.update(cam)
         ctx.bg_img = K.lamp_off_plate() if f < F_LAMP else K.lamp_plate(Lv)
-        wraps = [K.lamp_bloom(Lv)]
-        if f in (F_ZOOM - 2, F_ZOOM - 1):
-            wraps.append(K.zoom_blur(1.0 if f == F_ZOOM - 2 else .55, anchor=K.cam_map(ctx.cam, *K.FACE['I'])))
-        ctx.wrap = K.chain(*wraps)
+        ctx.wrap = K.lamp_bloom(Lv)
     else:
         # ---------------- "…to ASK?" — Kevin's guilty face
         u = t - F_K / FPS
