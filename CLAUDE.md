@@ -62,4 +62,8 @@ Talk to the owner in **Portuguese**, concise and practical. Videos/copy for the 
 - `video/lumarc-ia/` ("IA só faz conteúdo genérico?", PT-BR, AI-first SHOWREEL, ultracode): every phrase a different
   technique, reusing the whole portfolio via engine paths (`E.FILMS`, `E.LOCS`, `E.house()`…); GENÉRICO stamp kit;
   phone CTA card; score with a cheesy stock-ukulele "generic" opening.
+- `video/lumarc-pick3/` ("Pick three.", EN, US Meta AD): one take with 3 alternative hooks → master timeline A1|A2|A3|BODY,
+  `versions.py` splices hook_k + body (blocks on the 0.2 s grid) for hook A/B testing; Meta safe zones (key text inside
+  x 70–960, y 280–1250), muted-first captions; glass FAST/CHEAP/GOOD triangle kit (`sections/_tri.py`).
+- Ads: the owner runs paid traffic in the US (Meta). No free-edit offer. CTA = "Send message" button + phone on screen.
 - Per-project READMEs in each `video/*/` folder explain how each film was built.
